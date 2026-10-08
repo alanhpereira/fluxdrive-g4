@@ -2,6 +2,10 @@
     "configurations": [
         {
             "showDevDebugOutput": "parsed",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 20,
+            },
             "cwd": "${workspaceRoot}",
             "executable": "./build/debug/Driver_TCC.elf",
             "name": "Debug STM32",
@@ -16,6 +20,10 @@
         },
         {
             "showDevDebugOutput": "parsed",
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 20,
+            },
             "cwd": "${workspaceRoot}",
             "executable": "./build/debug/Driver_TCC.elf",
             "name": "Attach STM32",
