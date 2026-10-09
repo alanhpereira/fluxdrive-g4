@@ -71,10 +71,13 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define HALL3_Pin GPIO_PIN_0
 #define HALL3_GPIO_Port GPIOC
+#define HALL3_EXTI_IRQn EXTI0_IRQn
 #define HALL2_Pin GPIO_PIN_1
 #define HALL2_GPIO_Port GPIOC
+#define HALL2_EXTI_IRQn EXTI1_IRQn
 #define HALL1_Pin GPIO_PIN_2
 #define HALL1_GPIO_Port GPIOC
+#define HALL1_EXTI_IRQn EXTI2_IRQn
 #define MOT_TEMP_Pin GPIO_PIN_3
 #define MOT_TEMP_GPIO_Port GPIOC
 #define VIN_REF_Pin GPIO_PIN_0

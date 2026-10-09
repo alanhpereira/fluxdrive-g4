@@ -78,10 +78,12 @@ C_SOURCES =  \
 Core/Src/adc.c \
 Core/Src/cordic.c \
 Core/Src/dac.c \
+Core/Src/dma.c \
 Core/Src/fdcan.c \
 Core/Src/gpio.c \
 Core/Src/i2c.c \
 Core/Src/main.c \
+Core/Src/mt6835.c \
 Core/Src/opamp.c \
 Core/Src/spi.c \
 Core/Src/stm32g4xx_hal_msp.c \
