@@ -12,16 +12,39 @@ static volatile uint8_t convCptlMask = 0;
 static int16_t cur_offset;
 static uint8_t fault_reg;
 
+#define PW 100
 void runControl() {
-	if ((HAL_GetTick() / 1000) & 1) {
-		htim1.Instance->CCR1 = pwm_res - ZERO_TIME;
-		htim1.Instance->CCR2 = 0;
-		htim1.Instance->CCR3 = 0;
-	}
-	else {
-		htim1.Instance->CCR1 = 0;
-		htim1.Instance->CCR2 = 0;
-		htim1.Instance->CCR3 = 0;
+	switch ((HAL_GetTick() / 100) % 6) {
+		case 0:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - PW;
+			break;
+		case 1:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + PW;
+			break;
+		case 2:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
+			break;
+		case 3:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + PW;
+			break;
+		case 4:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - PW;
+			break;
+		case 5:
+			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + PW;
+			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + PW;
+			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
+			break;
 	}
 }
 

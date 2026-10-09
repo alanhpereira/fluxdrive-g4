@@ -142,9 +142,14 @@ int main(void) {
 
 		HAL_I2C_Mem_Read(&hi2c3, 0x47 << 1, 0x80, 1, &dummy, 1, 10);
 		nFault = dummy;
-		if ((dummy & 0xf) == 0) {
-			nFault = 0;
+		if ((dummy & 0xf) != 0) {
+			dummy = 0xff;
 			HAL_I2C_Mem_Write(&hi2c3, 0x47 << 1, 0x09, 1, &dummy, 1, 10);
+			htim1.Instance->CCR1 = 0;
+			htim1.Instance->CCR2 = 0;
+			htim1.Instance->CCR3 = 0;
+			__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_BREAK | TIM_FLAG_BREAK2);
+			__HAL_TIM_MOE_ENABLE(&htim1);
 		}
 		/* USER CODE END WHILE */
 
