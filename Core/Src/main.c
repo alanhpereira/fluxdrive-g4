@@ -34,6 +34,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "mt6835.h"
+#include "bridgeCtrl.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,7 +44,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define SCREF_MV 1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,7 +55,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static MT6835_HandleTypeDef hMT6835 = {.hspi = &hspi1, .nCS_pin = GPIO_PIN_15, .nCS_port = GPIOA};
+static MT6835_HandleTypeDef hMT6835 = {
+	.hspi = &hspi1,
+	.nCS_pin = GPIO_PIN_15,
+	.nCS_port = GPIOA,
+};
+static uint8_t ready = 0;
+static uint8_t nFault = 0;
+static uint8_t nFaultDig = 0;
+uint8_t i2c_err;
+uint8_t i2c_stt;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,7 +84,7 @@ void SystemClock_Config(void);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
-
+	uint8_t dummy;
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -113,13 +123,29 @@ int main(void) {
 	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start(&htim2);
+	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
+	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+	// set cs mid reference to vcc/2
+	HAL_DAC_SetValue(&hdac1, DAC1_CHANNEL_1, DAC_ALIGN_12B_R, 0x800);
+	// ser scref for shutting drivers down to SCREF MV
+	HAL_DAC_SetValue(&hdac1, DAC1_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF);
 	HAL_Delay(5);
 	MT6835_StartBurst(&hMT6835);
+	initBridge();
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
+		ready = HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin);
+		nFaultDig = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_15);
+
+		HAL_I2C_Mem_Read(&hi2c3, 0x47 << 1, 0x80, 1, &dummy, 1, 10);
+		nFault = dummy;
+		if ((dummy & 0xf) == 0) {
+			nFault = 0;
+			HAL_I2C_Mem_Write(&hi2c3, 0x47 << 1, 0x09, 1, &dummy, 1, 10);
+		}
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */

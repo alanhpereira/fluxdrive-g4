@@ -110,8 +110,6 @@ void Error_Handler(void);
 #define GHS3_GPIO_Port GPIOE
 #define DRV_RDY_Pin GPIO_PIN_14
 #define DRV_RDY_GPIO_Port GPIOE
-#define drvnFault_Pin GPIO_PIN_15
-#define drvnFault_GPIO_Port GPIOE
 #define ENC_I_Pin GPIO_PIN_8
 #define ENC_I_GPIO_Port GPIOA
 #define SPI_NCS_Pin GPIO_PIN_15
