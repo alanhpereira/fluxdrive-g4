@@ -39,7 +39,7 @@ typedef struct {
 	uint8_t dma_buffer[BURST_RED * 8];
 
 } MT6835_HandleTypeDef;
-
+extern MT6835_HandleTypeDef hMT6835;
 HAL_StatusTypeDef MT6835_ReadRegister(MT6835_HandleTypeDef* hMT6835, uint16_t addr, uint8_t* pValue);
 HAL_StatusTypeDef MT6835_WriteRegister(MT6835_HandleTypeDef* hMT6835, uint16_t addr, uint8_t value);
 HAL_StatusTypeDef MT6835_SaveEEPROM(MT6835_HandleTypeDef* hMT6835);

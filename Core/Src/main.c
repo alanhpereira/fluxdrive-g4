@@ -54,11 +54,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static MT6835_HandleTypeDef hMT6835 = {
-	.hspi = &hspi1,
-	.nCS_pin = GPIO_PIN_15,
-	.nCS_port = GPIOA,
-};
+
 static uint8_t ready = 0;
 static uint8_t nFaultDig = 0;
 /* USER CODE END PV */
@@ -120,7 +116,6 @@ int main(void) {
 	HAL_TIM_Base_Start(&htim2);
 	// set cs mid reference to vcc/2
 	HAL_Delay(5);
-	MT6835_StartBurst(&hMT6835);
 	initMotor();
 	/* USER CODE END 2 */
 

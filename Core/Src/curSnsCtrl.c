@@ -5,9 +5,14 @@
 
 volatile int16_t cur_raw[3];
 volatile uint16_t vin_raw;
+volatile float g_cur[3];
+volatile float g_vin;
 
 static volatile uint8_t convCptlMask = 0;
-static int16_t cur_offset;
+static int16_t cur_offset[3];
+
+float g_curMult;
+float g_vinMult;
 
 extern void currentLoop();
 
@@ -18,7 +23,12 @@ void disableCS() {
 
 HAL_StatusTypeDef initCS() {
 	HAL_StatusTypeDef status;
-	cur_offset = 0x800;
+	cur_offset[0] = 2048 - 18;
+	cur_offset[1] = 2048 - 10;
+	cur_offset[2] = 2048 - 6;
+	g_curMult = VDDA / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
+	g_vinMult = VDDA * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
+
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET);
 
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
@@ -75,16 +85,20 @@ HAL_StatusTypeDef initCS() {
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	if (hadc == &hadc1) {
 		convCptlMask |= 1;
-		cur_raw[0] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset;
-		cur_raw[2] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2) - cur_offset;
+		cur_raw[0] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset[0];
+		cur_raw[2] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2) - cur_offset[2];
 	}
 	if (hadc == &hadc2) {
 		convCptlMask |= 2;
-		cur_raw[1] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset;
+		cur_raw[1] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset[1];
 		vin_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
 	}
 	if (convCptlMask == 3) {
 		convCptlMask = 0;
+		g_cur[0] = cur_raw[0] * g_curMult;
+		g_cur[1] = cur_raw[1] * g_curMult;
+		g_cur[2] = cur_raw[2] * g_curMult;
+		g_vin = vin_raw * g_vinMult;
 		currentLoop();
 	}
 }

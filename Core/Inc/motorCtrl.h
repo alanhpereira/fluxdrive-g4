@@ -8,4 +8,5 @@
 void disableMotor();
 HAL_StatusTypeDef initMotor();
 void currentLoop();
+void SVPWM(float alpha, float beta);
 #endif

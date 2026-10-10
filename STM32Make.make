@@ -78,6 +78,7 @@ C_SOURCES =  \
 Core/Src/adc.c \
 Core/Src/bridgeCtrl.c \
 Core/Src/cordic.c \
+Core/Src/cordicMgr.c \
 Core/Src/curSnsCtrl.c \
 Core/Src/dac.c \
 Core/Src/dma.c \

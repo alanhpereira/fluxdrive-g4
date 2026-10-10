@@ -5,8 +5,9 @@
 #include "i2c.h"
 
 static uint8_t fault_reg;
-uint32_t g_pwm_res;
-uint32_t g_max_duty_cycle;
+int32_t g_pwm_res;
+int32_t g_max_duty_cycle;
+int32_t g_half_duty_cycle;
 uint32_t g_lastFaultCleared;
 
 void disableBridge() {
@@ -29,6 +30,7 @@ HAL_StatusTypeDef initBridge() {
 	HAL_StatusTypeDef status;
 	g_pwm_res = htim1.Instance->ARR;
 	g_max_duty_cycle = g_pwm_res - ZERO_TIME;
+	g_half_duty_cycle = g_max_duty_cycle / 2;
 	htim1.Instance->CCR1 = 0;
 	htim1.Instance->CCR2 = 0;
 	htim1.Instance->CCR3 = 0;

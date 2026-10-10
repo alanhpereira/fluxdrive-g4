@@ -1,5 +1,10 @@
 #include "mt6835.h"
-
+#include "spi.h"
+MT6835_HandleTypeDef hMT6835 = {
+	.hspi = &hspi1,
+	.nCS_pin = GPIO_PIN_15,
+	.nCS_port = GPIOA,
+};
 HAL_StatusTypeDef MT6835_ReadRegister(MT6835_HandleTypeDef* hMT6835, uint16_t addr, uint8_t* pValue) {
 	HAL_StatusTypeDef status;
 	if (hMT6835->bursting) return HAL_BUSY;

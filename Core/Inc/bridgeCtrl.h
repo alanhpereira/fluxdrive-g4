@@ -6,9 +6,11 @@
 
 #define ZERO_TIME 100
 #define SCREF_MV 500
+#define FAULT_CLEAR_MIN_TIME 100
 
-extern uint32_t g_pwm_res;
-extern uint32_t g_max_duty_cycle;
+extern int32_t g_pwm_res;
+extern int32_t g_max_duty_cycle;
+extern int32_t g_half_duty_cycle;
 extern uint32_t g_lastFaultCleared;
 
 void disableBridge();
