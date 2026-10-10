@@ -97,7 +97,6 @@ Core/Src/sysmem.c \
 Core/Src/system_stm32g4xx.c \
 Core/Src/tim.c \
 Core/Src/usart.c \
-Core/Src/usb.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc_ex.c \
@@ -134,7 +133,15 @@ Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_dma.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_exti.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_gpio.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_usb.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_utils.c
+Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_utils.c \
+Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c \
+Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c \
+Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
+Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
+USB_Device/App/usb_device.c \
+USB_Device/App/usbd_cdc_if.c \
+USB_Device/App/usbd_desc.c \
+USB_Device/Target/usbd_conf.c
 
 
 CXX_SOURCES = \
@@ -233,7 +240,11 @@ C_INCLUDES =  \
 -IDrivers/CMSIS/Device/ST/STM32G4xx/Include \
 -IDrivers/CMSIS/Include \
 -IDrivers/STM32G4xx_HAL_Driver/Inc \
--IDrivers/STM32G4xx_HAL_Driver/Inc/Legacy
+-IDrivers/STM32G4xx_HAL_Driver/Inc/Legacy \
+-IMiddlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc \
+-IMiddlewares/ST/STM32_USB_Device_Library/Core/Inc \
+-IUSB_Device/App \
+-IUSB_Device/Target
 
 
 

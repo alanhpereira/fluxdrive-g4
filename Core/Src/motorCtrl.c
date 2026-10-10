@@ -1,6 +1,7 @@
 #include "motorCtrl.h"
 
 #include "i2c.h"
+#include "usart.h"
 #include "cordicMgr.h"
 #include "mt6835.h"
 
@@ -11,9 +12,20 @@ void disableMotor() {
 	disableCS();
 	disableBridge();
 }
+static uint16_t seq;
+typedef struct {
+	uint8_t sync[2];  // 0xA5, 0x5A
+	uint16_t seq;
+	float v[17];
+} Frame;  // offsets: seq at 2, v at 4, so natural alignment, no padding
+_Static_assert(sizeof(Frame) == 72, "frame size");
+
+Frame telemetry;
 
 static float dc_float;
 static float center_f;
+
+static int16_t cycles_since_last_frame = 0;
 
 HAL_StatusTypeDef initMotor() {
 	HAL_StatusTypeDef status;
@@ -35,6 +47,8 @@ HAL_StatusTypeDef initMotor() {
 	MT6835_StartBurst(&hMT6835);
 	dc_float = g_max_duty_cycle * INV_SQRT3;
 	center_f = (float)g_half_duty_cycle + 0.5f;
+	telemetry.sync[0] = 0xA5;
+	telemetry.sync[1] = 0x5A;
 	return HAL_OK;
 }
 void SVPWM(float alpha, float beta) {
@@ -66,5 +80,18 @@ void currentLoop() {
 	float inv_vin = 1 / g_vin;
 	alpha *= inv_vin;
 	beta *= inv_vin;
+	if (cycles_since_last_frame >= 10) {
+		cycles_since_last_frame = 0;
+		seq++;
+		if (huart1.gState == HAL_UART_STATE_READY) {
+			telemetry.seq = seq;
+			telemetry.v[0] = g_vin;
+			telemetry.v[1] = g_cur[0];
+			telemetry.v[2] = g_cur[1];
+			telemetry.v[3] = g_cur[2];
+			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
+		}
+	}
+	cycles_since_last_frame++;
 	SVPWM(alpha, beta);
 }
