@@ -7,4 +7,5 @@
 
 void disableMotor();
 HAL_StatusTypeDef initMotor();
+void currentLoop();
 #endif

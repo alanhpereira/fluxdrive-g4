@@ -1,5 +1,7 @@
 #include "motorCtrl.h"
 
+#include "i2c.h"
+
 void disableMotor() {
 	disableCS();
 	disableBridge();

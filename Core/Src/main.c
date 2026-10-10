@@ -60,11 +60,7 @@ static MT6835_HandleTypeDef hMT6835 = {
 	.nCS_port = GPIOA,
 };
 static uint8_t ready = 0;
-static uint8_t st = 0;
 static uint8_t nFaultDig = 0;
-uint8_t i2c_err;
-uint8_t i2c_stt;
-uint32_t lastFaultCleared = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -84,7 +80,6 @@ void SystemClock_Config(void);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
-	uint8_t dummy;
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -132,42 +127,9 @@ int main(void) {
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
+		checkAndClearBridgeFault();
 		ready = HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin);
 		nFaultDig = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_15);
-		if (HAL_GetTick() > lastFaultCleared + 100) {
-			if ((HAL_GetTick() / 500) % 4 == 0) {
-				setDuty(3200, 3200, 0);
-			}
-			else {
-				setDuty(1600, 1600, 1600);
-			}
-		}
-		HAL_StatusTypeDef rc = HAL_I2C_Mem_Read(&hi2c3, 0x47 << 1, 0x80, I2C_MEMADD_SIZE_8BIT, &st, 1, 10);
-
-		uint32_t bdtr = TIM1->BDTR;
-		uint32_t sr = TIM1->SR;
-
-		int moe_off = (bdtr & TIM_BDTR_MOE) == 0;
-		int brk_set = (sr & (TIM_SR_BIF | TIM_SR_B2IF)) != 0;
-
-		if (rc == HAL_OK && (moe_off || brk_set)) {
-			if (st & 0x03) {
-				// THSD or VCC UVLO still active: wait, they clear themselves
-			}
-			else {
-				if (st & 0x0C) {  // latched RESET / VDS_P: clear the driver latch
-					uint8_t v = 0xFF;
-					HAL_I2C_Mem_Write(&hi2c3, 0x47 << 1, 0x09, I2C_MEMADD_SIZE_8BIT, &v, 1, 10);
-				}
-				if (GPIOE->IDR & GPIO_PIN_15) {	 // nFAULT released → break input inactive
-					setDuty(0, 0, 0);
-					TIM1->EGR = TIM_EGR_UG;	 // load zero duty now (also resets the counter)
-					__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_BREAK | TIM_FLAG_BREAK2);
-					__HAL_TIM_MOE_ENABLE(&htim1);
-					lastFaultCleared = HAL_GetTick();
-				}
-			}
-		}
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
