@@ -78,12 +78,14 @@ C_SOURCES =  \
 Core/Src/adc.c \
 Core/Src/bridgeCtrl.c \
 Core/Src/cordic.c \
+Core/Src/curSnsCtrl.c \
 Core/Src/dac.c \
 Core/Src/dma.c \
 Core/Src/fdcan.c \
 Core/Src/gpio.c \
 Core/Src/i2c.c \
 Core/Src/main.c \
+Core/Src/motorCtrl.c \
 Core/Src/mt6835.c \
 Core/Src/opamp.c \
 Core/Src/spi.c \

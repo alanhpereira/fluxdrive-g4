@@ -1,65 +1,28 @@
 #include "bridgeCtrl.h"
 
 #include "tim.h"
-#include "adc.h"
+#include "dac.h"
 #include "i2c.h"
 
 static uint16_t pwm_res;
-static volatile int16_t cur_raw[3];
-static volatile uint16_t vin_raw;
-
-static volatile uint8_t convCptlMask = 0;
-static int16_t cur_offset;
 static uint8_t fault_reg;
 
 #define PW 100
-void runControl() {
-	switch ((HAL_GetTick() / 100) % 6) {
-		case 0:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - PW;
-			break;
-		case 1:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + PW;
-			break;
-		case 2:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 - PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
-			break;
-		case 3:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 + PW;
-			break;
-		case 4:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 - PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + 2 * PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - PW;
-			break;
-		case 5:
-			htim1.Instance->CCR1 = (pwm_res - ZERO_TIME) / 2 + PW;
-			htim1.Instance->CCR2 = (pwm_res - ZERO_TIME) / 2 + PW;
-			htim1.Instance->CCR3 = (pwm_res - ZERO_TIME) / 2 - 2 * PW;
-			break;
-	}
-}
 
 void disableBridge() {
 	htim1.Instance->CCR1 = 0;
 	htim1.Instance->CCR2 = 0;
 	htim1.Instance->CCR3 = 0;
 	htim1.Instance->CCR4 = 0;
-	/*HAL_ADCEx_InjectedStop_IT(&hadc1);
-	HAL_ADCEx_InjectedStop_IT(&hadc2);
-	HAL_TIM_Base_Stop(&htim1);
 	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_4);*/
+	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_4);
+	HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+	HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_2);
+	HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_3);
+	HAL_TIMEx_PWMN_Stop(&htim1, TIM_CHANNEL_4);
+	HAL_TIM_Base_Stop(&htim1);
 }
 
 HAL_StatusTypeDef initBridge() {
@@ -69,18 +32,10 @@ HAL_StatusTypeDef initBridge() {
 	htim1.Instance->CCR2 = 0;
 	htim1.Instance->CCR3 = 0;
 	htim1.Instance->CCR4 = pwm_res - ZERO_TIME;
-	cur_offset = 0x400;
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET);
-	status = HAL_ADCEx_InjectedStart_IT(&hadc1);
-	if (status != HAL_OK) {
-		disableBridge();
-		return status;
-	}
-	status = HAL_ADCEx_InjectedStart_IT(&hadc2);
-	if (status != HAL_OK) {
-		disableBridge();
-		return status;
-	}
+
+	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+	// ser scref for shutting drivers down to SCREF MV
+	HAL_DAC_SetValue(&hdac1, DAC1_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF * SCREF_MV / 3300);
 	status = HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 	if (status != HAL_OK) {
 		disableBridge();
@@ -117,23 +72,6 @@ HAL_StatusTypeDef initBridge() {
 		return status;
 	}
 	return HAL_OK;
-}
-
-void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	if (hadc == &hadc1) {
-		convCptlMask |= 1;
-		cur_raw[0] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset;
-		cur_raw[2] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2) - cur_offset;
-	}
-	if (hadc == &hadc2) {
-		convCptlMask |= 2;
-		cur_raw[1] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset;
-		vin_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
-	}
-	if (convCptlMask == 3) {
-		convCptlMask = 0;
-		runControl();
-	}
 }
 
 void HAL_TIMEx_BreakCallback(TIM_HandleTypeDef* htim) {
