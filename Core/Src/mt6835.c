@@ -22,6 +22,7 @@ HAL_StatusTypeDef MT6835_WriteRegister(MT6835_HandleTypeDef* hMT6835, uint16_t a
 
 	hMT6835->tx_data[0] = (uint8_t)(MT6835_OP_WRITE << 4 | ((addr >> 8) & 0xf));
 	hMT6835->tx_data[1] = (uint8_t)((addr) & 0xff);
+	hMT6835->tx_data[2] = value;
 	status = HAL_SPI_TransmitReceive(hMT6835->hspi, hMT6835->tx_data, hMT6835->rx_data, 3, 10);
 
 	HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_SET);
