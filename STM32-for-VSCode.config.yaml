@@ -37,6 +37,7 @@ cFlags:
   - -Wall
   - -fdata-sections
   - -ffunction-sections
+  - -fno-math-errno
 
 cxxFlags: 
   - -fno-rtti
