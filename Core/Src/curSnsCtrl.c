@@ -26,7 +26,7 @@ HAL_StatusTypeDef initCS() {
 	cur_offset[0] = 2048 - 18;
 	cur_offset[1] = 2048 - 10;
 	cur_offset[2] = 2048 - 6;
-	g_curMult = VDDA / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
+	g_curMult = -VDDA / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
 	g_vinMult = VDDA * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
 
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET);

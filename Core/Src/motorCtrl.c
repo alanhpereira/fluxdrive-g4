@@ -25,6 +25,8 @@ static float center_f;
 
 volatile float g_iq, g_id;
 
+volatile uint8_t control_enabled = 0;
+
 static int16_t cycles_since_last_frame = 0;
 
 void disableMotor() {
@@ -45,16 +47,33 @@ HAL_StatusTypeDef initMotor() {
 		disableMotor();
 		return status;
 	}
-	MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x0f);
-	HAL_Delay(100);
-	SVPWM(0, 10 / g_vin);
-	HAL_Delay(100);
-	MT6835_SetZero(&hMT6835);
-	MT6835_StartBurst(&hMT6835);
 	dc_float = g_max_duty_cycle * INV_SQRT3;
 	center_f = (float)g_half_duty_cycle + 0.5f;
+	MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x0f);
+	uint32_t last_fault = HAL_GetTick();
+	control_enabled = 0;
+	g_vin = 0;
+	while (HAL_GetTick() < last_fault + 200) {
+		if (g_vin > 0.1) {
+			SVPWM(5 / g_vin * ((HAL_GetTick() - last_fault) / 200.0f), 0);
+		}
+		else {
+			SVPWM(0, 0);
+			last_fault = HAL_GetTick();
+		}
+		if (checkAndClearBridgeFault() != 0) {
+			SVPWM(0, 0);
+			last_fault = HAL_GetTick();
+		}
+	}
+	HAL_Delay(100);
+	MT6835_SetZero(&hMT6835);
+	SVPWM(0, 0);
+	MT6835_StartBurst(&hMT6835);
 	telemetry.sync[0] = 0xA5;
 	telemetry.sync[1] = 0x5A;
+	control_enabled = 1;
+
 	return HAL_OK;
 }
 static inline void clarke(float ia, float ib, float ic, float* al, float* be) {
@@ -67,6 +86,10 @@ static inline void park(float al, float be, float s, float c, float* d, float* q
 	*q = -al * s + be * c;
 }
 
+static inline void ipark(float d, float q, float s, float c, float* al, float* be) {
+	*al = d * c - q * s;
+	*be = d * s + q * c;
+}
 void SVPWM(float alpha, float beta) {
 	if (HAL_GetTick() < g_lastFaultCleared + FAULT_CLEAR_MIN_TIME) return;
 	float base = -0.5f * alpha;
@@ -93,13 +116,13 @@ void SVPWM(float alpha, float beta) {
 void currentLoop() {
 	float alpha, beta;
 	uint32_t ang = hMT6835.angle;
-
-	float s, c;
-	sincos_q31((ang << 11) * POLE_PAIRS + ELEC_OFFSET, &s, &c);
+	if (!control_enabled) return;
+	float sin_ang, cos_ang;
+	sincos_q31((ang << 11) * POLE_PAIRS + ELEC_OFFSET, &sin_ang, &cos_ang);
 
 	float al, be, iq, id;
 	clarke(g_cur[0], g_cur[1], g_cur[2], &al, &be);
-	park(al, be, s, c, &id, &iq);
+	park(al, be, sin_ang, cos_ang, &id, &iq);
 	g_id = id;
 	g_iq = iq;
 
@@ -120,10 +143,13 @@ void currentLoop() {
 	}
 
 	cycles_since_last_frame++;
-
-	sincos_q31(HAL_GetTick() * (0xffffffff / 1000 * 7 * 0), &beta, &alpha);
-	float inv_vin = 3 / g_vin;
+	ipark(0, 15, sin_ang, cos_ang, &alpha, &beta);
+	//  sincos_q31(HAL_GetTick() * (0xffffffff / 1000 * 7 * 0), &beta, &alpha);
+	// alpha = 3;
+	// beta = 0;
+	float inv_vin = 1 / g_vin;
 	alpha *= inv_vin;
 	beta *= inv_vin;
 	SVPWM(alpha, beta);
+	// SVPWM(0.4f, 0.0f);
 }
