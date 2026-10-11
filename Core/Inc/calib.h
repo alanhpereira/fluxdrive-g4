@@ -27,6 +27,7 @@ extern volatile uint8_t g_rec_use_q; /* record iq instead of id */
 
 /* defined elsewhere in your code: must be volatile float, defined exactly once */
 extern volatile float g_id, g_iq, g_vin;
+extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from currentLoop() */
 
 /* implement in main.c:  uint32_t enc_angle21(void) { return hMT6835.angle; } */
 uint32_t enc_angle21(void);

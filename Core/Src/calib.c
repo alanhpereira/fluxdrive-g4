@@ -350,6 +350,129 @@ static const char* pi_autotune(void) {
 	return NULL;
 }
 
+/* ------------------------------------------------------------------ kv (back-EMF constant) */
+#define KV_IQ_FRAC 0.25f	 /* spin-up current, fraction of rated */
+#define KV_MAX_RPM 10000.0f /* spin-up stops here even if the voltage target is not reached */
+
+/* electrical speed, rad/s, sign matches positive iq; dt from TIM2 (1 us free running) */
+typedef struct {
+	uint32_t ang, us;
+} spd_t;
+
+static void spd_init(spd_t* s) {
+	s->ang = hMT6835.angle;
+	s->us = TIM2->CNT;
+}
+
+static float spd_update(spd_t* s) {
+	uint32_t a = hMT6835.angle, t = TIM2->CNT;
+	int32_t d = enc_delta(a, s->ang);
+	float dt = (float)(t - s->us) * 1e-6f;
+	s->ang = a;
+	s->us = t;
+	if (dt <= 0.0f) return 0.0f;
+	return (float)(g_params.enc_dir * d) * (2.0f * (float)M_PI / 2097152.0f) * (float)g_params.pole_pairs / dt;
+}
+
+/* with iq held at zero, wait until the rotor has almost stopped (switching off while spinning
+ * applies a zero vector, which short-brakes the motor) */
+static const char* kv_coast(spd_t* s, float w_ref) {
+	uint32_t t0 = HAL_GetTick();
+	g_iq_ref = 0.0f;
+	float w = w_ref;
+	while (fabsf(w) > 0.05f * fabsf(w_ref) && HAL_GetTick() - t0 < 15000) {
+		HAL_Delay(1); /* encoder delta must stay under half a turn per sample */
+		w = spd_update(s);
+		if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return "overcurrent";
+	}
+	return NULL;
+}
+
+/* spin up with constant iq, then let it coast with iq = 0: the PI output is then pure back-EMF,
+ * vq = lambda * we. Fit vq - R*iq against we; the intercept absorbs dead-time error */
+static const char* cal_kv(void) {
+	const char* e;
+	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID;
+	if ((g_params.flags & need) != need) return "run 'e', 'r', 'l' and 't' first";
+	if ((e = precheck())) return e;
+
+	say("motor will spin freely: unload the shaft. starting in 2 s ('x' aborts)\r\n");
+	for (int i = 0; i < 200; i++) {
+		HAL_Delay(10);
+		if ((e = chk())) return e;
+	}
+
+	g_mode = CTRL_OFF;
+	HAL_Delay(1);
+	g_id_ref = 0.0f;
+	g_iq_ref = 0.0f;
+	g_mode = CTRL_RUN;
+
+	/* spin-up */
+	const float vmax = 0.9f * g_vin / SQRT3;
+	const float w_cap = KV_MAX_RPM / 60.0f * 2.0f * (float)M_PI * (float)g_params.pole_pairs;
+	spd_t s;
+	spd_init(&s);
+	g_iq_ref = KV_IQ_FRAC * g_params.rated_current;
+	float w = 0.0f, bemf = 0.0f;
+	uint32_t t0 = HAL_GetTick();
+	while (HAL_GetTick() - t0 < 3000) {
+		HAL_Delay(1);
+		w = 0.8f * w + 0.2f * spd_update(&s);
+		bemf = g_vq_f - g_params.rq * g_iq_f;
+		if ((e = chk())) {
+			kv_coast(&s, w);
+			return e;
+		}
+		if (bemf > 0.5f * vmax || fabsf(w) > w_cap) break;
+	}
+	if (bemf < 0.1f * vmax) {
+		kv_coast(&s, w);
+		return "too slow to measure back-EMF (load/friction? raise KV_IQ_FRAC)";
+	}
+	if (w <= 0.0f) {
+		kv_coast(&s, w);
+		return "spun backwards (encoder offset/direction? rerun 'e')";
+	}
+
+	/* coast-down: least squares y = lambda * x + c, x = we, y = vq - R*iq */
+	const float w0 = w;
+	g_iq_ref = 0.0f;
+	HAL_Delay(20); /* current settles to zero */
+	spd_init(&s);
+	double n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+	t0 = HAL_GetTick();
+	while (w > 0.3f * w0 && HAL_GetTick() - t0 < 5000) {
+		HAL_Delay(1);
+		w = spd_update(&s);
+		float y = g_vq_f - g_params.rq * g_iq_f;
+		n += 1.0;
+		sx += w;
+		sy += y;
+		sxx += (double)w * w;
+		sxy += (double)w * y;
+		if ((e = chk())) {
+			kv_coast(&s, w);
+			return e;
+		}
+	}
+	if ((e = kv_coast(&s, w0))) return e;
+
+	double den = n * sxx - sx * sx;
+	if (n < 50 || den <= 0.0) return "too few samples during coast-down";
+	float lambda = (float)((n * sxy - sx * sy) / den); /* V*s/rad electrical, peak phase */
+	float c = (float)((sy - lambda * sx) / n);
+	if (lambda <= 0.0f) return "back-EMF has the wrong sign (encoder offset/direction?)";
+
+	/* line-to-line peak convention: Kt = 1.5 * pp * lambda = 8.27 / kv */
+	float kv = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * lambda);
+	g_params.kv = kv;
+	say("kv = %.1f rpm/V   (lambda %.3f mWb, Kt %.4f Nm/A, offset %.3f V, %d samples, peak %.0f rpm)\r\n",
+		(double)kv, (double)(lambda * 1e3f), (double)(1.5f * (float)g_params.pole_pairs * lambda), (double)c, (int)n,
+		(double)(w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f));
+	return NULL;
+}
+
 /* ------------------------------------------------------------------ closed loop current run */
 /* 'g <id> <iq>': returns 1 if the loop is now running (caller must not finish()) */
 static int run_start(char* args) {
@@ -518,6 +641,9 @@ static void dispatch(char* line) {
 		case 'w':
 			save_params();
 			break;
+		case 'k':
+			run("kv", cal_kv);
+			break;
 		case 't':
 			run("autotune", pi_autotune);
 			break;
@@ -534,7 +660,7 @@ static void dispatch(char* line) {
 			reset_encoder();
 			break;
 		case '?':
-			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  g <id> <iq> run  o off\r\n"
+			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)  g <id> <iq> run  o off\r\n"
 				"p print  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
 			break;
 		default:

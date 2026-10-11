@@ -27,6 +27,7 @@ static float dc_float;
 static float center_f;
 
 volatile float g_iq, g_id;
+volatile float g_vq_f, g_iq_f;
 
 volatile uint8_t control_enabled = 0;
 
@@ -126,6 +127,9 @@ void currentLoop(void) {
 			v_q = g_vq_cmd;
 		}
 	}
+	/* ~0.4 ms low-pass, read by slow routines in main ('k' back-EMF) */
+	g_vq_f += 0.1f * (v_q - g_vq_f);
+	g_iq_f += 0.1f * (iq - g_iq_f);
 
 	/* volts -> per-unit of Vdc/sqrt(3), then limit the vector (keeps its direction) */
 	float k = SQRT3 / vin;
