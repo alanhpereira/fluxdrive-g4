@@ -12,7 +12,8 @@
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 2u		/* bump when the struct layout changes */
+#define PARAM_VERSION 3u		/* bump when the struct layout changes */
+#define PARAM_V2_SIZE 104u	/* v2 = v3 without the outer loop block; migrated on load */
 
 typedef struct {
 	/* header */
@@ -45,6 +46,12 @@ typedef struct {
 	/* limits */
 	float vbus_min, vbus_max; /* V */
 	float temp_max;			  /* deg C */
+
+	/* outer loops (v3+, keep appended after v2 fields: v2 copies are migrated as a prefix) */
+	float vel_kp;  /* A per turn/s */
+	float vel_ki;  /* A per turn */
+	float pos_kp;  /* turn/s per turn */
+	float vel_lim; /* turn/s, position mode speed limit and overspeed trip (x1.5) */
 
 	uint32_t crc; /* CRC32 of everything above; keep last */
 } motor_params_t;

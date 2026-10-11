@@ -81,6 +81,7 @@ HAL_StatusTypeDef MT6835_ReadAngle(MT6835_HandleTypeDef* hMT6835) {
 HAL_StatusTypeDef MT6835_StartBurst(MT6835_HandleTypeDef* hMT6835) {
 	HAL_StatusTypeDef status;
 	if (hMT6835->bursting) return HAL_BUSY;
+	hMT6835->angle_valid = 0; /* the angle may have moved (or been re-zeroed) while stopped */
 
 	HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_RESET);
 
@@ -125,12 +126,22 @@ static inline uint32_t MT6835_DecodeAngle(const volatile uint8_t* data) {
 	return ((uint32_t)data[0] << 13) | ((uint32_t)data[1] << 5) | ((uint32_t)data[2] >> 3);
 }
 
+/* a jump of more than half a turn between samples is a wrap through zero (needs < 0.5 turn per
+ * ~36 us burst, i.e. under ~800k rpm). turns is written before angle; see MT6835_Position() */
+static inline void MT6835_UpdateAngle(MT6835_HandleTypeDef* hMT6835, uint32_t a) {
+	if (hMT6835->angle_valid) {
+		int32_t d = (int32_t)a - (int32_t)hMT6835->angle;
+		if (d < -(1 << 20)) hMT6835->turns++;
+		else if (d > (1 << 20)) hMT6835->turns--;
+	}
+	hMT6835->angle_valid = 1;
+	hMT6835->angle = a;
+}
+
 void MT6835_RxHalfCpltCallback(MT6835_HandleTypeDef* hMT6835) {
-	hMT6835->angle = MT6835_DecodeAngle(
-		&hMT6835->dma_buffer[BURST_RED * 4 - 4]);
+	MT6835_UpdateAngle(hMT6835, MT6835_DecodeAngle(&hMT6835->dma_buffer[BURST_RED * 4 - 4]));
 }
 
 void MT6835_RxCpltCallback(MT6835_HandleTypeDef* hMT6835) {
-	hMT6835->angle = MT6835_DecodeAngle(
-		&hMT6835->dma_buffer[BURST_RED * 8 - 4]);
+	MT6835_UpdateAngle(hMT6835, MT6835_DecodeAngle(&hMT6835->dma_buffer[BURST_RED * 8 - 4]));
 }

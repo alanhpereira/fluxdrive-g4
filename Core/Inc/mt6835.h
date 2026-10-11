@@ -35,6 +35,8 @@ typedef struct {
 	uint8_t tx_data[3];
 	uint8_t rx_data[3];
 	volatile uint32_t angle;
+	volatile int32_t turns; /* full revolutions counted from burst start, raw encoder direction */
+	uint8_t angle_valid;	/* 0 until the first burst sample, so start-up does not count a fake wrap */
 	__ALIGNED(4)
 	volatile uint8_t dma_buffer[BURST_RED * 8];
 
@@ -50,5 +52,18 @@ HAL_StatusTypeDef MT6835_StopBurst(MT6835_HandleTypeDef* hMT6835);
 HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835);
 void MT6835_RxHalfCpltCallback(MT6835_HandleTypeDef* hMT6835);
 void MT6835_RxCpltCallback(MT6835_HandleTypeDef* hMT6835);
+
+/* multi-turn position in counts (2^21 per turn), raw encoder direction.
+ * Safe from thread context: retries if the DMA callback updated in between.
+ * Inside an ISR of the same priority as the SPI DMA, turns/angle can be read directly. */
+static inline int64_t MT6835_Position(const MT6835_HandleTypeDef* h) {
+	int32_t t;
+	uint32_t a;
+	do {
+		t = h->turns;
+		a = h->angle;
+	} while (t != h->turns);
+	return ((int64_t)t << 21) + (int64_t)a;
+}
 
 #endif

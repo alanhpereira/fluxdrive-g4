@@ -21,6 +21,11 @@ volatile uint16_t g_rec_n;
 volatile uint8_t g_rec_state, g_rec_use_q;
 volatile pi_t g_pi_d, g_pi_q;
 volatile float g_id_ref, g_iq_ref;
+volatile loop_t g_loop = LOOP_CURRENT;
+volatile pi_t g_pi_vel;
+volatile float g_vel_ref;
+volatile int64_t g_pos_ref_new;
+volatile uint8_t g_pos_ref_req;
 
 void pi_apply(void) {
 	const float ts = 1.0f / CTRL_FS_HZ;
@@ -28,6 +33,8 @@ void pi_apply(void) {
 	g_pi_d.ki_ts = g_params.ki_d * ts;
 	g_pi_q.kp = g_params.kp_q;
 	g_pi_q.ki_ts = g_params.ki_q * ts;
+	g_pi_vel.kp = g_params.vel_kp;
+	g_pi_vel.ki_ts = g_params.vel_ki / OUTER_FS_HZ;
 }
 
 /* ------------------------------------------------------------------ UART RX (single bytes, IRQ) */
@@ -84,8 +91,19 @@ static void begin(void) {
 	uart_wait_idle();
 }
 
-/* ramp the current references to zero, then switch off (100 ms) */
+/* speed/position mode: brake to (almost) zero speed under the speed loop first, so switching off
+ * does not short-brake a spinning motor. Then ramp the current references to zero and switch off */
 static void run_stop(void) {
+	if (g_loop != LOOP_CURRENT) {
+		g_vel_ref = 0.0f;
+		g_loop = LOOP_VEL;
+		uint32_t t0 = HAL_GetTick();
+		while (fabsf(g_vel) > 0.2f && HAL_GetTick() - t0 < 3000) {
+			HAL_Delay(1);
+			if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) break;
+		}
+		g_loop = LOOP_CURRENT; /* currentLoop() leaves g_iq_ref at its last value */
+	}
 	for (int i = 0; i < 20; i++) {
 		g_id_ref *= 0.8f;
 		g_iq_ref *= 0.8f;
@@ -106,6 +124,7 @@ static void finish(void) {
 	g_vd_cmd = 0;
 	g_vq_cmd = 0;
 	g_mode = CTRL_OFF;
+	g_loop = LOOP_CURRENT;
 	g_telem_en = 1;
 }
 
@@ -404,6 +423,7 @@ static const char* cal_kv(void) {
 
 	g_mode = CTRL_OFF;
 	HAL_Delay(1);
+	g_loop = LOOP_CURRENT;
 	g_id_ref = 0.0f;
 	g_iq_ref = 0.0f;
 	g_mode = CTRL_RUN;
@@ -474,21 +494,80 @@ static const char* cal_kv(void) {
 }
 
 /* ------------------------------------------------------------------ closed loop current run */
-/* 'g <id> <iq>': returns 1 if the loop is now running (caller must not finish()) */
-static int run_start(char* args) {
-	const char* e;
+/* checks, then puts the current loop in CTRL_RUN (current mode, zero references) if it is not
+ * running yet. Returns 1 if running */
+static int run_enter(int outer) {
+	const char* e = NULL;
 	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID;
-	if ((g_params.flags & need) != need) {
-		say("FAILED: run 'e' and 't' first\r\n");
-		return 0;
-	}
-	if ((e = precheck())) {
+	if ((g_params.flags & need) != need) e = "run 'e' and 't' first";
+	else if (outer && !(g_params.vel_kp > 0.0f)) e = "set the speed gains first (s vkp ..., s vki ...)";
+	else if (outer && !(g_params.vel_lim > 0.0f)) e = "set the speed limit first (s vlim <turn/s>)";
+	else e = precheck();
+	if (e) {
 		say("FAILED: %s\r\n", e);
 		return 0;
 	}
+	if (g_mode != CTRL_RUN) {
+		g_mode = CTRL_OFF; /* currentLoop() holds the integrators at zero */
+		HAL_Delay(1);
+		g_loop = LOOP_CURRENT;
+		g_id_ref = 0.0f;
+		g_iq_ref = 0.0f;
+		g_mode = CTRL_RUN;
+	}
+	return 1;
+}
+
+/* 'v <rpm>': speed mode */
+static int run_vel(char* args) {
+	float rpm = strtof(args, NULL);
+	float lim = g_params.vel_lim * 60.0f;
+	if (fabsf(rpm) > lim) {
+		rpm = copysignf(lim, rpm);
+		say("limited to vlim %.0f rpm\r\n", (double)lim);
+	}
+	if (!run_enter(1)) return 0;
+	g_id_ref = 0.0f;
+	g_vel_ref = rpm / 60.0f; /* reference first, then the switch: the ISR never sees a stale one */
+	g_loop = LOOP_VEL;
+	say("speed %.1f rpm   ('o' stops)\r\n", (double)rpm);
+	return 1;
+}
+
+/* 'a <turns>': position mode, turns from home ('h') */
+static int run_pos(char* args) {
+	if (!(g_params.pos_kp > 0.0f)) {
+		say("FAILED: set the position gain first (s pkp ...)\r\n");
+		return 0;
+	}
+	double t = strtod(args, NULL); /* double: 53 bits hold the full Q32.32 range at encoder resolution */
+	if (!(fabs(t) < 2.0e9)) {
+		say("FAILED: target out of range\r\n");
+		return 0;
+	}
+	if (!run_enter(1)) return 0;
+	g_id_ref = 0.0f;
+
+	/* hand over the reference and wait until currentLoop() has latched it, then switch */
+	g_pos_ref_new = (pos_q32_t)llround(t * POS_Q32_ONE);
+	g_pos_ref_req = 1;
+	uint32_t t0 = HAL_GetTick();
+	while (g_pos_ref_req) {
+		if (HAL_GetTick() - t0 > 10) {
+			say("FAILED: control loop not running\r\n");
+			return 0;
+		}
+	}
+	g_loop = LOOP_POS;
+	say("position %.4f turns (now %.4f)   ('o' stops)\r\n", (double)t, (double)g_pos);
+	return 1;
+}
+
+/* current mode: 'g <id> <iq>', or 'i <iq>' with id = 0 */
+static int run_start(char* args, int iq_only) {
 	char* end;
-	float id = strtof(args, &end);
-	float iq = strtof(end, NULL);
+	float id = iq_only ? 0.0f : strtof(args, &end);
+	float iq = strtof(iq_only ? args : end, NULL);
 	float mag = sqrtf(id * id + iq * iq);
 	if (mag > g_params.rated_current) { /* scale the vector, keep its direction */
 		float sc = g_params.rated_current / mag;
@@ -497,17 +576,10 @@ static int run_start(char* args) {
 		say("limited to rated %.2f A\r\n", (double)g_params.rated_current);
 	}
 
-	if (g_mode != CTRL_RUN) { /* fresh start; while running only the references change */
-		g_mode = CTRL_OFF;		/* currentLoop() holds the integrators at zero */
-		HAL_Delay(1);
-		g_id_ref = id;
-		g_iq_ref = iq;
-		g_mode = CTRL_RUN;
-	}
-	else {
-		g_id_ref = id;
-		g_iq_ref = iq;
-	}
+	if (!run_enter(0)) return 0;
+	g_loop = LOOP_CURRENT; /* switch first: from here on the ISR no longer writes g_iq_ref */
+	g_id_ref = id;
+	g_iq_ref = iq;
 	say("run id %.3f A  iq %.3f A   ('o' stops)\r\n", (double)id, (double)iq);
 	return 1;
 }
@@ -519,9 +591,11 @@ static void run_watchdog(void) {
 	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = "overcurrent";
 	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = "bridge fault";
 	else if (g_vin < g_params.vbus_min) e = "bus voltage too low";
+	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = "overspeed (1.5 x vlim)";
 	if (!e) return;
 
 	g_mode = CTRL_OFF; /* immediately, no ramp: the loop is not in control any more */
+	g_loop = LOOP_CURRENT;
 	g_id_ref = 0.0f;
 	g_iq_ref = 0.0f;
 	begin();
@@ -554,6 +628,10 @@ static const struct {
 	{"vmin", &g_params.vbus_min, 'f'},
 	{"vmax", &g_params.vbus_max, 'f'},
 	{"tmax", &g_params.temp_max, 'f'},
+	{"vkp", &g_params.vel_kp, 'f'},
+	{"vki", &g_params.vel_ki, 'f'},
+	{"pkp", &g_params.pos_kp, 'f'},
+	{"vlim", &g_params.vel_lim, 'f'},
 };
 
 static void set_param(char* args) {
@@ -585,6 +663,8 @@ static void print_params(void) {
 	say("Rd %.4f  Rq %.4f ohm   Ld %.1f  Lq %.1f uH\r\n", (double)p->rd, (double)p->rq, (double)(p->ld * 1e6f), (double)(p->lq * 1e6f));
 	say("rated %.2f A  imax %.2f A  cscale %.6f  vscale %.6f\r\n", (double)p->rated_current, (double)p->max_current, (double)p->cur_scale, (double)p->vin_scale);
 	say("kp/ki d %.4f %.2f  q %.4f %.2f  bw %.0f Hz\r\n", (double)p->kp_d, (double)p->ki_d, (double)p->kp_q, (double)p->ki_q, (double)p->cur_BW);
+	say("speed kp %.4f A/(turn/s) ki %.4f A/turn  pos kp %.2f 1/s  vlim %.2f turn/s (%.0f rpm)\r\n", (double)p->vel_kp,
+		(double)p->vel_ki, (double)p->pos_kp, (double)p->vel_lim, (double)(p->vel_lim * 60.0f));
 	say("vbus %.1f..%.1f V  tmax %.0f C  flags 0x%02lX  seq %lu\r\n", (double)p->vbus_min, (double)p->vbus_max, (double)p->temp_max, (unsigned long)p->flags, (unsigned long)p->seq);
 }
 
@@ -648,10 +728,23 @@ static void dispatch(char* line) {
 			run("autotune", pi_autotune);
 			break;
 		case 'g':
-			if (run_start(line + 1)) {
+		case 'i':
+		case 'v':
+		case 'a': {
+			int ok;
+			if (line[0] == 'g' || line[0] == 'i') ok = run_start(line + 1, line[0] == 'i');
+			else if (line[0] == 'v') ok = run_vel(line + 1);
+			else ok = run_pos(line + 1);
+			if (ok) {
 				g_telem_en = 1; /* keep running: no finish() */
 				return;
 			}
+			break;
+		}
+		case 'h':
+			if (g_mode == CTRL_RUN) run_stop(); /* a moving zero would kick the position loop */
+			g_home_req = 1; /* currentLoop() takes the present position as 0 */
+			say("home set\r\n");
 			break;
 		case 'o':
 			say("off\r\n");
@@ -660,7 +753,8 @@ static void dispatch(char* line) {
 			reset_encoder();
 			break;
 		case '?':
-			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)  g <id> <iq> run  o off\r\n"
+			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)\r\n"
+				"g <id> <iq> current  i <iq> (id = 0)  v <rpm> speed  a <turns> position  h home  o off\r\n"
 				"p print  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
 			break;
 		default:

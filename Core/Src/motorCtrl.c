@@ -28,6 +28,8 @@ static float center_f;
 
 volatile float g_iq, g_id;
 volatile float g_vq_f, g_iq_f;
+volatile float g_vel, g_pos, g_rpm;
+volatile uint8_t g_home_req;
 
 volatile uint8_t control_enabled = 0;
 
@@ -97,8 +99,83 @@ void SVPWM(float alpha, float beta) {
 	setDuty(out_a, out_b, out_c);
 }
 
+/* ------------------------------------------------------------------ position / speed estimate */
+/* PLL: critically damped, kp = 2*wb, ki = wb^2. 2000 rad/s (~320 Hz) leaves room for a speed loop of ~100 Hz */
+#define PLL_BW 2000.0f
+#define PLL_KP (2.0f * PLL_BW)
+#define PLL_KI_TS (PLL_BW * PLL_BW / CTRL_FS_HZ)
+
+static int64_t s_home;	   /* counts, motor direction */
+static pos_q32_t s_pos;	   /* from home, motor direction */
+static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
+static uint32_t s_pll_ph;  /* Q32 = one turn, motor direction */
+static float s_pll_vel;	   /* turn/s */
+static uint8_t s_pll_init;
+static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
+
+static void motion_update(uint32_t ang) {
+	/* this ISR and the SPI DMA callback share priority 0, so turns and ang belong together */
+	int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
+	int64_t p = (g_params.enc_dir > 0) ? raw : -raw;
+	if (g_home_req) {
+		s_home = p;
+		g_home_req = 0;
+	}
+	if (g_pos_ref_req) {
+		s_pos_ref = g_pos_ref_new;
+		g_pos_ref_req = 0;
+	}
+	s_pos = (p - s_home) * 2048; /* counts -> Q32.32 */
+	g_pos = (float)(int32_t)(s_pos >> 32) + (float)(uint32_t)s_pos * (float)(1.0 / POS_Q32_ONE);
+
+	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
+	if (!s_pll_init) {
+		s_pll_ph = ph;
+		s_pll_vel = 0.0f;
+		s_pll_init = 1;
+	}
+	float err = (float)(int32_t)(ph - s_pll_ph) * (1.0f / 4294967296.0f); /* turns, wraps correctly */
+	s_pll_vel += PLL_KI_TS * err;
+	s_pll_ph += (uint32_t)(int32_t)((s_pll_vel + PLL_KP * err) * (4294967296.0f / CTRL_FS_HZ));
+	g_vel = s_pll_vel;
+	g_rpm = s_pll_vel * 60.0f;
+}
+
+/* ------------------------------------------------------------------ speed / position loops */
+/* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ */
+static void outer_loops(ctrl_mode_t mode) {
+	static loop_t prev = LOOP_CURRENT;
+	static int div;
+	loop_t lp = (mode == CTRL_RUN) ? g_loop : LOOP_CURRENT;
+
+	if (lp == LOOP_CURRENT) {
+		pi_reset(&g_pi_vel);
+		s_vel_ref_eff = NAN;
+		div = OUTER_DIV; /* run on the first cycle after switching in */
+	}
+	else {
+		if (prev == LOOP_CURRENT) g_pi_vel.integ = g_iq_ref; /* bumpless: carry on from the present current */
+		if (++div >= OUTER_DIV) {
+			div = 0;
+			float lim = g_params.vel_lim;
+			float vref = g_vel_ref;
+			if (lp == LOOP_POS) {
+				/* exact integer difference; only the (small) error becomes a float */
+				float err = (float)(s_pos_ref - s_pos) * (float)(1.0 / POS_Q32_ONE);
+				vref = g_params.pos_kp * err;
+			}
+			if (vref > lim) vref = lim;
+			else if (vref < -lim) vref = -lim;
+			s_vel_ref_eff = vref;
+			g_iq_ref = pi_run(&g_pi_vel, vref - s_pll_vel, g_params.rated_current);
+		}
+	}
+	prev = lp;
+}
+
 void currentLoop(void) {
 	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
+	motion_update(ang);
 
 	/* angle: forced during calibration, encoder otherwise */
 	uint32_t theta = (g_mode == CTRL_CAL) ? g_theta_cmd : elec_angle(ang);
@@ -116,6 +193,7 @@ void currentLoop(void) {
 	float vin = g_vin > 1.0f ? g_vin : 1.0f;
 	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
 	ctrl_mode_t mode = g_mode;
+	outer_loops(mode);
 	if (mode == CTRL_RUN) {
 		pi_current_step(id, iq, 0.9f * vin / SQRT3, &v_d, &v_q);
 	}
@@ -169,6 +247,10 @@ void currentLoop(void) {
 			telemetry.v[4] = g_cur[2];
 			telemetry.v[5] = id;
 			telemetry.v[6] = iq;
+			telemetry.v[7] = g_rpm;
+			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
+			telemetry.v[9] = g_pos;
+			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}
 	}

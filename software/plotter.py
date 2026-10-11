@@ -31,10 +31,12 @@ CYCLES_PER_FRAME = 10    # control cycles between frames
 
 # One entry per plot: (title, [(float index, label, color), ...])
 PLOTS = [
-    ("Angle", [(0, "theta", "w")]),
+    #("Angle", [(0, "theta", "w")]),
     #("Bus voltage", [(1, "Vin", "y")]),
-    ("Phase currents", [(2, "Ia", "r"), (3, "Ib", "g"), (4, "Ic", "c")]),
+    #("Phase currents", [(2, "Ia", "r"), (3, "Ib", "g"), (4, "Ic", "c")]),
     ("Id / Iq", [(5, "Id", "m"), (6, "Iq", "w")]),
+    ("Speed (rpm)", [(7, "rpm", "y"), (8, "ref", "r")]),
+    ("Position (turns)", [(9, "pos", "c"), (10, "ref", "r")]),
 ]
 
 

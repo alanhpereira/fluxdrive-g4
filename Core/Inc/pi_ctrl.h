@@ -13,6 +13,12 @@ typedef struct {
 /* defined in calib.c; gains written from main (pi_apply), integrators owned by currentLoop() */
 extern volatile pi_t g_pi_d, g_pi_q;
 extern volatile float g_id_ref, g_iq_ref; /* A */
+extern volatile pi_t g_pi_vel;			  /* speed loop, output A, runs at OUTER_FS_HZ */
+extern volatile float g_vel_ref;		  /* turn/s, LOOP_VEL */
+/* LOOP_POS reference, turns from home. 64-bit writes are not atomic on the M4, so main hands it over:
+ * write g_pos_ref_new, set g_pos_ref_req = 1, wait until currentLoop() clears it */
+extern volatile int64_t g_pos_ref_new;
+extern volatile uint8_t g_pos_ref_req;
 
 static inline void pi_reset(volatile pi_t* c) {
 	c->integ = 0.0f;
