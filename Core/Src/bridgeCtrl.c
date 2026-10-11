@@ -39,6 +39,15 @@ HAL_StatusTypeDef initBridge() {
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 	// ser scref for shutting drivers down to SCREF MV
 	HAL_DAC_SetValue(&hdac1, DAC1_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF * SCREF_MV / 3300);
+
+	/* cold power-up: the driver supply comes up after the MCU. Give it up to 100 ms to report ready,
+	 * then clear what it latched on the way up (RESET, VCC_UVLO); checkAndClearBridgeFault() retries */
+	uint32_t t0 = HAL_GetTick();
+	while (HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin) == GPIO_PIN_RESET && HAL_GetTick() - t0 < 100) {
+	}
+	uint8_t clr = 0xFF;
+	HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_CLEAR, I2C_MEMADD_SIZE_8BIT, &clr, 1, 10);
+
 	status = HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 	if (status != HAL_OK) {
 		disableBridge();
@@ -77,36 +86,52 @@ HAL_StatusTypeDef initBridge() {
 	return HAL_OK;
 }
 
+HAL_StatusTypeDef readBridgeStatus(uint8_t* status) {
+	return HAL_I2C_Mem_Read(&hi2c3, DRV_I2C_ADDR, DRV_REG_STATUS, I2C_MEMADD_SIZE_8BIT, status, 1, 10);
+}
+
+/* Returns 0 if the bridge is running, 1 if a fault was just cleared, negative while still faulted
+ * (BRIDGE_ERR_* or -(status fault bits)). The I2C traffic only happens while faulted, and at most
+ * every FAULT_RETRY_MS, so calling this from every loop is cheap. */
 int32_t checkAndClearBridgeFault() {
-	HAL_StatusTypeDef rc = HAL_I2C_Mem_Read(&hi2c3, 0x47 << 1, 0x80, I2C_MEMADD_SIZE_8BIT, &fault_reg, 1, 10);
+	static uint32_t last_try;
+	static uint8_t i2c_fails;
 
-	uint32_t bdtr = TIM1->BDTR;
-	uint32_t sr = TIM1->SR;
+	int moe_off = (TIM1->BDTR & TIM_BDTR_MOE) == 0;
+	int brk_set = (TIM1->SR & (TIM_SR_BIF | TIM_SR_B2IF)) != 0;
+	if (!moe_off && !brk_set) return 0;
 
-	int moe_off = (bdtr & TIM_BDTR_MOE) == 0;
-	int brk_set = (sr & (TIM_SR_BIF | TIM_SR_B2IF)) != 0;
+	uint32_t now = HAL_GetTick();
+	if (now - last_try < FAULT_RETRY_MS) return BRIDGE_ERR_WAIT;
+	last_try = now;
 
-	if (rc == HAL_OK && (moe_off || brk_set)) {
-		if (fault_reg & 0x03) {
-			return -(fault_reg & 3);
+	if (readBridgeStatus(&fault_reg) != HAL_OK) {
+		/* driver not answering yet, or the HAL/bus got stuck: start the peripheral over */
+		if (++i2c_fails >= 5) {
+			i2c_fails = 0;
+			HAL_I2C_DeInit(&hi2c3);
+			MX_I2C3_Init();
 		}
-		else {
-			if (fault_reg & 0x0C) {	 // latched RESET / VDS_P: clear the driver latch
-				uint8_t v = 0xFF;
-				HAL_I2C_Mem_Write(&hi2c3, 0x47 << 1, 0x09, I2C_MEMADD_SIZE_8BIT, &v, 1, 10);
-			}
-			if (GPIOE->IDR & GPIO_PIN_15) {	 // nFAULT released → break input inactive
-				setDuty(0, 0, 0);
-				TIM1->EGR = TIM_EGR_UG;	 // load zero duty now (also resets the counter)
-				__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_BREAK | TIM_FLAG_BREAK2);
-				__HAL_TIM_MOE_ENABLE(&htim1);
-				g_lastFaultCleared = HAL_GetTick();
-				return 1;
-			}
-			return -8;
-		}
+		return BRIDGE_ERR_I2C;
 	}
-	return 0;
+	i2c_fails = 0;
+
+	/* any latched fault, including VCC_UVLO from a slow power-up, must be cleared explicitly.
+	 * If the condition is still there the bit comes straight back and we retry next time */
+	if (fault_reg & DRV_ST_FAULTS) {
+		uint8_t v = 0xFF;
+		HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_CLEAR, I2C_MEMADD_SIZE_8BIT, &v, 1, 10);
+		return -(int32_t)(fault_reg & DRV_ST_FAULTS);
+	}
+
+	if (!(GPIOE->IDR & GPIO_PIN_15)) return BRIDGE_ERR_NFAULT; /* nFAULT still low: break input active */
+
+	setDuty(0, 0, 0);
+	TIM1->EGR = TIM_EGR_UG; // load zero duty now (also resets the counter)
+	__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_BREAK | TIM_FLAG_BREAK2);
+	__HAL_TIM_MOE_ENABLE(&htim1);
+	g_lastFaultCleared = HAL_GetTick();
+	return 1;
 }
 
 void HAL_TIMEx_BreakCallback(TIM_HandleTypeDef* htim) {

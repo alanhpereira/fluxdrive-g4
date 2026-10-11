@@ -657,6 +657,19 @@ static void set_param(char* args) {
 	say("unknown key '%s'\r\n", key);
 }
 
+/* 'f': gate driver / bridge state, for start-up and fault debugging */
+static void print_fault(void) {
+	uint8_t st = 0;
+	HAL_StatusTypeDef rc = readBridgeStatus(&st);
+	if (rc != HAL_OK) say("driver status: I2C error %d\r\n", (int)rc);
+	else
+		say("driver status 0x%02X:%s%s%s%s%s\r\n", st, (st & 0x01) ? " VCC_UVLO" : "", (st & 0x02) ? " THSD" : "",
+			(st & 0x04) ? " VDS_P" : "", (st & 0x08) ? " RESET" : "", (st & 0x80) ? " (locked)" : "");
+	say("MOE %d  break flag %d  nFAULT %s  READY %s\r\n", (TIM1->BDTR & TIM_BDTR_MOE) ? 1 : 0,
+		(TIM1->SR & TIM_SR_BIF) ? 1 : 0, (GPIOE->IDR & GPIO_PIN_15) ? "high (ok)" : "LOW (fault)",
+		HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin) ? "high" : "low");
+}
+
 static void print_params(void) {
 	const motor_params_t* p = &g_params;
 	say("pp %u  dir %+d  offset %lu  kv %.2f\r\n", p->pole_pairs, p->enc_dir, (unsigned long)p->elec_offset, (double)p->kv);
@@ -752,10 +765,13 @@ static void dispatch(char* line) {
 		case 'z':
 			reset_encoder();
 			break;
+		case 'f':
+			print_fault();
+			break;
 		case '?':
 			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)\r\n"
 				"g <id> <iq> current  i <iq> (id = 0)  v <rpm> speed  a <turns> position  h home  o off\r\n"
-				"p print  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
+				"p print  f fault status  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
 			break;
 		default:
 			break; /* unknown / stray text: ignored */
