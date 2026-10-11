@@ -34,9 +34,9 @@ typedef struct {
 	uint8_t bursting;
 	uint8_t tx_data[3];
 	uint8_t rx_data[3];
-	uint32_t angle;
+	volatile uint32_t angle;
 	__ALIGNED(4)
-	uint8_t dma_buffer[BURST_RED * 8];
+	volatile uint8_t dma_buffer[BURST_RED * 8];
 
 } MT6835_HandleTypeDef;
 extern MT6835_HandleTypeDef hMT6835;
@@ -47,6 +47,7 @@ HAL_StatusTypeDef MT6835_SetZero(MT6835_HandleTypeDef* hMT6835);
 HAL_StatusTypeDef MT6835_ReadAngle(MT6835_HandleTypeDef* hMT6835);
 HAL_StatusTypeDef MT6835_StartBurst(MT6835_HandleTypeDef* hMT6835);
 HAL_StatusTypeDef MT6835_StopBurst(MT6835_HandleTypeDef* hMT6835);
+HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835);
 void MT6835_RxHalfCpltCallback(MT6835_HandleTypeDef* hMT6835);
 void MT6835_RxCpltCallback(MT6835_HandleTypeDef* hMT6835);
 

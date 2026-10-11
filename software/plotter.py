@@ -22,6 +22,7 @@ import numpy as np
 import pyqtgraph as pg
 import serial
 from pyqtgraph.Qt import QtCore
+import sys, time
 
 HDR = b"\xA5\x5A"
 FRAME = 72
@@ -69,9 +70,14 @@ class Receiver(threading.Thread):
             while True:
                 i = buf.find(HDR)
                 if i < 0:
+                    txt = bytes(buf[:-1])
+                    if txt: sys.stdout.write(bytes(b for b in txt if b in (9, 10, 13) or 32 <= b < 127).decode()); sys.stdout.flush()
+    
                     del buf[:-1]         # keep 1 byte in case the header is split
                     break
                 if i:
+                    txt = bytes(buf[:i])
+                    sys.stdout.write(bytes(b for b in txt if b in (9, 10, 13) or 32 <= b < 127).decode()); sys.stdout.flush()
                     del buf[:i]
                 if len(buf) < FRAME + 2:
                     break                # need the next header to confirm this frame
@@ -135,6 +141,13 @@ def main():
 
     rx = Receiver(args.port, args.baud, cap, args.log)
     rx.start()
+    def stdin_loop():
+        for line in sys.stdin:
+            if line.strip():
+                for ch in (line.strip() + "\n").encode():
+                    rx.ser.write(bytes([ch]))
+                    time.sleep(0.001)
+    threading.Thread(target=stdin_loop, daemon=True).start()
     pg.setConfigOptions(useOpenGL=True, antialias=False)
     pg.mkQApp("Telemetry")
     win = pg.GraphicsLayoutWidget(title="Telemetry")

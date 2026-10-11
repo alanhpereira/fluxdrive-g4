@@ -110,6 +110,16 @@ HAL_StatusTypeDef MT6835_StopBurst(MT6835_HandleTypeDef* hMT6835) {
 	return status;
 }
 
+HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835) {
+	HAL_StatusTypeDef status;
+	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, 0x00);
+	if (status != HAL_OK) return status;
+	uint8_t tmp;
+	status = MT6835_ReadRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, &tmp);
+	if (status != HAL_OK) return status;
+	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, tmp & 0x0f);
+	return status;
+}
 static inline uint32_t MT6835_DecodeAngle(const uint8_t* data) {
 	return ((uint32_t)data[0] << 13) | ((uint32_t)data[1] << 5) | ((uint32_t)data[2] >> 3);
 }

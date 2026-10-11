@@ -77,6 +77,7 @@ endif
 C_SOURCES =  \
 Core/Src/adc.c \
 Core/Src/bridgeCtrl.c \
+Core/Src/calib.c \
 Core/Src/cordic.c \
 Core/Src/cordicMgr.c \
 Core/Src/curSnsCtrl.c \
@@ -89,6 +90,7 @@ Core/Src/main.c \
 Core/Src/motorCtrl.c \
 Core/Src/mt6835.c \
 Core/Src/opamp.c \
+Core/Src/params.c \
 Core/Src/spi.c \
 Core/Src/stm32g4xx_hal_msp.c \
 Core/Src/stm32g4xx_it.c \

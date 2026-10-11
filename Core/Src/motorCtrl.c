@@ -4,6 +4,9 @@
 #include "usart.h"
 #include "cordicMgr.h"
 #include "mt6835.h"
+#include "params.h"
+#include "calib.h"
+#include "pi_ctrl.h"
 
 #define SQRT3_2 0.8660254f
 #define INV_SQRT3 0.57735027f
@@ -49,26 +52,6 @@ HAL_StatusTypeDef initMotor() {
 	}
 	dc_float = g_max_duty_cycle * INV_SQRT3;
 	center_f = (float)g_half_duty_cycle + 0.5f;
-	MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x0f);
-	uint32_t last_fault = HAL_GetTick();
-	control_enabled = 0;
-	g_vin = 0;
-	while (HAL_GetTick() < last_fault + 200) {
-		if (g_vin > 0.1) {
-			SVPWM(5 / g_vin * ((HAL_GetTick() - last_fault) / 200.0f), 0);
-		}
-		else {
-			SVPWM(0, 0);
-			last_fault = HAL_GetTick();
-		}
-		if (checkAndClearBridgeFault() != 0) {
-			SVPWM(0, 0);
-			last_fault = HAL_GetTick();
-		}
-	}
-	HAL_Delay(100);
-	MT6835_SetZero(&hMT6835);
-	SVPWM(0, 0);
 	MT6835_StartBurst(&hMT6835);
 	telemetry.sync[0] = 0xA5;
 	telemetry.sync[1] = 0x5A;
@@ -113,43 +96,76 @@ void SVPWM(float alpha, float beta) {
 	setDuty(out_a, out_b, out_c);
 }
 
-void currentLoop() {
-	float alpha, beta;
-	uint32_t ang = hMT6835.angle;
-	if (!control_enabled) return;
-	float sin_ang, cos_ang;
-	sincos_q31((ang << 11) * POLE_PAIRS + ELEC_OFFSET, &sin_ang, &cos_ang);
+void currentLoop(void) {
+	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
 
-	float al, be, iq, id;
-	clarke(g_cur[0], g_cur[1], g_cur[2], &al, &be);
-	park(al, be, sin_ang, cos_ang, &id, &iq);
+	/* angle: forced during calibration, encoder otherwise */
+	uint32_t theta = (g_mode == CTRL_CAL) ? g_theta_cmd : elec_angle(ang);
+	float sin_ang, cos_ang;
+	sincos_q31(theta, &sin_ang, &cos_ang);
+
+	/* measurement */
+	float i_alpha, i_beta, id, iq;
+	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
+	park(i_alpha, i_beta, sin_ang, cos_ang, &id, &iq);
 	g_id = id;
 	g_iq = iq;
 
-	if (cycles_since_last_frame >= 10) {
+	/* voltage command in volts */
+	float vin = g_vin > 1.0f ? g_vin : 1.0f;
+	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
+	ctrl_mode_t mode = g_mode;
+	if (mode == CTRL_RUN) {
+		pi_current_step(id, iq, 0.9f * vin / SQRT3, &v_d, &v_q);
+	}
+	else {
+		pi_reset(&g_pi_d); /* start from zero on the next CTRL_RUN */
+		pi_reset(&g_pi_q);
+		if (mode == CTRL_CAL) {
+			v_d = g_vd_cmd;
+			v_q = g_vq_cmd;
+		}
+	}
+
+	/* volts -> per-unit of Vdc/sqrt(3), then limit the vector (keeps its direction) */
+	float k = SQRT3 / vin;
+	float u_d = v_d * k, u_q = v_q * k;
+	// float m2 = u_d * u_d + u_q * u_q;
+	//  if (m2 > 1.0f) {
+	//  maybe use cordic
+	//  float sc = 1.0f / sqrtf(m2); /* build with -fno-math-errno so this is one vsqrt */
+	//  u_d *= sc;
+	//  u_q *= sc;
+	// }
+
+	float v_alpha, v_beta;
+	ipark(u_d, u_q, sin_ang, cos_ang, &v_alpha, &v_beta);
+	SVPWM(v_alpha, v_beta); /* apply first, log afterwards: less delay between measurement and output */
+
+	/* decay/step recorder used by the 'l' and 'q' commands */
+	if (g_rec_state == 1) {
+		g_rec_n = 0;
+		g_rec_state = 2;
+	}
+	if (g_rec_state == 2) {
+		g_rec[g_rec_n++] = g_rec_use_q ? iq : id;
+		if (g_rec_n >= REC_N) g_rec_state = 3;
+	}
+
+	/* telemetry */
+	if (++cycles_since_last_frame >= 10) {
 		cycles_since_last_frame = 0;
 		seq++;
-		if (huart1.gState == HAL_UART_STATE_READY) {
+		if (g_telem_en && huart1.gState == HAL_UART_STATE_READY) {
 			telemetry.seq = seq;
-			telemetry.v[0] = (ang * 360.0) / (1 << 21);
+			telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
 			telemetry.v[1] = g_vin;
 			telemetry.v[2] = g_cur[0];
 			telemetry.v[3] = g_cur[1];
 			telemetry.v[4] = g_cur[2];
-			telemetry.v[5] = g_id;
-			telemetry.v[6] = g_iq;
+			telemetry.v[5] = id;
+			telemetry.v[6] = iq;
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}
 	}
-
-	cycles_since_last_frame++;
-	ipark(0, 15, sin_ang, cos_ang, &alpha, &beta);
-	//  sincos_q31(HAL_GetTick() * (0xffffffff / 1000 * 7 * 0), &beta, &alpha);
-	// alpha = 3;
-	// beta = 0;
-	float inv_vin = 1 / g_vin;
-	alpha *= inv_vin;
-	beta *= inv_vin;
-	SVPWM(alpha, beta);
-	// SVPWM(0.4f, 0.0f);
 }
