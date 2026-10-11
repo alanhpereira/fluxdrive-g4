@@ -93,7 +93,8 @@ HAL_StatusTypeDef MT6835_StartBurst(MT6835_HandleTypeDef* hMT6835) {
 		HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_SET);
 		return status;
 	}
-	status = HAL_SPI_Receive_DMA(hMT6835->hspi, hMT6835->dma_buffer, BURST_RED * 8);
+	/* cast is safe: the CPU only reads the buffer through the volatile member, the DMA writes it */
+	status = HAL_SPI_Receive_DMA(hMT6835->hspi, (uint8_t*)hMT6835->dma_buffer, BURST_RED * 8);
 	if (status != HAL_OK) {
 		HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_SET);
 		return status;
@@ -120,7 +121,7 @@ HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835) {
 	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, tmp & 0x0f);
 	return status;
 }
-static inline uint32_t MT6835_DecodeAngle(const uint8_t* data) {
+static inline uint32_t MT6835_DecodeAngle(const volatile uint8_t* data) {
 	return ((uint32_t)data[0] << 13) | ((uint32_t)data[1] << 5) | ((uint32_t)data[2] >> 3);
 }
 
