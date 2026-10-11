@@ -1,5 +1,7 @@
 #include "motorCtrl.h"
 
+#include <string.h>
+
 #include "i2c.h"
 #include "usart.h"
 #include "cordicMgr.h"
@@ -17,9 +19,21 @@ static uint16_t seq;
 typedef struct {
 	uint8_t sync[2];  // 0xA5, 0x5A
 	uint16_t seq;
-	float v[17];
-} Frame;  // offsets: seq at 2, v at 4, so natural alignment, no padding
+	float v[16];
+	uint32_t sum;  // frame_sum() of the 17 words before it: lets the receiver confirm a frame by itself
+} Frame;		   // offsets: seq at 2, v at 4, sum at 68, so natural alignment, no padding
 _Static_assert(sizeof(Frame) == 72, "frame size");
+
+/* rotate-and-add over the first 17 little-endian words; must match software/plotter.py */
+static uint32_t frame_sum(const Frame* f) {
+	uint32_t s = 0x5A5AA5A5u;
+	for (int i = 0; i < 17; i++) {
+		uint32_t w;
+		memcpy(&w, (const uint8_t*)f + 4 * i, 4);
+		s = ((s << 1) | (s >> 31)) + w;
+	}
+	return s;
+}
 
 Frame telemetry;
 
@@ -105,11 +119,11 @@ void SVPWM(float alpha, float beta) {
 #define PLL_KP (2.0f * PLL_BW)
 #define PLL_KI_TS (PLL_BW * PLL_BW / CTRL_FS_HZ)
 
-static int64_t s_home;	   /* counts, motor direction */
-static pos_q32_t s_pos;	   /* from home, motor direction */
+static int64_t s_home;		/* counts, motor direction */
+static pos_q32_t s_pos;		/* from home, motor direction */
 static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
-static uint32_t s_pll_ph;  /* Q32 = one turn, motor direction */
-static float s_pll_vel;	   /* turn/s */
+static uint32_t s_pll_ph;	/* Q32 = one turn, motor direction */
+static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
 static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
 
@@ -164,8 +178,10 @@ static void outer_loops(ctrl_mode_t mode) {
 				float err = (float)(s_pos_ref - s_pos) * (float)(1.0 / POS_Q32_ONE);
 				vref = g_params.pos_kp * err;
 			}
-			if (vref > lim) vref = lim;
-			else if (vref < -lim) vref = -lim;
+			if (vref > lim)
+				vref = lim;
+			else if (vref < -lim)
+				vref = -lim;
 			s_vel_ref_eff = vref;
 			g_iq_ref = pi_run(&g_pi_vel, vref - s_pll_vel, g_params.rated_current);
 		}
@@ -251,6 +267,7 @@ void currentLoop(void) {
 			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
 			telemetry.v[9] = g_pos;
 			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
+			telemetry.sum = frame_sum(&telemetry);
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}
 	}
