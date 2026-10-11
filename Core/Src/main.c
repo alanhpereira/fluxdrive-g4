@@ -184,17 +184,7 @@ void SystemClock_Config(void) {
 }
 
 /* USER CODE BEGIN 4 */
-
-void HAL_SPI_RxHalfCpltCallback(SPI_HandleTypeDef* hspi) {
-	if (hspi == hMT6835.hspi) {
-		MT6835_RxHalfCpltCallback(&hMT6835);
-	}
-}
-void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef* hspi) {
-	if (hspi == hMT6835.hspi) {
-		MT6835_RxCpltCallback(&hMT6835);
-	}
-}
+/* MT6835 reads are triggered by TIM1 and collected in currentLoop() (see mt6835.c), no SPI callbacks */
 /* USER CODE END 4 */
 
 /**

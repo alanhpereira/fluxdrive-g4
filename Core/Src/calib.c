@@ -10,6 +10,7 @@
 #include "tim.h"
 #include "usart.h"
 #include "mt6835.h"
+#include "motorCtrl.h" /* g_loop_cyc */
 #include "pi_ctrl.h"
 
 volatile ctrl_mode_t g_mode = CTRL_OFF;
@@ -668,6 +669,18 @@ static void print_fault(void) {
 	say("MOE %d  break flag %d  nFAULT %s  READY %s\r\n", (TIM1->BDTR & TIM_BDTR_MOE) ? 1 : 0,
 		(TIM1->SR & TIM_SR_BIF) ? 1 : 0, (GPIOE->IDR & GPIO_PIN_15) ? "high (ok)" : "LOW (fault)",
 		HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin) ? "high" : "low");
+
+	/* encoder reads and loop timing: the read must end before the ADC ("late" stays 0, else lower
+	 * MT6835_GROUPS), and currentLoop() must end before the next counter bottom, ~19 us after the ADC */
+	const MT6835_HandleTypeDef* h = &hMT6835;
+	uint8_t es = h->status;
+	say("encoder: %lu reads  %lu CRC errors%s  %lu late  %lu stalls  status 0x%X%s%s%s\r\n", (unsigned long)h->samples,
+		(unsigned long)h->crc_errors, h->crc_check ? "" : " (CRC check off: every group failed)", (unsigned long)h->late,
+		(unsigned long)h->stalls, es,
+		(es & MT6835_ST_OVERSPEED) ? " OVERSPEED" : "", (es & MT6835_ST_WEAK_FIELD) ? " WEAK_FIELD" : "",
+		(es & MT6835_ST_UNDERVOLT) ? " UNDERVOLT" : "");
+	say("currentLoop %.1f us, max %.1f us since last 'f'\r\n", (double)(g_loop_cyc / 170.0f), (double)(g_loop_cyc_max / 170.0f));
+	g_loop_cyc_max = 0;
 }
 
 static void print_params(void) {
@@ -771,7 +784,7 @@ static void dispatch(char* line) {
 		case '?':
 			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)\r\n"
 				"g <id> <iq> current  i <iq> (id = 0)  v <rpm> speed  a <turns> position  h home  o off\r\n"
-				"p print  f fault status  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
+				"p print  f fault/encoder/timing status  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
 			break;
 		default:
 			break; /* unknown / stray text: ignored */

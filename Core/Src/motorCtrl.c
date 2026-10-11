@@ -44,6 +44,7 @@ volatile float g_iq, g_id;
 volatile float g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
+volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
 
 volatile uint8_t control_enabled = 0;
 
@@ -57,6 +58,9 @@ void disableMotor() {
 HAL_StatusTypeDef initMotor() {
 	HAL_StatusTypeDef status;
 	cordic_init();
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; /* DWT cycle counter, for the loop timing */
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 	status = initCS();
 	if (status != HAL_OK) {
 		disableMotor();
@@ -127,8 +131,10 @@ static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
 static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
 
-static void motion_update(uint32_t ang) {
-	/* this ISR and the SPI DMA callback share priority 0, so turns and ang belong together */
+/* age_s: how long ago the sensor sampled ang. fresh = 0 when there was no new sample (stream stalled,
+ * CRC): the PLL then only predicts */
+static void motion_update(uint32_t ang, int fresh, float age_s) {
+	/* turns and angle are only written by MT6835_Sample(), earlier in this same ISR */
 	int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
 	int64_t p = (g_params.enc_dir > 0) ? raw : -raw;
 	if (g_home_req) {
@@ -144,11 +150,14 @@ static void motion_update(uint32_t ang) {
 
 	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
 	if (!s_pll_init) {
+		if (!fresh) return; /* no encoder frame yet: nothing to lock onto */
 		s_pll_ph = ph;
 		s_pll_vel = 0.0f;
 		s_pll_init = 1;
 	}
-	float err = (float)(int32_t)(ph - s_pll_ph) * (1.0f / 4294967296.0f); /* turns, wraps correctly */
+	/* compare with where the PLL says the rotor was when the sensor sampled, not where it is now */
+	uint32_t pred = s_pll_ph - (uint32_t)(int32_t)(s_pll_vel * age_s * 4294967296.0f);
+	float err = fresh ? (float)(int32_t)(ph - pred) * (1.0f / 4294967296.0f) : 0.0f; /* turns, wraps correctly */
 	s_pll_vel += PLL_KI_TS * err;
 	s_pll_ph += (uint32_t)(int32_t)((s_pll_vel + PLL_KP * err) * (4294967296.0f / CTRL_FS_HZ));
 	g_vel = s_pll_vel;
@@ -189,14 +198,51 @@ static void outer_loops(ctrl_mode_t mode) {
 	prev = lp;
 }
 
-void currentLoop(void) {
-	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
-	motion_update(ang);
+/* ------------------------------------------------------------------ angle latency compensation */
+/* The encoder age relative to the current sample comes from MT6835_Sample() every cycle (~4 us: the
+ * last group of the read that ends just before the ADC). ENC_EXTRA_S is for delay the sensor adds
+ * itself (its filter, BW register), unknown so far */
+#define ENC_EXTRA_S 0.0f
+/* the duty written now loads at the next bottom and is centred on the following top */
+#define OUT_DELAY_S (1.0f / CTRL_FS_HZ + 0.44e-6f) /* ~40.4 us, current sample -> centre of the applied voltage */
+#define ANGLE_COMP 1										 /* 0: use the raw encoder angle for both transforms */
 
-	/* angle: forced during calibration, encoder otherwise */
-	uint32_t theta = (g_mode == CTRL_CAL) ? g_theta_cmd : elec_angle(ang);
-	float sin_ang, cos_ang;
-	sincos_q31(theta, &sin_ang, &cos_ang);
+/* time since the ADC sampled the currents (CC4 on the way up), from the TIM1 counter */
+static inline float since_current_sample_s(void) {
+	int32_t arr = (int32_t)TIM1->ARR, smp = (int32_t)TIM1->CCR4, cnt = (int32_t)TIM1->CNT;
+	int32_t d = (TIM1->CR1 & TIM_CR1_DIR) ? (arr - smp) + (arr - cnt) : cnt - smp;
+	return (float)d * (1.0f / 170e6f);
+}
+
+void currentLoop(void) {
+	static float age_cur; /* encoder sample -> current sample */
+	uint32_t c0 = DWT->CYCCNT;
+	float age;
+	int fresh = MT6835_Sample(&hMT6835, &age); /* last good group of this period's burst read */
+	age_cur = fresh ? age + ENC_EXTRA_S : age_cur + 1.0f / CTRL_FS_HZ;
+	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
+	motion_update(ang, fresh, age_cur + since_current_sample_s()); /* the PLL works in "now" time */
+
+	/* angle: forced during calibration, encoder otherwise. With the encoder, advance it by the known
+	 * delays: theta_m = rotor angle when the currents were sampled (Park), theta_o = rotor angle while the
+	 * new voltage is applied (inverse Park) */
+	uint32_t theta_m, theta_o;
+	if (g_mode == CTRL_CAL) {
+		theta_m = theta_o = g_theta_cmd;
+	}
+	else {
+		uint32_t e = elec_angle(ang);
+#if ANGLE_COMP
+		float we = s_pll_vel * (float)g_params.pole_pairs * 4294967296.0f; /* electrical Q32 per second */
+		theta_m = e + (uint32_t)(int32_t)(we * age_cur);
+		theta_o = e + (uint32_t)(int32_t)(we * (age_cur + OUT_DELAY_S));
+#else
+		theta_m = theta_o = e;
+#endif
+	}
+	float sin_ang, cos_ang, sin_o, cos_o;
+	sincos_q31(theta_m, &sin_ang, &cos_ang);
+	sincos_q31(theta_o, &sin_o, &cos_o);
 
 	/* measurement */
 	float i_alpha, i_beta, id, iq;
@@ -237,7 +283,7 @@ void currentLoop(void) {
 	// }
 
 	float v_alpha, v_beta;
-	ipark(u_d, u_q, sin_ang, cos_ang, &v_alpha, &v_beta);
+	ipark(u_d, u_q, sin_o, cos_o, &v_alpha, &v_beta);
 	SVPWM(v_alpha, v_beta); /* apply first, log afterwards: less delay between measurement and output */
 
 	/* decay/step recorder used by the 'l' and 'q' commands */
@@ -271,4 +317,8 @@ void currentLoop(void) {
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}
 	}
+
+	uint32_t dc = DWT->CYCCNT - c0;
+	g_loop_cyc = dc;
+	if (dc > g_loop_cyc_max) g_loop_cyc_max = dc;
 }

@@ -7,7 +7,7 @@ This file guides Claude Code (claude.ai/code) when it works in this repository.
 This is the firmware for a graduation-thesis BLDC/PMSM motor driver. It runs field-oriented control (FOC) on an STM32G431VB (STSPIN32G4-class part, Cortex-M4F, 170 MHz, 128 KB flash, 32 KB RAM). The hardware it drives:
 - A 3-phase bridge on TIM1, plus a gate driver on I2C3 at address `0x47`. The driver's nFAULT pin is PE15, which also feeds the TIM1 break input.
 - Three low-side shunts (2 mΩ) read through the internal OPAMPs (gain 16). ADC1 and ADC2 sample them as injected conversions, triggered by TIM1 CC4.
-- An MT6835 21-bit magnetic encoder on SPI1, with nCS on PA15. It is read in DMA burst mode.
+- An MT6835 21-bit magnetic encoder on SPI1 (10.6 MHz), with nCS on PA15. It stays in burst mode (CS held low), and a TIM1-triggered DMA read of a few angle groups runs once per PWM period.
 - USART1 at 2 Mbaud. It carries both the text command console and the binary telemetry.
 
 `software/plotter.py` is the PC-side GUI (PyQt + pyqtgraph). It shows the telemetry and sends commands.
@@ -45,7 +45,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 | `motorCtrl.c/h` | `currentLoop()`, the FOC ISR body: Clarke/Park, current PI, SVPWM, PLL position/speed estimate, outer speed/position loops, step recorder, telemetry frames. `initMotor()` brings everything up. |
 | `curSnsCtrl.c/h` | ADC/OPAMP/DAC setup. `HAL_ADCEx_InjectedConvCpltCallback` waits for both ADC1 and ADC2 to finish, scales the currents and the bus voltage, then **calls `currentLoop()`**. |
 | `bridgeCtrl.c/h` | TIM1 PWM start/stop, `setDuty()`/`setSamplePoint()` (CCR1-4), and the DAC2 short-circuit reference. `checkAndClearBridgeFault()` reads the gate-driver fault register over I2C and re-arms MOE after a break. |
-| `mt6835.c/h` | Encoder driver: register R/W, zero, EEPROM. Circular DMA burst: each half/full-complete callback updates `hMT6835.angle` (21-bit) and the multi-turn `turns` counter. |
+| `mt6835.c/h` | Encoder driver: register R/W, zero, EEPROM. Burst mode: `MT6835_StartBurst()` sends one burst command and leaves CS low. The sensor then shifts out 4-byte groups (angle H/M/L+status, CRC) whenever the SPI clocks. `TIM1_UP_TIM16_IRQHandler` (defined here) starts a register-level DMA read of `MT6835_GROUPS` groups at the TIM1 counter bottom, sized to end just before the ADC sample. `MT6835_Sample()`, called first in `currentLoop()`, takes the last complete group, checks its CRC, updates `hMT6835.angle` (21-bit) and the multi-turn `turns` counter, and returns the sample age. |
 | `calib.c/h` | Serial command console (`cmd_init`/`cmd_poll`), calibration routines, run modes, safety watchdog. Owns the shared ISR↔main globals (`g_mode`, `g_loop`, refs, PI states). |
 | `params.c/h` | `motor_params_t g_params`, stored in flash. Two A/B slots with seq number + CRC32. Versioned, and migrates v2→v3. |
 | `pi_ctrl.h` | Inline PI with conditional-integration anti-windup. `pi_current_step()` shares the voltage circle between d and q, with d taking priority. |
@@ -54,7 +54,8 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 ### Execution model
 - **ISR context (25 kHz):** TIM1 is center-aligned with ARR 3399, giving 25 kHz PWM. CC4 (`setSamplePoint`) triggers the injected ADC conversions. The ADC callback calls `currentLoop()`. The outer speed/position loops run every `OUTER_DIV` = 10 cycles, at 2.5 kHz. A telemetry frame goes out every 10 cycles over UART DMA.
 - **Main loop:** `cmd_poll()` (command parsing plus `run_watchdog()`), then `checkAndClearBridgeFault()`. Calibration routines block in main with `HAL_Delay` and drive the ISR through volatile globals.
-- All IRQs (ADC, SPI DMA, UART, TIM1 break) are at **priority 0**, so they cannot preempt each other. `motion_update()` depends on this when it reads `hMT6835.turns`/`angle` directly. From thread context, use `MT6835_Position()` instead.
+- Encoder timing: the TIM1 update interrupt at the counter bottom starts the read. 6 groups take 18.1 µs and end about 1 µs before the ADC samples (at 19.6 µs), so the last group is ≈4 µs old at the current sample. The exact age comes from the TIM1 count recorded at the trigger. `currentLoop()` must finish before the next bottom (≈19 µs after the ADC), or the read starts late. `f` prints the loop time and the encoder late/stall/CRC counters; if `late` grows, lower `MT6835_GROUPS`. `currentLoop()` advances the angle with the PLL speed for the Park transform and further, by `OUT_DELAY_S`, for the inverse Park (`ENC_EXTRA_S`, `ANGLE_COMP` in `motorCtrl.c`). The PLL compares at the true sample time.
+- All IRQs (ADC, TIM1 update, UART, TIM1 break) are at **priority 0**, so they cannot preempt each other. `hMT6835.turns`/`angle` are only written inside `currentLoop()`, so it reads them directly. From thread context, use `MT6835_Position()` instead.
 - `CTRL_FS_HZ` in `calib.h` must match the real ISR rate. PI gains, the PLL, and the inductance decay timing all depend on it.
 
 ### Control modes
@@ -95,6 +96,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
   - Fields that aren't stored are filled from `k_defaults`.
 
 ## Gotchas
+- Keep the TIM1 update interrupt (`TIM1_UP_TIM16_IRQn`) **disabled in the .ioc**. `mt6835.c` enables it at runtime and owns `TIM1_UP_TIM16_IRQHandler`. If CubeMX generates a second handler, the link fails. The SPI1 DMA channels are reprogrammed by register on every read; leave them in NORMAL mode in the .ioc.
 - Current and voltage scaling come from the hard-coded constants and offsets in `curSnsCtrl.c` (`CS_SHUNT`, `CS_GAIN`, `cur_offset[]`). The stored `cur_scale`, `cur_off`, `vin_scale`, `vbus_max` and `temp_max` params are **not used** by the control path yet.
 - `SVPWM()` writes nothing for `FAULT_CLEAR_MIN_TIME` ms after a fault is cleared.
 - Leaving `CTRL_RUN` while the motor spins applies a zero vector, which short-brakes it. `run_stop()` and `kv_coast()` exist to slow down first. Keep that behavior.

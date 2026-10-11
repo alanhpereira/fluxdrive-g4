@@ -46,7 +46,7 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -97,7 +97,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
     hdma_spi1_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_spi1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_spi1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_spi1_rx.Init.Mode = DMA_CIRCULAR;
+    hdma_spi1_rx.Init.Mode = DMA_NORMAL;
     hdma_spi1_rx.Init.Priority = DMA_PRIORITY_LOW;
     if (HAL_DMA_Init(&hdma_spi1_rx) != HAL_OK)
     {
@@ -114,7 +114,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
     hdma_spi1_tx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_spi1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_spi1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_spi1_tx.Init.Mode = DMA_CIRCULAR;
+    hdma_spi1_tx.Init.Mode = DMA_NORMAL;
     hdma_spi1_tx.Init.Priority = DMA_PRIORITY_LOW;
     if (HAL_DMA_Init(&hdma_spi1_tx) != HAL_OK)
     {
@@ -127,7 +127,9 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
     HAL_NVIC_SetPriority(SPI1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(SPI1_IRQn);
   /* USER CODE BEGIN SPI1_MspInit 1 */
-
+    /* 10.6 MHz SCK: faster edges than the "low" speed CubeMX sets for SCK/MOSI */
+    MODIFY_REG(GPIOB->OSPEEDR, GPIO_OSPEEDR_OSPEED3 | GPIO_OSPEEDR_OSPEED5,
+               (GPIO_SPEED_FREQ_MEDIUM << GPIO_OSPEEDR_OSPEED3_Pos) | (GPIO_SPEED_FREQ_MEDIUM << GPIO_OSPEEDR_OSPEED5_Pos));
   /* USER CODE END SPI1_MspInit 1 */
   }
 }
