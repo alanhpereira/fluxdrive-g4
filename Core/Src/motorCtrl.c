@@ -132,6 +132,7 @@ static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
 static uint32_t s_pll_ph;	/* Q32 = one turn, motor direction */
 static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
+static float s_vel;				  /* turn/s, encoder PLL blended with the observer PLL: what the loops use */
 static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
 
 /* age_s: how long ago the sensor sampled ang. fresh = 0 when there was no new sample (stream stalled,
@@ -163,15 +164,19 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 	float err = fresh ? (float)(int32_t)(ph - pred) * (1.0f / 4294967296.0f) : 0.0f; /* turns, wraps correctly */
 	s_pll_vel += PLL_KI_TS * err;
 	s_pll_ph += (uint32_t)(int32_t)((s_pll_vel + PLL_KP * err) * (4294967296.0f / CTRL_FS_HZ));
-	g_vel = s_pll_vel;
-	g_rpm = s_pll_vel * 60.0f;
 }
 
 /* ------------------------------------------------------------------ speed / position loops */
+/* The speed reference is slewed at ACC_LIM. Measured: ~22000 rpm/s per amp, so 60000 rpm/s is ~3 A plus
+ * friction. That keeps the observer's load-dependent flux error small (it drops to ~0.8 of lambda at 8 A)
+ * and stays clear of the ~8 A where the encoder mount slips */
+#define ACC_LIM (60000.0f / 60.0f) /* turn/s^2 */
+
 /* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ */
 static void outer_loops(ctrl_mode_t mode) {
 	static loop_t prev = LOOP_CURRENT;
 	static int div;
+	static float vramp; /* slewed speed reference, turn/s */
 	loop_t lp = (mode == CTRL_RUN) ? g_loop : LOOP_CURRENT;
 
 	if (lp == LOOP_CURRENT) {
@@ -180,7 +185,10 @@ static void outer_loops(ctrl_mode_t mode) {
 		div = OUTER_DIV; /* run on the first cycle after switching in */
 	}
 	else {
-		if (prev == LOOP_CURRENT) g_pi_vel.integ = g_iq_ref; /* bumpless: carry on from the present current */
+		if (prev == LOOP_CURRENT) {
+			g_pi_vel.integ = g_iq_ref; /* bumpless: carry on from the present current */
+			vramp = s_vel;			   /* and ramp from the present speed */
+		}
 		if (++div >= OUTER_DIV) {
 			div = 0;
 			float lim = g_params.vel_lim;
@@ -194,8 +202,15 @@ static void outer_loops(ctrl_mode_t mode) {
 				vref = lim;
 			else if (vref < -lim)
 				vref = -lim;
-			s_vel_ref_eff = vref;
-			g_iq_ref = pi_run(&g_pi_vel, vref - s_pll_vel, g_params.rated_current);
+			const float dv = ACC_LIM * (float)OUTER_DIV / CTRL_FS_HZ;
+			if (vref > vramp + dv)
+				vramp += dv;
+			else if (vref < vramp - dv)
+				vramp -= dv;
+			else
+				vramp = vref;
+			s_vel_ref_eff = vramp;
+			g_iq_ref = pi_run(&g_pi_vel, vramp - s_vel, g_params.rated_current);
 		}
 	}
 	prev = lp;
@@ -220,10 +235,16 @@ static void outer_loops(ctrl_mode_t mode) {
 #define OBS_GAIN 1000.0f	/* rad/s */
 #define OBS_BLEND_LO_V 0.7f /* peak back-EMF (lambda * we) where the observer starts to get weight, V */
 #define OBS_BLEND_HI_V 1.4f /* ...and where it has all of it */
-#define OBS_FLUX_TOL 0.2f	/* |eta| must stay within lambda * (1 +- tol) */
+#define OBS_FLUX_TOL 0.3f	/* |eta| must stay within lambda * (1 +- tol) */
 #define OBS_ERR_MAX 0.0833f /* turns electrical (30 deg): a larger observer - encoder difference drops the observer.
 							 * Leaves room for the encoder's own error (nonlinearity ~+-5, mount slip ~13 deg seen) */
 #define OBS_LOCK_N 250		/* cycles (10 ms) both checks must hold before it gets any weight */
+/* Once locked, a failing check only drops the observer when it persists: each check keeps a leaky count
+ * (+1 per failing cycle, -1 per passing one) and drops at these levels. The flux check is the observer's
+ * own (and the only one left without an encoder); the encoder check is slow on purpose, because the
+ * encoder is not always the one that is wrong (mount slip, nonlinearity) */
+#define OBS_FLUX_DROP_N 125 /* ~5 ms net of flux out of tolerance */
+#define OBS_ENC_DROP_N 1250 /* ~50 ms net of disagreement with the encoder */
 
 static float s_obs_xa, s_obs_xb;	/* stator flux estimate, Wb */
 static float s_obs_ia, s_obs_ib;	/* currents at the previous sample, A */
@@ -231,7 +252,9 @@ static float s_obs_va, s_obs_vb;	/* last voltage written to the bridge, V */
 static float s_obs_va1, s_obs_vb1;	/* the one written before it */
 static float s_obs_kv = -1.0f;		/* kv the constants below were computed from */
 static float s_obs_lambda, s_obs_k; /* Wb peak phase (as cal_kv()), correction gain */
-static uint16_t s_obs_good;			/* consecutive cycles the observer agreed with the encoder */
+static uint16_t s_obs_good;			/* consecutive cycles both checks passed (up to OBS_LOCK_N) */
+static uint16_t s_obs_flux_bad;		/* leaky counts of failing cycles, see OBS_FLUX_DROP_N */
+static uint16_t s_obs_enc_bad;
 static float s_obs_ratio = NAN;		/* |eta| / lambda, telemetry */
 static float s_obs_err = NAN;		/* observer - encoder, turns electrical, telemetry */
 static float s_obs_w;				/* blend weight, telemetry */
@@ -280,18 +303,34 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 static float obs_weight(int valid, uint32_t diff, float we) {
 	if (!valid) {
 		s_obs_good = 0;
+		s_obs_flux_bad = s_obs_enc_bad = 0;
 		s_obs_err = NAN;
 		s_obs_w = 0.0f;
 		return 0.0f;
 	}
 	float d = (float)(int32_t)diff * (1.0f / 4294967296.0f);
 	s_obs_err = d;
-	/* with MOE off the terminal voltage is not what was commanded, so the estimate is not trusted */
-	int ok = fabsf(d) < OBS_ERR_MAX && fabsf(s_obs_ratio - 1.0f) < OBS_FLUX_TOL && (TIM1->BDTR & TIM_BDTR_MOE);
-	if (!ok)
+	int flux_ok = fabsf(s_obs_ratio - 1.0f) < OBS_FLUX_TOL;
+	int enc_ok = fabsf(d) < OBS_ERR_MAX;
+	if (flux_ok) {
+		if (s_obs_flux_bad) s_obs_flux_bad--;
+	}
+	else if (s_obs_flux_bad < UINT16_MAX)
+		s_obs_flux_bad++;
+	if (enc_ok) {
+		if (s_obs_enc_bad) s_obs_enc_bad--;
+	}
+	else if (s_obs_enc_bad < UINT16_MAX)
+		s_obs_enc_bad++;
+
+	if (!(TIM1->BDTR & TIM_BDTR_MOE) || s_obs_flux_bad >= OBS_FLUX_DROP_N || s_obs_enc_bad >= OBS_ENC_DROP_N) {
+		/* with MOE off the terminal voltage is not what was commanded: drop at once */
 		s_obs_good = 0;
-	else if (s_obs_good < OBS_LOCK_N)
-		s_obs_good++;
+		s_obs_flux_bad = s_obs_enc_bad = 0; /* relocking needs OBS_LOCK_N clean cycles anyway */
+	}
+	else if (s_obs_good < OBS_LOCK_N) {
+		s_obs_good = (flux_ok && enc_ok) ? s_obs_good + 1 : 0; /* locking: strict */
+	}
 	float w = 0.0f;
 #if OBS_BLEND
 	if (s_obs_good >= OBS_LOCK_N) {
@@ -305,6 +344,31 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 #endif
 	s_obs_w = w;
 	return w;
+}
+
+/* Speed from the observer alone: a PLL (same bandwidth as the encoder one) on the observer's electrical
+ * angle. It needs nothing from the encoder except the starting speed, so it is what an encoderless mode
+ * would run on. Blended into the speed with the same weight as the angle */
+static uint32_t s_opll_ph; /* Q32 electrical */
+static float s_opll_vel;   /* electrical turn/s */
+static uint8_t s_opll_init;
+static float s_obs_vel = NAN; /* turn/s mechanical, telemetry */
+
+static void obs_pll(int valid, uint32_t th_obs) {
+	if (!valid) {
+		s_opll_init = 0;
+		s_obs_vel = NAN;
+		return;
+	}
+	if (!s_opll_init) {
+		s_opll_ph = th_obs;
+		s_opll_vel = s_pll_vel * (float)g_params.pole_pairs; /* encoderless: start from 0 and let it pull in */
+		s_opll_init = 1;
+	}
+	float err = (float)(int32_t)(th_obs - s_opll_ph) * (1.0f / 4294967296.0f); /* electrical turns */
+	s_opll_vel += PLL_KI_TS * err;
+	s_opll_ph += (uint32_t)(int32_t)((s_opll_vel + PLL_KP * err) * (4294967296.0f / CTRL_FS_HZ));
+	s_obs_vel = s_opll_vel / (float)g_params.pole_pairs;
 }
 
 /* time since the ADC sampled the currents (CC4 on the way up), from the TIM1 counter */
@@ -327,19 +391,26 @@ void currentLoop(void) {
 	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
 	uint32_t th_obs = 0;
 	int obs = obs_update(i_alpha, i_beta, &th_obs); /* runs in every mode so it is converged when needed */
+	obs_pll(obs, th_obs);
 
 	/* encoder angle, advanced by the known delays to the current sample. Blended with the observer by
 	 * speed, it gives theta_m = rotor angle when the currents were sampled (Park); theta_o = rotor angle
 	 * while the new voltage is applied (inverse Park). Forced during calibration */
-	float we = s_pll_vel * (float)g_params.pole_pairs * 4294967296.0f; /* electrical Q32 per second */
+	float pp = (float)g_params.pole_pairs;
+	float we = s_pll_vel * pp * 4294967296.0f; /* electrical Q32 per second, encoder */
 	uint32_t th_enc = elec_angle(ang);
 #if ANGLE_COMP
 	th_enc += (uint32_t)(int32_t)(we * age_cur);
-	uint32_t out_adv = (uint32_t)(int32_t)(we * OUT_DELAY_S);
+#endif
+	float w = obs_weight(obs, th_obs - th_enc, we);
+	s_vel = (w > 0.0f) ? s_pll_vel + w * (s_obs_vel - s_pll_vel) : s_pll_vel; /* s_obs_vel is NaN when invalid */
+	g_vel = s_vel;
+	g_rpm = s_vel * 60.0f;
+#if ANGLE_COMP
+	uint32_t out_adv = (uint32_t)(int32_t)(s_vel * pp * 4294967296.0f * OUT_DELAY_S);
 #else
 	uint32_t out_adv = 0;
 #endif
-	float w = obs_weight(obs, th_obs - th_enc, we);
 	uint32_t theta_m, theta_o;
 	if (g_mode == CTRL_CAL) {
 		theta_m = theta_o = g_theta_cmd;
@@ -427,7 +498,9 @@ void currentLoop(void) {
 			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
 			telemetry.v[11] = s_obs_err * 360.0f; /* observer - encoder, deg electrical; NaN without R, L, kv */
 			telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
-			telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle */
+			telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
+			telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
+			telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
 			telemetry.sum = frame_sum(&telemetry);
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}
