@@ -61,7 +61,8 @@ _Min_Stack_Size = 0x1000; /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
-RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 32K
+RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 22K   /* SRAM1 + SRAM2; the CCM SRAM above it is CCMRAM */
+CCMRAM (xrw)   : ORIGIN = 0x10000000, LENGTH = 10K   /* CCM SRAM on the I-bus: zero-wait code for the ISR path */
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 120K
 }
 
@@ -75,6 +76,25 @@ SECTIONS
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
+
+  /* 25 kHz ISR path, run from CCM SRAM: flash has 4 wait states and the path does not fit the 1 KB cache.
+   * Copied from flash by main() (USER CODE BEGIN 1) before HAL_Init. Must come before .text: the first
+   * matching rule wins. Keep it when CubeMX regenerates this file */
+  .ccmram :
+  {
+    . = ALIGN(4);
+    _sccmram = .;
+    *(.text.currentLoop) *(.text.SVPWM)
+    *(.text.hfi_step) *(.text.hfi_estimate) *(.text.hfi_filter)
+    *(.text.HAL_ADCEx_InjectedConvCpltCallback) *(.text.ADC1_2_IRQHandler) *(.text.HAL_ADC_IRQHandler)
+    *(.text.HAL_ADCEx_InjectedGetValue)
+    *(.text.MT6835_Sample) *(.text.TIM1_UP_TIM16_IRQHandler)
+    *(.text.HAL_UART_Transmit_DMA) *(.text.HAL_DMA_Start_IT) *(.text.DMA_SetConfig) *(.text.HAL_GetTick)
+    *(.ccmram) *(.ccmram*)
+    . = ALIGN(4);
+    _eccmram = .;
+  } >CCMRAM AT> FLASH
+  _siccmram = LOADADDR(.ccmram);
 
   /* The program code and other data goes into FLASH */
   .text :

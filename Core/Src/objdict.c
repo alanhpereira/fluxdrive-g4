@@ -5,6 +5,7 @@
 #include "bridgeCtrl.h" /* readBridgeStatus() */
 #include "main.h"		/* DRV_RDY pin */
 #include "calib.h"
+#include "hfi.h" /* HFI_HALF_MAX */
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "mt6835.h"
 #include "params.h"
@@ -93,6 +94,14 @@ static const obj_t k_tab[] = {
 	{0x4030, 4, T_F32, OF_STORED, F(g_params.obs_hi_v), 0.0f, 100.0f},
 	{0x4030, 5, T_F32, OF_STORED, F(g_params.obs_flux_tol), 0.0f, 1.0f},
 	{0x4030, 6, T_F32, OF_STORED, F(g_params.obs_err_max), 0.0f, 180.0f},
+	/* 0x4031 high-frequency injection */
+	{0x4031, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.hfi_mode), 0.0f, 2.0f},
+	{0x4031, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.hfi_half), 2.0f, (float)HFI_HALF_MAX},
+	{0x4031, 3, T_F32, OF_STORED, F(g_params.hfi_v), 0.0f, 10.0f},
+	{0x4031, 4, T_F32, OF_STORED, F(g_params.hfi_bw), 0.0f, 500.0f},
+	{0x4031, 5, T_F32, OF_STORED, F(g_params.hfi_id), 0.0f, 50.0f},
+	{0x4031, 6, T_F32, OF_STORED, F(g_params.hfi_sal), -1.0f, 1.0f},
+	{0x4031, 7, T_F32, OF_STORED, F(g_params.hfi_pol_i), 0.0f, 50.0f},
 };
 #define N_OBJ ((int)(sizeof k_tab / sizeof k_tab[0]))
 

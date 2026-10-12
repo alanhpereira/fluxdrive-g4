@@ -44,6 +44,13 @@ static const motor_params_t k_defaults = {
 	.obs_err_max = 30.0f,
 	.acc_lim = 60000.0f,
 	.obs_blend = 1,
+	.hfi_mode = 0,
+	.hfi_half = 2,
+	.hfi_v = 0.5f,
+	.hfi_bw = 50.0f,
+	.hfi_id = 0.0f,
+	.hfi_sal = 0.0f, /* measure it: HFI saliency map */
+	.hfi_pol_i = 1.0f,
 };
 
 static uint32_t crc32(const void* p, size_t n) {

@@ -78,6 +78,14 @@ void SystemClock_Config(void);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
+	/* ISR path into CCM SRAM (.ccmram in the linker script), before anything can call into it */
+	{
+		extern uint32_t _sccmram, _eccmram, _siccmram;
+		const uint32_t* src = &_siccmram;
+		for (uint32_t* dst = &_sccmram; dst < &_eccmram;) *dst++ = *src++;
+		__DSB();
+		__ISB();
+	}
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -93,7 +101,9 @@ int main(void) {
 	SystemClock_Config();
 
 	/* USER CODE BEGIN SysInit */
-
+	/* flash runs at 4 wait states and the ISR path (~6 KB) does not fit the 1 KB instruction cache: without
+	 * prefetch every miss stalls. PREFETCH_ENABLE is 0 in the generated hal_conf, so it is switched on here */
+	__HAL_FLASH_PREFETCH_BUFFER_ENABLE();
 	/* USER CODE END SysInit */
 
 	/* Initialize all configured peripherals */

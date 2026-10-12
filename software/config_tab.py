@@ -34,7 +34,18 @@ STEPS = [
     ("z", P.CAL_ZERO, "Reset encoder zero (EEPROM)", None, False,
      "Resets the MT6835 zero position and saves it to the encoder EEPROM.\n"
      "The electrical offset must be recalibrated ('e') afterwards."),
+    ("h", P.CAL_HFI_MAP, "HFI saliency map (go/no-go)", "hsal", True,
+     "Injects at 24 angles around the rotor with a d bias and iq = 0 (audible whine).\n"
+     "The rotor should stay still; the encoder is the reference."),
+    ("p", P.CAL_HFI_POL, "HFI lock + polarity test", None, False,
+     "HFI locks from a random angle, then +d/-d pulses pick the polarity.\n"
+     "Repeat from many rotor positions: it must be right every time."),
 ]
+
+ARG_TIPS = {
+    "h": "d-axis bias. 'default' (0) maps at 0, 0.25 and 0.5 x rated and at hid, and stores hsal from the hid one;\n"
+         "an explicit current maps that bias only and stores nothing",
+}
 
 STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "vin", "busy", "dirty", "seq"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
@@ -187,8 +198,8 @@ class ConfigTab(QtWidgets.QWidget):
                 sp = QtWidgets.QDoubleSpinBox(decimals=2, minimum=0.0, maximum=50.0, singleStep=0.5, suffix=" A")
                 sp.setLocale(C_LOCALE)
                 sp.setSpecialValueText("default")
-                sp.setToolTip("Test current. 'default' (0) uses 0.4 x rated and stores the result;\n"
-                              "an explicit current measures that point only and stores nothing")
+                sp.setToolTip(ARG_TIPS.get(key, "Test current. 'default' (0) uses 0.4 x rated and stores the result;\n"
+                                                "an explicit current measures that point only and stores nothing"))
                 grid.addWidget(sp, r, 2)
                 self.step_arg[key] = sp
             b = QtWidgets.QPushButton("Run")
@@ -521,8 +532,8 @@ class ConfigTab(QtWidgets.QWidget):
         for key, which, label, flag, arg, prompt in STEPS:
             if flag is None:
                 txt, col = "", None
-            elif flag == "kv":
-                ok = (self.dev.get("kv") or 0) > 0
+            elif isinstance(flag, str):  # done when that parameter is non-zero
+                ok = (self.dev.get(flag) or 0) != 0
                 txt, col = ("done", GREEN) if ok else ("missing", ORANGE)
             else:
                 txt, col = ("done", GREEN) if flags & flag else ("missing", ORANGE)
@@ -623,6 +634,9 @@ class ConfigTab(QtWidgets.QWidget):
                      P.EV_EEPROM_WAIT: "encoder EEPROM write, wait"}[code]
             self.countdown = (time.monotonic() + vals[0], label)
             self.cd_timer.start()
+        if code == P.EV_HFI_FIT and len(vals) >= 5:
+            self.log(text, GREEN if abs(vals[4]) >= 0.10 else ORANGE if abs(vals[4]) >= 0.05 else RED)
+            return
         self.log(text, ORANGE if code in (P.EV_HOLD_SHAFT, P.EV_UNLOAD_SHAFT, P.EV_PP_BAD, P.EV_BW_CLAMPED,
                                           P.EV_RPM_LIMITED, P.EV_CUR_LIMITED) else None)
 

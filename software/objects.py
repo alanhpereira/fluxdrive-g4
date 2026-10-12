@@ -57,8 +57,9 @@ class Obj:
 
 
 G_INFO, G_STATUS, G_DIAG = "Device info", "Status", "Diagnostics"
-G_MOTOR, G_SENS, G_CUR, G_OUTER, G_LIM, G_OBS = ("Motor", "Sensing (not used by the control path yet)", "Current loop",
-                                                 "Speed / position", "Limits", "Observer")
+G_MOTOR, G_SENS, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI = ("Motor", "Sensing (not used by the control path yet)",
+                                                        "Current loop", "Speed / position", "Limits", "Observer",
+                                                        "HF injection")
 BW_MAX = 25000.0 / 20
 
 OBJECTS = [
@@ -141,11 +142,30 @@ OBJECTS = [
     Obj(0x4030, 5, T_F32, STORED, "oftol", "Flux tolerance", "", lo=0, hi=1, group=G_OBS, decimals=2,
         help="|flux|/lambda must stay within 1 ± tol"),
     Obj(0x4030, 6, T_F32, STORED, "oerr", "Max observer error", "deg elec", lo=0, hi=180, group=G_OBS, decimals=0),
+    # 0x4031 high-frequency injection
+    Obj(0x4031, 1, T_U8, STORED | NOTRUN, "hmode", "HFI mode", lo=0, hi=2, group=G_HFI,
+        help="0 off; 1 estimate only: injects and tracks while running (not during calibrations), "
+             "commutation stays on the encoder; 2 sensorless: each run starts with ~150 ms of HFI lock and the "
+             "polarity pulses, then commutation, speed and the observer's references come from HFI; the observer "
+             "takes over above ohi and the injection stops. The encoder only counts turns for position mode and "
+             "stops the motor above 90 deg disagreement. 1 and 2 add hid in speed/position mode"),
+    Obj(0x4031, 2, T_U8, STORED | NOTRUN, "hhalf", "Half wave", "PWM periods", lo=2, hi=8, group=G_HFI,
+        help="injection flips every hhalf periods (2 = 6.25 kHz square wave). 1 cannot work: "
+             "the samples would sit on the midpoints of the current triangle"),
+    Obj(0x4031, 3, T_F32, STORED, "hv", "Injection voltage", "V", lo=0, hi=10, group=G_HFI, decimals=3,
+        help="HF current step per PWM period is about hv x 40 us / L"),
+    Obj(0x4031, 4, T_F32, STORED, "hbw", "PLL bandwidth", "Hz", lo=0, hi=500, group=G_HFI, decimals=0),
+    Obj(0x4031, 5, T_F32, STORED, "hid", "d bias", "A", lo=0, hi=50, group=G_HFI, decimals=2,
+        help="d-axis current while HFI runs (saturation saliency); the map stores hsal at this bias"),
+    Obj(0x4031, 6, T_F32, STORED, "hsal", "Saliency", "%", 100.0, -1, 1, G_HFI,
+        "(Lq-Ld)/(Lq+Ld) at hid, stored by the saliency map; 0 = not measured", 2),
+    Obj(0x4031, 7, T_F32, STORED, "hpi", "Polarity pulse current", "A", lo=0, hi=50, group=G_HFI, decimals=2,
+        help="aim of the +d/-d pulses; needs to be high enough to saturate the d axis"),
 ]
 
 BY_KEY = {o.key: o for o in OBJECTS}
 BY_ADDR = {(o.index, o.sub): o for o in OBJECTS}
-PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_SENS]
+PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI, G_SENS]
 
 # PF_* in params.h
 PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID = 1, 2, 4, 8, 16

@@ -5,6 +5,7 @@
 
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
 #include "tim.h"
+#include "hfi.h"
 #include "mt6835.h"
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "pi_ctrl.h"
@@ -71,6 +72,7 @@ static void run_stop(void) {
 }
 
 static void finish(void) {
+	g_hfi_cmd = HFI_OFF;
 	if (g_mode == CTRL_RUN) run_stop();
 	for (int i = 0; i < 20; i++) { /* ramp voltage down instead of stepping it */
 		g_vd_cmd *= 0.8f;
@@ -215,15 +217,15 @@ static void print_flux_curve(const float* x, int n, float i0, float r, float v_o
 	}
 }
 
-static float s_l_amps; /* test current from the CAL argument, 0 = default (0.4 x rated, stored) */
+static float s_cal_arg; /* CAL argument: Ld/Lq test current or HFI map bias, 0 = default (and store) */
 
 static st_t cal_inductance(int use_q) {
 	st_t e;
 	float v;
 	if ((e = precheck())) return e;
 	if (!(g_params.flags & PF_R_VALID)) return ST_NEED_R;
-	const int report_only = s_l_amps > 0.0f; /* an explicit current measures a point, it does not calibrate */
-	const float amps = report_only ? s_l_amps : 0.4f * g_params.rated_current;
+	const int report_only = s_cal_arg > 0.0f; /* an explicit current measures a point, it does not calibrate */
+	const float amps = report_only ? s_cal_arg : 0.4f * g_params.rated_current;
 	if (amps > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
 
 	g_mode = CTRL_CAL;
@@ -535,6 +537,11 @@ static st_t run_enter(int outer) {
 	return ST_OK;
 }
 
+/* d-axis current under the speed/position loops: the HFI bias while HFI runs in estimate mode */
+static float id_bias(void) {
+	return (g_params.hfi_mode >= 1 && g_params.hfi_sal != 0.0f) ? g_params.hfi_id : 0.0f;
+}
+
 /* speed mode, rpm */
 static st_t run_vel(float rpm) {
 	if (!(fabsf(rpm) < 1.0e7f)) return ST_BAD_ARG; /* also NaN */
@@ -545,7 +552,7 @@ static st_t run_vel(float rpm) {
 	}
 	st_t e = run_enter(1);
 	if (e) return e;
-	g_id_ref = 0.0f;
+	g_id_ref = id_bias();
 	g_vel_ref = rpm / 60.0f; /* reference first, then the switch: the ISR never sees a stale one */
 	g_loop = LOOP_VEL;
 	return ST_OK;
@@ -556,7 +563,7 @@ static st_t run_pos(pos_q32_t t) {
 	if (!(g_params.pos_kp > 0.0f)) return ST_NEED_PKP;
 	st_t e = run_enter(1);
 	if (e) return e;
-	g_id_ref = 0.0f;
+	g_id_ref = id_bias();
 
 	/* hand over the reference and wait until currentLoop() has latched it, then switch */
 	g_pos_ref_new = t;
@@ -587,17 +594,164 @@ static st_t run_cur(float id, float iq) {
 	return ST_OK;
 }
 
+/* ------------------------------------------------------------------ high-frequency injection */
+/* docs/hfi-handoff.md, hfi.c. Both routines commutate on the encoder and use it as the reference */
+#define HMAP_N 24		  /* injection angles over 360 deg electrical: 2*phi steps by 30 deg */
+#define HMAP_ACC 1000	  /* cycles summed per angle (40 ms) */
+#define HFI_SIG_MIN 0.03f /* A per informative cycle, ~2 LSB */
+
+static st_t hfi_check(void) {
+	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID | PF_L_VALID;
+	if ((g_params.flags & need) != need) return ST_NEED_ERLT;
+	if (!(g_params.hfi_v > 0.0f)) return ST_NEED_HV;
+	return ST_OK;
+}
+
+static st_t wait_ms(int ms) {
+	st_t e;
+	for (int i = 0; i < ms; i++) {
+		HAL_Delay(1);
+		if ((e = chk())) return e;
+	}
+	return ST_OK;
+}
+
+/* inject at HMAP_N angles from the encoder d axis with id = bias (current loop on, iq = 0: no torque) and
+ * fit 1/L(phi) = a0 + a2 cos 2phi + b2 sin 2phi. a2/a0 = (Lq-Ld)/(Lq+Ld) when the axes are where the
+ * encoder says; b2 shows how far they are not (cross-saturation). The PC turns these into Ld, Lq, axis */
+static st_t hfi_map_at(float bias, int store) {
+	st_t e;
+	g_id_ref = bias;
+	g_hfi_map_phi = 0;
+	g_hfi_cmd = HFI_MAP;
+	if ((e = wait_ms(100))) return e;
+	const float vts = g_params.hfi_v / CTRL_FS_HZ; /* volt-seconds behind one informative step */
+	float a0 = 0.0f, a2 = 0.0f, b2 = 0.0f;
+	float c2 = 1.0f, s2 = 0.0f; /* cos, sin of 2 phi, rotated by 30 deg per point */
+	for (int k = 0; k < HMAP_N; k++) {
+		g_hfi_map_phi = (uint32_t)((float)k * (4294967296.0f / HMAP_N));
+		if ((e = wait_ms(20))) return e;
+		g_hfi_acc_par = g_hfi_acc_perp = 0.0f;
+		g_hfi_acc_n = 0;
+		g_hfi_acc_left = HMAP_ACC;
+		uint32_t t0 = HAL_GetTick();
+		while (g_hfi_acc_left) {
+			if (HAL_GetTick() - t0 > 200) return ST_LOOP_DEAD;
+			if ((e = wait_ms(1))) return e;
+		}
+		const float n = (float)g_hfi_acc_n;
+		const float par = g_hfi_acc_par / n, perp = g_hfi_acc_perp / n; /* A per informative cycle */
+		if (!(par > HFI_SIG_MIN)) return ST_HFI_NO_SIGNAL;				 /* also n = 0 */
+		const float y = par / vts;										 /* 1/L along phi */
+		a0 += y;
+		a2 += y * c2;
+		b2 += y * s2;
+		EV(EV_HFI_PT, bias, (float)k * (360.0f / HMAP_N), 1.0f / y, perp / par);
+		const float c = c2 * 0.8660254f - s2 * 0.5f;
+		s2 = s2 * 0.8660254f + c2 * 0.5f;
+		c2 = c;
+	}
+	a0 *= 1.0f / HMAP_N;
+	a2 *= 2.0f / HMAP_N;
+	b2 *= 2.0f / HMAP_N;
+	float sal = sqrtf(a2 * a2 + b2 * b2) / a0;
+	if (a2 < 0.0f) sal = -sal; /* the low-inductance axis is nearer q than d */
+	if (store) g_params.hfi_sal = sal;
+	EV(EV_HFI_FIT, bias, a0, a2, b2, sal, store);
+	return ST_OK;
+}
+
+/* saliency map (handoff step 1, the go/no-go). arg 0: biases 0, 0.25 and 0.5 x rated and hfi_id, stores
+ * hfi_sal from the hfi_id one. arg > 0: that bias only, nothing stored */
+static st_t cal_hfi_map(void) {
+	st_t e;
+	if ((e = hfi_check())) return e;
+	const float r = g_params.rated_current;
+	float bias[4] = {0.0f, 0.25f * r, 0.5f * r, g_params.hfi_id};
+	int n = 4, store = 3;
+	if (s_cal_arg > 0.0f) {
+		bias[0] = s_cal_arg;
+		n = 1;
+		store = -1;
+	}
+	else {
+		for (int i = 0; i < 3; i++)
+			if (fabsf(bias[i] - g_params.hfi_id) < 1.0e-3f) {
+				store = i;
+				n = 3;
+			}
+	}
+	for (int i = 0; i < n; i++)
+		if (fabsf(bias[i]) > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
+	if ((e = run_enter(0))) return e;
+	g_iq_ref = 0.0f;
+	for (int i = 0; i < n; i++)
+		if ((e = hfi_map_at(bias[i], i == store))) return e;
+	return ST_OK;
+}
+
+/* lock from a random starting angle, then the polarity pulses (handoff step 3: run it from many rotor
+ * positions, it must come out right every time). Reports HFI - encoder before and after */
+static st_t cal_hfi_pol(void) {
+	st_t e;
+	if ((e = hfi_check())) return e;
+	if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+	if (!(g_params.hfi_pol_i > 0.0f)) return ST_I_LOW;
+	if (g_params.hfi_pol_i > 0.9f * g_params.max_current || g_params.hfi_id > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
+	if ((e = run_enter(0))) return e;
+	g_iq_ref = 0.0f;
+	g_id_ref = g_params.hfi_id;
+	g_hfi_theta0 = DWT->CYCCNT * 2654435761u; /* random start: either polarity can come out */
+	g_hfi_cmd = HFI_TRACK;
+	if ((e = wait_ms(300))) return e;
+	if (!(g_hfi_amp > HFI_SIG_MIN)) return ST_HFI_NO_SIGNAL;
+	const float before = g_hfi_err_f * 360.0f;
+
+	g_id_ref = 0.0f; /* the pulses start from no current */
+	if ((e = wait_ms(30))) return e;
+	g_hfi_cmd = HFI_POL;
+	uint32_t t0 = HAL_GetTick();
+	while (g_hfi_cmd == HFI_POL) { /* ~35 ms; the ISR sets HFI_TRACK when done */
+		if (HAL_GetTick() - t0 > 200) return ST_LOOP_DEAD;
+		if ((e = wait_ms(1))) return e;
+	}
+	g_id_ref = g_params.hfi_id;
+	if ((e = wait_ms(100))) return e;
+	const float after = g_hfi_err_f * 360.0f;
+	EV(EV_HFI_POL, before, after, g_hfi_pol_flip, g_hfi_pol_contrast);
+
+	float ax = fabsf(before); /* distance from the nearer of d and -d */
+	if (ax > 90.0f) ax = 180.0f - ax;
+	if (!(ax <= 45.0f)) return ST_HFI_NO_LOCK; /* also NaN */
+	if (!(fabsf(after) <= 90.0f)) return ST_HFI_POL_WRONG;
+	return ST_OK;
+}
+
+#define HFI_LOST_DEG 90.0f /* hfi_mode 2: HFI - encoder beyond this (4 ms low-pass) stops the motor */
+#define HFI_POL_MIN 0.05f  /* hfi_mode 2 start: |contrast| below this is a guess, not a measurement */
+
 /* called from cmd_poll() while running: stop on fault, low bus or overcurrent */
 static void run_watchdog(void) {
 	if (g_mode != CTRL_RUN) return;
 	st_t e = ST_OK;
-	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = ST_OVERCURRENT;
+	if (g_hfi_start_done) { /* report the sensorless start; refuse to run on a coin toss */
+		g_hfi_start_done = 0;
+		const float s[3] = {g_hfi_pol_contrast, g_hfi_pol_flip, g_hfi_err * 360.0f};
+		proto_event(0, EV_HFI_START, 3, s);
+		if (!(fabsf(g_hfi_pol_contrast) >= HFI_POL_MIN)) e = ST_HFI_POL_WEAK;
+	}
+	if (e) /* the start verdict above */
+		;
+	else if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = ST_OVERCURRENT;
 	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = ST_BRIDGE_FAULT;
 	else if (g_vin < g_params.vbus_min) e = ST_VBUS_LOW;
 	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
+	/* driving on HFI: the encoder is only the safety net. Its own error reaches ~40 deg electrical (mount) */
+	else if (g_params.hfi_mode == 2 && fabsf(g_hfi_err_f) * 360.0f > HFI_LOST_DEG) e = ST_HFI_LOST;
 	if (!e) return;
 
 	g_mode = CTRL_OFF; /* immediately, no ramp: the loop is not in control any more */
+	g_hfi_cmd = HFI_OFF;
 	g_loop = LOOP_CURRENT;
 	g_id_ref = 0.0f;
 	g_iq_ref = 0.0f;
@@ -644,6 +798,8 @@ static st_t (*const k_cal[CAL_N])(void) = {
 	[CAL_TUNE] = pi_autotune,
 	[CAL_KV] = cal_kv,
 	[CAL_ZERO] = cal_zero,
+	[CAL_HFI_MAP] = cal_hfi_map,
+	[CAL_HFI_POL] = cal_hfi_pol,
 };
 
 /* ACK first, then the routine blocks here (chk() keeps serving READ/ABORT/STOP), EV_DONE at the end */
@@ -657,7 +813,7 @@ static void cal_message(const uint8_t* p, uint8_t len) {
 	proto_reply_st(MSG_CAL, s_tok, e);
 	if (e) return;
 	g_busy = which;
-	s_l_amps = arg; /* Ld/Lq test current, 0 = default and store */
+	s_cal_arg = arg;
 	e = k_cal[which]();
 	finish();
 	g_busy = 0;

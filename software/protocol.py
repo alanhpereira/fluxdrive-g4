@@ -7,12 +7,13 @@ Binary config protocol (docs/config-gui-handoff.md). Keep in sync with Core/Inc/
 Telemetry frames (A5 5A, 72 bytes) share the link; bytes outside frames are console text.
 """
 import collections
+import math
 import struct
 import threading
 
 SYNC_MSG = b"\xA5\x5C"
 MAX_LEN = 64
-PROTO_VERSION = 2
+PROTO_VERSION = 3
 
 # message types (the reply is type | REPLY)
 PING, READ, WRITE, LIST = 0x01, 0x10, 0x11, 0x12
@@ -21,9 +22,10 @@ RUN_CUR, RUN_VEL, RUN_POS, STOP, HOME = 0x40, 0x41, 0x42, 0x43, 0x44
 REPLY, EVENT = 0x80, 0x7F  # EVENT has no REPLY bit: it must never equal (request | REPLY)
 
 # CAL which
-CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO = range(1, 8)
+CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO, CAL_HFI_MAP, CAL_HFI_POL = range(1, 10)
 CAL_NAMES = {CAL_ENC: "encoder", CAL_R: "resistance", CAL_LD: "inductance d", CAL_LQ: "inductance q",
-             CAL_TUNE: "PI autotune", CAL_KV: "kv", CAL_ZERO: "encoder zero reset"}
+             CAL_TUNE: "PI autotune", CAL_KV: "kv", CAL_ZERO: "encoder zero reset", CAL_HFI_MAP: "HFI saliency map",
+             CAL_HFI_POL: "HFI polarity"}
 
 # command status (st_t), then CANopen SDO abort codes for object access
 STATUS = [
@@ -40,6 +42,11 @@ STATUS = [
     "too few samples during coast-down", "back-EMF has the wrong sign (encoder offset/direction?)",
     "control loop not running", "busy (a calibration is running)", "bad argument", "unknown message",
     "flash save failed", "not allowed while the motor runs: stop first",
+    "set the injection voltage (hv) first", "run the HFI saliency map first (hsal = 0)",
+    "no HF current response (raise hv? check hhalf)", "HFI did not lock on an axis (saliency too low? hbw?)",
+    "polarity check ended on the wrong side (raise hpi?)",
+    "HFI lost the rotor (HFI and encoder disagree by more than 90 deg elec)",
+    "sensorless start: polarity contrast below 5 % (raise hpi)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 SDO = {
@@ -70,7 +77,30 @@ def _fmt_l(v):
 
 EV_DONE, EV_STOPPED, EV_RPM_LIMITED, EV_CUR_LIMITED = 1, 2, 3, 4
 EV_ALIGN, EV_SWEEP, EV_OFFSET_AVG, EV_HOLD_SHAFT, EV_UNLOAD_SHAFT, EV_EEPROM_WAIT, EV_BW_CLAMPED = range(0x10, 0x17)
-EV_R, EV_LCURVE, EV_LCURVE_PT, EV_L, EV_PP_BAD, EV_ENC, EV_TUNE, EV_KV = range(0x20, 0x28)
+EV_R, EV_LCURVE, EV_LCURVE_PT, EV_L, EV_PP_BAD, EV_ENC, EV_TUNE, EV_KV, EV_HFI_PT, EV_HFI_FIT, EV_HFI_POL, \
+    EV_HFI_START = range(0x20, 0x2C)
+
+
+def hfi_fit(a0, a2, b2):
+    """1/L(phi) = a0 + a2 cos 2phi + b2 sin 2phi -> (L min (H), L max (H), deg elec of the L-min axis from d)"""
+    m = math.hypot(a2, b2)
+    lmax = 1.0 / (a0 - m) if a0 > m else float("inf")
+    return 1.0 / (a0 + m), lmax, math.degrees(0.5 * math.atan2(b2, a2))
+
+
+def _fmt_hfi_fit(v):
+    lmin, lmax, ax = hfi_fit(v[1], v[2], v[3])
+    verdict = ("comfortable" if abs(v[4]) >= 0.10 else "workable with averaging" if abs(v[4]) >= 0.05
+               else "too low for robust HFI")
+    return (f"HFI fit @ id {v[0]:.2f} A: L {lmin * 1e6:.2f} .. {lmax * 1e6:.2f} uH, low-L axis {ax:+.1f} deg from d, "
+            f"saliency (Lq-Ld)/(Lq+Ld) = {v[4] * 100:+.1f} % ({verdict})" + ("  [stored as hsal]" if v[5] else ""))
+
+
+def _fmt_hfi_pol(v):
+    return (f"HFI - encoder: {v[0]:+.1f} deg after lock, {v[1]:+.1f} deg after polarity "
+            f"({'flipped' if v[2] else 'kept'}, contrast {v[3] * 100:+.1f} %)")
+
+
 EVENTS = {
     EV_DONE: lambda v: f"{CAL_NAMES.get(int(v[1]), '?')}: " + ("done" if int(v[0]) == 0 else f"FAILED: {status_text(int(v[0]))}"),
     EV_STOPPED: lambda v: f"STOPPED: {status_text(int(v[0]))} (id {v[1]:.2f} A, iq {v[2]:.2f} A)",
@@ -93,6 +123,11 @@ EVENTS = {
     EV_TUNE: lambda v: f"bw {v[0]:.0f} Hz:  d kp {v[1]:.4f} ki {v[2]:.2f}   q kp {v[3]:.4f} ki {v[4]:.2f}",
     EV_KV: lambda v: (f"kv = {v[0]:.1f} rpm/V   (lambda {v[1] * 1e3:.3f} mWb, Kt {v[2]:.4f} Nm/A, offset {v[3]:.3f} V, "
                       f"{v[4]:.0f} samples, peak {v[5]:.0f} rpm)"),
+    EV_HFI_PT: lambda v: f"  id {v[0]:5.2f} A  phi {v[1]:5.1f} deg   L {v[2] * 1e6:7.2f} uH   across/along {v[3]:+.3f}",
+    EV_HFI_FIT: _fmt_hfi_fit,
+    EV_HFI_POL: _fmt_hfi_pol,
+    EV_HFI_START: lambda v: (f"sensorless start: polarity contrast {v[0] * 100:+.1f} % "
+                             f"({'flipped' if v[1] else 'kept'}), HFI - encoder {v[2]:+.1f} deg"),
 }
 
 

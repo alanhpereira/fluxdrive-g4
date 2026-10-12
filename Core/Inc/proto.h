@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-#define PROTO_VERSION 2u
+#define PROTO_VERSION 3u
 #define PROTO_MAX_LEN 64u
 
 /* message types, host -> device; the reply is (type | MSG_REPLY) with the same tok */
@@ -37,6 +37,8 @@ enum {
 	CAL_TUNE,	 /* 't' */
 	CAL_KV,		 /* 'k', the motor spins */
 	CAL_ZERO,	 /* 'z', reset the encoder zero */
+	CAL_HFI_MAP, /* HFI saliency map, arg = id bias A, 0 = 0/0.25/0.5 x rated and hfi_id, stores hfi_sal */
+	CAL_HFI_POL, /* HFI lock from a random angle + polarity check, compared with the encoder */
 	CAL_N
 };
 
@@ -77,6 +79,13 @@ typedef enum {
 	ST_BAD_TYPE,	 /* unknown message type */
 	ST_SAVE_FAILED,	 /* flash save failed */
 	ST_RUNNING,		 /* not allowed while the motor runs: stop first */
+	ST_NEED_HV,		 /* set the injection voltage (hv) first */
+	ST_NEED_HMAP,	 /* run the HFI saliency map first (hsal = 0) */
+	ST_HFI_NO_SIGNAL, /* no HF current response */
+	ST_HFI_NO_LOCK,	 /* HFI did not lock on an axis */
+	ST_HFI_POL_WRONG, /* polarity check ended on the wrong side */
+	ST_HFI_LOST,	  /* driving on HFI: HFI and encoder disagree */
+	ST_HFI_POL_WEAK, /* sensorless start: polarity contrast too low to trust */
 	ST_N
 } st_t;
 
@@ -108,6 +117,10 @@ enum {
 	EV_ENC,			 /* dir, pp, measured pp, single point - average (deg), spread (deg) */
 	EV_TUNE,		 /* bw, kp_d, ki_d, kp_q, ki_q */
 	EV_KV,			 /* kv, lambda (Wb), Kt (Nm/A), offset (V), samples, peak rpm */
+	EV_HFI_PT,		 /* bias (A), angle from d (deg elec), L along it (H), across/along ratio */
+	EV_HFI_FIT,		 /* bias (A), a0, a2, b2 (1/H: 1/L = a0 + a2 cos 2phi + b2 sin 2phi), saliency, stored (0/1) */
+	EV_HFI_POL,		 /* error before (deg elec, HFI - encoder), error after, flipped (0/1), contrast */
+	EV_HFI_START,	 /* hfi_mode 2 start (tok 0): contrast, flipped (0/1), HFI - encoder (deg elec) */
 };
 
 void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() */

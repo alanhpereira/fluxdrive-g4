@@ -12,7 +12,7 @@
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 4u /* bump when the struct layout changes: older copies are rejected, defaults load */
+#define PARAM_VERSION 5u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -60,7 +60,16 @@ typedef struct {
 	float obs_err_max;	/* deg electrical: sustained observer - encoder difference above this drops it */
 	float acc_lim;		/* rpm/s, speed reference ramp in the speed/position loops; 0 = off */
 	uint8_t obs_blend;	/* 1: blend the observer into angle and speed, 0: run and log it only */
-	uint8_t reserved2[7];
+
+	/* high-frequency injection (hfi.c) */
+	uint8_t hfi_mode; /* 0 off, 1 estimate only (track and log while running), 2 sensorless (HFI + observer, encoderless start) */
+	uint8_t hfi_half; /* PWM periods per half wave of the injection, 2..HFI_HALF_MAX */
+	uint8_t reserved2;
+	float hfi_v;	 /* injection amplitude, V */
+	float hfi_bw;	 /* angle PLL bandwidth, Hz */
+	float hfi_id;	 /* d-axis bias current for HFI (saturation saliency), A */
+	float hfi_sal;	 /* saliency (Lq-Ld)/(Lq+Ld) at hfi_id, from the saliency map; 0 = not measured */
+	float hfi_pol_i; /* polarity check pulse current, A */
 
 	uint32_t crc; /* CRC32 of everything above; keep last */
 } motor_params_t;

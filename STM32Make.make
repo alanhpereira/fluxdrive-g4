@@ -85,6 +85,7 @@ Core/Src/dac.c \
 Core/Src/dma.c \
 Core/Src/fdcan.c \
 Core/Src/gpio.c \
+Core/Src/hfi.c \
 Core/Src/i2c.c \
 Core/Src/main.c \
 Core/Src/motorCtrl.c \

@@ -10,6 +10,7 @@
 #include "i2c.h"
 #include "usart.h"
 #include "cordicMgr.h"
+#include "hfi.h"
 #include "mt6835.h"
 #include "params.h"
 #include "calib.h"
@@ -175,11 +176,12 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
  * 60000 rpm/s is ~3 A plus friction. That keeps the observer's load-dependent flux error small (it drops
  * to ~0.8 of lambda at 8 A) and stays clear of the ~8 A where the encoder mount slips */
 
-/* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ */
-static void outer_loops(ctrl_mode_t mode) {
+/* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ. Returns 1 on the cycles it ran */
+static int outer_loops(ctrl_mode_t mode) {
 	static loop_t prev = LOOP_CURRENT;
 	static int div;
 	static float vramp; /* slewed speed reference, turn/s */
+	int ran = 0;
 	loop_t lp = (mode == CTRL_RUN) ? g_loop : LOOP_CURRENT;
 
 	if (lp == LOOP_CURRENT) {
@@ -194,6 +196,7 @@ static void outer_loops(ctrl_mode_t mode) {
 		}
 		if (++div >= OUTER_DIV) {
 			div = 0;
+			ran = 1;
 			float lim = g_params.vel_lim;
 			float vref = g_vel_ref;
 			if (lp == LOOP_POS) {
@@ -219,6 +222,7 @@ static void outer_loops(ctrl_mode_t mode) {
 		}
 	}
 	prev = lp;
+	return ran;
 }
 
 /* ------------------------------------------------------------------ angle latency compensation */
@@ -352,14 +356,14 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 }
 
 /* Speed from the observer alone: a PLL (same bandwidth as the encoder one) on the observer's electrical
- * angle. It needs nothing from the encoder except the starting speed, so it is what an encoderless mode
- * would run on. Blended into the speed with the same weight as the angle */
+ * angle. Needs only a starting speed (seed, mechanical turn/s): the encoder's, or HFI's in hfi_mode 2.
+ * Blended into the speed with the same weight as the angle */
 static uint32_t s_opll_ph; /* Q32 electrical */
 static float s_opll_vel;   /* electrical turn/s */
 static uint8_t s_opll_init;
 static float s_obs_vel = NAN; /* turn/s mechanical, telemetry */
 
-static void obs_pll(int valid, uint32_t th_obs) {
+static void obs_pll(int valid, uint32_t th_obs, float seed) {
 	if (!valid) {
 		s_opll_init = 0;
 		s_obs_vel = NAN;
@@ -367,7 +371,7 @@ static void obs_pll(int valid, uint32_t th_obs) {
 	}
 	if (!s_opll_init) {
 		s_opll_ph = th_obs;
-		s_opll_vel = s_pll_vel * (float)g_params.pole_pairs; /* encoderless: start from 0 and let it pull in */
+		s_opll_vel = seed * (float)g_params.pole_pairs;
 		s_opll_init = 1;
 	}
 	float err = (float)(int32_t)(th_obs - s_opll_ph) * (1.0f / 4294967296.0f); /* electrical turns */
@@ -396,7 +400,14 @@ void currentLoop(void) {
 	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
 	uint32_t th_obs = 0;
 	int obs = obs_update(i_alpha, i_beta, &th_obs); /* runs in every mode so it is converged when needed */
-	obs_pll(obs, th_obs);
+
+	/* hfi_mode 2: HFI replaces the encoder for commutation, speed and the observer's references (seed speed,
+	 * back-EMF level, agreement check) while it tracks. Position stays on the encoder, which counts turns */
+	uint32_t th_hfi;
+	float vel_hfi;
+	const int hfi2 = g_params.hfi_mode == 2 && g_mode == CTRL_RUN;
+	const int hfi_ok = hfi2 && hfi_estimate(&th_hfi, &vel_hfi);
+	obs_pll(obs, th_obs, hfi_ok ? vel_hfi : hfi2 ? s_vel : s_pll_vel);
 
 	/* encoder angle, advanced by the known delays to the current sample. Blended with the observer by
 	 * speed, it gives theta_m = rotor angle when the currents were sampled (Park); theta_o = rotor angle
@@ -407,8 +418,17 @@ void currentLoop(void) {
 #if ANGLE_COMP
 	th_enc += (uint32_t)(int32_t)(we * age_cur);
 #endif
-	float w = obs_weight(obs, th_obs - th_enc, we);
-	s_vel = (w > 0.0f) ? s_pll_vel + w * (s_obs_vel - s_pll_vel) : s_pll_vel; /* s_obs_vel is NaN when invalid */
+	/* the observer blends in on top of the base: the encoder, or HFI in hfi_mode 2 */
+	const uint32_t th_base = hfi_ok ? th_hfi : th_enc;
+	const float vel_base = hfi_ok ? vel_hfi : s_pll_vel;
+	float w = hfi_ok ? obs_weight(obs, th_obs - th_hfi, vel_hfi * pp * 4294967296.0f) : obs_weight(obs, th_obs - th_enc, we);
+	/* injection off once the observer has it all, back on below 90 % (hysteresis: w is noisy at the edge) */
+	static uint8_t hfi_pause;
+	if (w >= 1.0f)
+		hfi_pause = 1;
+	else if (w < 0.9f)
+		hfi_pause = 0;
+	s_vel = (w > 0.0f) ? vel_base + w * (s_obs_vel - vel_base) : vel_base; /* s_obs_vel is NaN when invalid */
 	g_vel = s_vel;
 	g_rpm = s_vel * 60.0f;
 #if ANGLE_COMP
@@ -421,7 +441,7 @@ void currentLoop(void) {
 		theta_m = theta_o = g_theta_cmd;
 	}
 	else {
-		theta_m = th_enc + (uint32_t)(int32_t)(w * (float)(int32_t)(th_obs - th_enc)); /* shortest way round */
+		theta_m = th_base + (uint32_t)(int32_t)(w * (float)(int32_t)(th_obs - th_base)); /* shortest way round */
 		theta_o = theta_m + out_adv;
 	}
 	float sin_ang, cos_ang, sin_o, cos_o;
@@ -430,16 +450,25 @@ void currentLoop(void) {
 
 	/* measurement */
 	park(i_alpha, i_beta, sin_ang, cos_ang, &id, &iq);
-	g_id = id;
+	g_id = id; /* unfiltered: the overcurrent checks see the injection ripple too */
 	g_iq = iq;
+
+	/* high-frequency injection: voltage to add, and the PIs get the fundamental only */
+	ctrl_mode_t mode = g_mode;
+	float inj_a, inj_b;
+	hfi_out_t hf = hfi_step(mode == CTRL_RUN, hfi_pause, s_vel, i_alpha, i_beta, theta_m, th_enc, &inj_a, &inj_b);
+	if (hf == HFI_INJECT) hfi_filter(&id, &iq);
+	const int hold = hf == HFI_HOLD; /* polarity pulses / hfi_mode 2 start: PIs and outer loops wait */
 
 	/* voltage command in volts */
 	float vin = g_vin > 1.0f ? g_vin : 1.0f;
 	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
-	ctrl_mode_t mode = g_mode;
-	outer_loops(mode);
+	const int outer_ran = outer_loops(hold ? CTRL_OFF : mode); /* held: bumpless from the present state after */
 	if (mode == CTRL_RUN) {
-		pi_current_step(id, iq, 0.9f * vin / SQRT3, &v_d, &v_q);
+		if (!hold) {
+			float vmax = 0.9f * vin / SQRT3 - (hf == HFI_INJECT ? g_params.hfi_v : 0.0f);
+			pi_current_step(id, iq, vmax > 0.0f ? vmax : 0.0f, &v_d, &v_q);
+		}
 	}
 	else {
 		pi_reset(&g_pi_d); /* start from zero on the next CTRL_RUN */
@@ -453,19 +482,20 @@ void currentLoop(void) {
 	g_vq_f += 0.1f * (v_q - g_vq_f);
 	g_iq_f += 0.1f * (iq - g_iq_f);
 
-	/* volts -> per-unit of Vdc/sqrt(3), then limit the vector (keeps its direction) */
+	/* volts -> per-unit of Vdc/sqrt(3), add the injection (already alpha-beta), then limit the vector
+	 * (keeps its direction) */
 	float k = SQRT3 / vin;
-	float u_d = v_d * k, u_q = v_q * k;
+	float v_alpha, v_beta;
+	ipark(v_d * k, v_q * k, sin_o, cos_o, &v_alpha, &v_beta);
+	v_alpha += inj_a * k;
+	v_beta += inj_b * k;
 	/* beyond 1 the phases clip and the observer would integrate a voltage that was never applied */
-	float m2 = u_d * u_d + u_q * u_q;
+	float m2 = v_alpha * v_alpha + v_beta * v_beta;
 	if (m2 > 1.0f) {
 		float sc = 1.0f / sqrtf(m2); /* build with -fno-math-errno so this is one vsqrt */
-		u_d *= sc;
-		u_q *= sc;
+		v_alpha *= sc;
+		v_beta *= sc;
 	}
-
-	float v_alpha, v_beta;
-	ipark(u_d, u_q, sin_o, cos_o, &v_alpha, &v_beta);
 	int written = SVPWM(v_alpha, v_beta); /* apply first, log afterwards: less delay between measurement and output */
 	s_obs_va1 = s_obs_va;				  /* when nothing was written the previous duties stay on */
 	s_obs_vb1 = s_obs_vb;
@@ -485,17 +515,18 @@ void currentLoop(void) {
 	}
 
 	/* telemetry */
-	if (++cycles_since_last_frame >= 10) {
+	/* never on the cycle the outer loops ran: the two together were the longest cycles */
+	if (++cycles_since_last_frame >= 10 && !outer_ran) {
 		cycles_since_last_frame = 0;
 		seq++;
 		if (huart1.gState == HAL_UART_STATE_READY) { /* else main is sending a protocol reply: skip a frame */
 			telemetry.seq = seq;
 			telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
 			telemetry.v[1] = g_vin;
-			telemetry.v[2] = g_cur[0];
-			telemetry.v[3] = g_cur[1];
-			telemetry.v[4] = g_cur[2];
-			telemetry.v[5] = id;
+			telemetry.v[2] = g_hfi_err * 360.0f; /* HFI - encoder, deg electrical; NaN unless HFI tracks */
+			telemetry.v[3] = g_hfi_rpm;			  /* HFI PLL speed; NaN unless HFI tracks */
+			telemetry.v[4] = g_hfi_amp;			  /* HF current step along the injection axis, A; NaN with HFI off */
+			telemetry.v[5] = id;				  /* with HFI on: the fundamental, what the PIs see */
 			telemetry.v[6] = iq;
 			telemetry.v[7] = g_rpm;
 			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
