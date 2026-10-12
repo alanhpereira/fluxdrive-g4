@@ -48,6 +48,8 @@ RAM: 18.7 KB of 32 KB (was 19.1 KB).
 - **`strtok`:** in `set_param()` it was replaced by a manual split, because `strtok` calls `assert`, which linked `fprintf` and newlib's stdio/`malloc` (~4.5 KB).
 
 ### 4. No newlib `printf`
+> **Superseded 2026-10-12:** the text console, with `say()`/`fmt_v()`/`parse_*`, was removed (phase 3 of `docs/config-gui-handoff.md`); the firmware no longer formats text. `EV()` passes float arrays, so the `__aeabi_f2d` part of libgcc is gone too (libgcc 1.45 KB). Release `-Os`: 56 268 B.
+
 - **Formatter:** `say()` uses `fmt_v()` in `calib.c`, a subset `vsnprintf` with `%f` done in float. `__asm__(".global _printf_float")` is gone from `main.c`.
 - **Checked on the host:** compiled with the host gcc and compared with the host libc's `vsnprintf`/`strtod` for every format string used in `calib.c` and about 30 parser inputs, including garbage, exponents and range limits.
 - **Left:** libgcc 2.5 KB. That is float→double promotion for varargs (`__aeabi_f2d`/`d2f`, which share one object with the double add) plus 64-bit division, and it's not worth more effort.
@@ -55,17 +57,16 @@ RAM: 18.7 KB of 32 KB (was 19.1 KB).
 ## Not done / still available
 
 ### 2. Remove USB CDC: **skipped on purpose**
-USB is planned for configuration. When that work starts, the console in `calib.c` can run over CDC unchanged: `say()` only needs a different transmit call, and `cmd_poll()` a different byte source. Then USART1 can carry telemetry only.
+USB is planned for configuration. When that work starts, the binary protocol in `proto.c` runs over CDC (phase 4 of `docs/config-gui-handoff.md`). Then USART1 can carry telemetry only.
 
 ### 5. If more is needed later
 - **LTO (`-flto`), roughly 5–7 KB:** STM32Make passes `-Wa,-a,-ad,-alms=...` listing flags per file, which LTO drops with a warning; remove them for LTO builds. Check that the weak HAL callbacks and `TIM1_UP_TIM16_IRQHandler` in `mt6835.c` still link to the right definitions. Check how `#pragma GCC optimize` interacts with LTO, and re-measure loop timing.
 - **HAL UART → LL, ≈ 3 KB:** USART1 only does DMA TX plus byte RX. If USB takes over config, UART RX goes away too.
-- **Shorter strings in `calib.c`, ≈ 1–3 KB:** do this last; the messages are useful at the bench.
 
 ## Must be verified on hardware (not done yet)
-- **Loop timing:** `f` in both builds. `currentLoop` max must stay under ~19 µs, and encoder `late` must stay 0.
-- **Commands:** `p`, then `s` with fractional, negative and exponent values (`s ld 2.2e-5`) and garbage (`s kv abc` must be rejected). Then `v 1000`, `v -500`, `a 2.5`, `a -0.25`, `g 0 1`, `i 0.5`, `l 8`, `q 8`.
-- **`k`:** run kv and compare the result with the value saved before this change (same motor), because the regression arithmetic changed.
+- **Loop timing:** Config tab diagnostics in both builds. `currentLoop` max must stay under ~19 µs, and encoder `late` must stay 0.
+- **Commands:** now through the Config tab: parameter writes (including out-of-range values, which must be refused), speed ±, position ±, current, Ld/Lq at an explicit test current.
+- **kv calibration:** run kv and compare the result with the value saved before this change (same motor), because the regression arithmetic changed.
 
 ## Constraints to keep
 - **CubeMX:** `Driver TCC.ioc` is the source of truth. Generated files only change inside `USER CODE` blocks (see CLAUDE.md).
