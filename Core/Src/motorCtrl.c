@@ -1,5 +1,6 @@
 #include "motorCtrl.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "i2c.h"
@@ -94,8 +95,9 @@ static inline void ipark(float d, float q, float s, float c, float* al, float* b
 	*al = d * c - q * s;
 	*be = d * s + q * c;
 }
-void SVPWM(float alpha, float beta) {
-	if (HAL_GetTick() < g_lastFaultCleared + FAULT_CLEAR_MIN_TIME) return;
+/* returns 0 when nothing was written (the previous duties stay on) */
+int SVPWM(float alpha, float beta) {
+	if (HAL_GetTick() < g_lastFaultCleared + FAULT_CLEAR_MIN_TIME) return 0;
 	float base = -0.5f * alpha;
 	float height = SQRT3_2 * beta;
 	// calculate raw voltages
@@ -115,6 +117,7 @@ void SVPWM(float alpha, float beta) {
 	out_c = out_c < 0 ? 0 : out_c > g_max_duty_cycle ? g_max_duty_cycle
 													 : out_c;
 	setDuty(out_a, out_b, out_c);
+	return 1;
 }
 
 /* ------------------------------------------------------------------ position / speed estimate */
@@ -205,7 +208,104 @@ static void outer_loops(ctrl_mode_t mode) {
 #define ENC_EXTRA_S 0.0f
 /* the duty written now loads at the next bottom and is centred on the following top */
 #define OUT_DELAY_S (1.0f / CTRL_FS_HZ + 0.44e-6f) /* ~40.4 us, current sample -> centre of the applied voltage */
-#define ANGLE_COMP 1										 /* 0: use the raw encoder angle for both transforms */
+#define ANGLE_COMP 1							   /* 0: use the raw encoder angle for both transforms */
+
+/* ------------------------------------------------------------------ back-EMF (flux) observer */
+/* Nonlinear flux observer (Ortega et al. 2011, the one VESC/ODrive use), stationary frame:
+ *   x' = v - R*i + k * eta * (lambda^2 - |eta|^2),   eta = x - L*i = rotor flux,  k = gain / (2 lambda^2)
+ * The angle of eta is the electrical angle at the current sample, the same instant theta_m refers to.
+ * It replaces the encoder for commutation (Park/inverse Park) above OBS_BLEND_LO_V of back-EMF, with a
+ * linear blend up to OBS_BLEND_HI_V. Position and speed always come from the encoder PLL */
+#define OBS_BLEND 1			/* 0: the observer runs and is logged, but the encoder alone drives the angle */
+#define OBS_GAIN 1000.0f	/* rad/s */
+#define OBS_BLEND_LO_V 0.7f /* peak back-EMF (lambda * we) where the observer starts to get weight, V */
+#define OBS_BLEND_HI_V 1.4f /* ...and where it has all of it */
+#define OBS_FLUX_TOL 0.2f	/* |eta| must stay within lambda * (1 +- tol) */
+#define OBS_ERR_MAX 0.0833f /* turns electrical (30 deg): a larger observer - encoder difference drops the observer.
+							 * Leaves room for the encoder's own error (nonlinearity ~+-5, mount slip ~13 deg seen) */
+#define OBS_LOCK_N 250		/* cycles (10 ms) both checks must hold before it gets any weight */
+
+static float s_obs_xa, s_obs_xb;	/* stator flux estimate, Wb */
+static float s_obs_ia, s_obs_ib;	/* currents at the previous sample, A */
+static float s_obs_va, s_obs_vb;	/* last voltage written to the bridge, V */
+static float s_obs_va1, s_obs_vb1;	/* the one written before it */
+static float s_obs_kv = -1.0f;		/* kv the constants below were computed from */
+static float s_obs_lambda, s_obs_k; /* Wb peak phase (as cal_kv()), correction gain */
+static uint16_t s_obs_good;			/* consecutive cycles the observer agreed with the encoder */
+static float s_obs_ratio = NAN;		/* |eta| / lambda, telemetry */
+static float s_obs_err = NAN;		/* observer - encoder, turns electrical, telemetry */
+static float s_obs_w;				/* blend weight, telemetry */
+
+/* one step with the currents sampled now; returns 0 (and no angle) without R, L and kv */
+static int obs_update(float i_a, float i_b, uint32_t* theta) {
+	const uint32_t need = PF_R_VALID | PF_L_VALID;
+	if ((g_params.flags & need) != need || !(g_params.kv > 0.0f)) {
+		s_obs_ratio = NAN;
+		return 0;
+	}
+	if (g_params.kv != s_obs_kv) {
+		s_obs_kv = g_params.kv;
+		s_obs_lambda = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * s_obs_kv);
+		s_obs_k = 0.5f * OBS_GAIN / (s_obs_lambda * s_obs_lambda);
+		s_obs_xa = s_obs_xb = 0.0f;
+		s_obs_good = 0;
+	}
+	float r = 0.5f * (g_params.rd + g_params.rq);
+	float l = 0.5f * (g_params.ld + g_params.lq);
+	/* the interval since the previous sample ran on the previous command for about half of it and on the
+	 * one before for the other half (a duty loads at the bottom and the samples are near the top) */
+	float va = 0.5f * (s_obs_va + s_obs_va1) - r * 0.5f * (i_a + s_obs_ia);
+	float vb = 0.5f * (s_obs_vb + s_obs_vb1) - r * 0.5f * (i_b + s_obs_ib);
+	s_obs_ia = i_a;
+	s_obs_ib = i_b;
+
+	float ea = s_obs_xa - l * i_a, eb = s_obs_xb - l * i_b;
+	float c = s_obs_k * (s_obs_lambda * s_obs_lambda - (ea * ea + eb * eb));
+	s_obs_xa += (va + c * ea) * (1.0f / CTRL_FS_HZ);
+	s_obs_xb += (vb + c * eb) * (1.0f / CTRL_FS_HZ);
+	ea = s_obs_xa - l * i_a;
+	eb = s_obs_xb - l * i_b;
+	s_obs_ratio = sqrtf(ea * ea + eb * eb) / s_obs_lambda;
+	if (!(s_obs_ratio < 3.0f)) {
+		/* far off (or NaN) the cubic correction overshoots in discrete time and runs away: restart from eta = 0 */
+		s_obs_xa = l * i_a;
+		s_obs_xb = l * i_b;
+	}
+	*theta = atan2_q32(eb, ea);
+	return 1;
+}
+
+/* weight of the observer angle against the encoder one. diff = observer - encoder (Q32 electrical),
+ * we = electrical speed in Q32 per second */
+static float obs_weight(int valid, uint32_t diff, float we) {
+	if (!valid) {
+		s_obs_good = 0;
+		s_obs_err = NAN;
+		s_obs_w = 0.0f;
+		return 0.0f;
+	}
+	float d = (float)(int32_t)diff * (1.0f / 4294967296.0f);
+	s_obs_err = d;
+	/* with MOE off the terminal voltage is not what was commanded, so the estimate is not trusted */
+	int ok = fabsf(d) < OBS_ERR_MAX && fabsf(s_obs_ratio - 1.0f) < OBS_FLUX_TOL && (TIM1->BDTR & TIM_BDTR_MOE);
+	if (!ok)
+		s_obs_good = 0;
+	else if (s_obs_good < OBS_LOCK_N)
+		s_obs_good++;
+	float w = 0.0f;
+#if OBS_BLEND
+	if (s_obs_good >= OBS_LOCK_N) {
+		float emf = s_obs_lambda * fabsf(we) * (2.0f * (float)M_PI / 4294967296.0f); /* V peak */
+		w = (emf - OBS_BLEND_LO_V) * (1.0f / (OBS_BLEND_HI_V - OBS_BLEND_LO_V));
+		w = w < 0.0f ? 0.0f : w > 1.0f ? 1.0f
+									   : w;
+	}
+#else
+	(void)we;
+#endif
+	s_obs_w = w;
+	return w;
+}
 
 /* time since the ADC sampled the currents (CC4 on the way up), from the TIM1 counter */
 static inline float since_current_sample_s(void) {
@@ -220,33 +320,39 @@ void currentLoop(void) {
 	float age;
 	int fresh = MT6835_Sample(&hMT6835, &age); /* last good group of this period's burst read */
 	age_cur = fresh ? age + ENC_EXTRA_S : age_cur + 1.0f / CTRL_FS_HZ;
-	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
+	uint32_t ang = hMT6835.angle;								   /* one snapshot for the whole cycle */
 	motion_update(ang, fresh, age_cur + since_current_sample_s()); /* the PLL works in "now" time */
 
-	/* angle: forced during calibration, encoder otherwise. With the encoder, advance it by the known
-	 * delays: theta_m = rotor angle when the currents were sampled (Park), theta_o = rotor angle while the
-	 * new voltage is applied (inverse Park) */
+	float i_alpha, i_beta, id, iq;
+	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
+	uint32_t th_obs = 0;
+	int obs = obs_update(i_alpha, i_beta, &th_obs); /* runs in every mode so it is converged when needed */
+
+	/* encoder angle, advanced by the known delays to the current sample. Blended with the observer by
+	 * speed, it gives theta_m = rotor angle when the currents were sampled (Park); theta_o = rotor angle
+	 * while the new voltage is applied (inverse Park). Forced during calibration */
+	float we = s_pll_vel * (float)g_params.pole_pairs * 4294967296.0f; /* electrical Q32 per second */
+	uint32_t th_enc = elec_angle(ang);
+#if ANGLE_COMP
+	th_enc += (uint32_t)(int32_t)(we * age_cur);
+	uint32_t out_adv = (uint32_t)(int32_t)(we * OUT_DELAY_S);
+#else
+	uint32_t out_adv = 0;
+#endif
+	float w = obs_weight(obs, th_obs - th_enc, we);
 	uint32_t theta_m, theta_o;
 	if (g_mode == CTRL_CAL) {
 		theta_m = theta_o = g_theta_cmd;
 	}
 	else {
-		uint32_t e = elec_angle(ang);
-#if ANGLE_COMP
-		float we = s_pll_vel * (float)g_params.pole_pairs * 4294967296.0f; /* electrical Q32 per second */
-		theta_m = e + (uint32_t)(int32_t)(we * age_cur);
-		theta_o = e + (uint32_t)(int32_t)(we * (age_cur + OUT_DELAY_S));
-#else
-		theta_m = theta_o = e;
-#endif
+		theta_m = th_enc + (uint32_t)(int32_t)(w * (float)(int32_t)(th_obs - th_enc)); /* shortest way round */
+		theta_o = theta_m + out_adv;
 	}
 	float sin_ang, cos_ang, sin_o, cos_o;
 	sincos_q31(theta_m, &sin_ang, &cos_ang);
 	sincos_q31(theta_o, &sin_o, &cos_o);
 
 	/* measurement */
-	float i_alpha, i_beta, id, iq;
-	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
 	park(i_alpha, i_beta, sin_ang, cos_ang, &id, &iq);
 	g_id = id;
 	g_iq = iq;
@@ -274,17 +380,23 @@ void currentLoop(void) {
 	/* volts -> per-unit of Vdc/sqrt(3), then limit the vector (keeps its direction) */
 	float k = SQRT3 / vin;
 	float u_d = v_d * k, u_q = v_q * k;
-	// float m2 = u_d * u_d + u_q * u_q;
-	//  if (m2 > 1.0f) {
-	//  maybe use cordic
-	//  float sc = 1.0f / sqrtf(m2); /* build with -fno-math-errno so this is one vsqrt */
-	//  u_d *= sc;
-	//  u_q *= sc;
-	// }
+	/* beyond 1 the phases clip and the observer would integrate a voltage that was never applied */
+	float m2 = u_d * u_d + u_q * u_q;
+	if (m2 > 1.0f) {
+		float sc = 1.0f / sqrtf(m2); /* build with -fno-math-errno so this is one vsqrt */
+		u_d *= sc;
+		u_q *= sc;
+	}
 
 	float v_alpha, v_beta;
 	ipark(u_d, u_q, sin_o, cos_o, &v_alpha, &v_beta);
-	SVPWM(v_alpha, v_beta); /* apply first, log afterwards: less delay between measurement and output */
+	int written = SVPWM(v_alpha, v_beta); /* apply first, log afterwards: less delay between measurement and output */
+	s_obs_va1 = s_obs_va;				  /* when nothing was written the previous duties stay on */
+	s_obs_vb1 = s_obs_vb;
+	if (written) {
+		s_obs_va = v_alpha * vin * INV_SQRT3;
+		s_obs_vb = v_beta * vin * INV_SQRT3;
+	}
 
 	/* decay/step recorder used by the 'l' and 'q' commands */
 	if (g_rec_state == 1) {
@@ -313,6 +425,9 @@ void currentLoop(void) {
 			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
 			telemetry.v[9] = g_pos;
 			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
+			telemetry.v[11] = s_obs_err * 360.0f; /* observer - encoder, deg electrical; NaN without R, L, kv */
+			telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
+			telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle */
 			telemetry.sum = frame_sum(&telemetry);
 			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
 		}

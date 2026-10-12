@@ -336,13 +336,44 @@ static const char* cal_encoder(void) {
 	HAL_Delay(1000); /* settle on the d axis at theta = 0 */
 	uint32_t mech = enc_avg(200, 2);
 	uint32_t m = (mech << 11) * (uint32_t)pp;
-	uint32_t off = (dir > 0) ? (0u - m) : m; /* makes elec_angle() = 0 here */
+	uint32_t ref = (dir > 0) ? (0u - m) : m; /* makes elec_angle() = 0 here: first guess */
+
+	/* one point carries the encoder nonlinearity at that spot and the friction lag of the approach. Average
+	 * offset = theta_cmd - encoder over one mechanical turn forward and one back: the nonlinearity
+	 * (periodic in the mechanical angle) and the lag (sign follows the direction) both cancel */
+	say("averaging the offset over one turn each way...\r\n");
+	const int turn_steps = (int)(pp * 1000.0f / F_E);
+	const int skip = 100; /* ms after each start/reversal while the lag builds up */
+	int64_t acc = 0;
+	int n = 0;
+	int32_t dmin = INT32_MAX, dmax = INT32_MIN;
+	theta = 0;
+	for (int pass = 0; pass < 2; pass++) {
+		for (int s = 0; s < turn_steps; s++) {
+			theta += pass ? (0u - inc) : inc;
+			g_theta_cmd = theta;
+			HAL_Delay(1);
+			if ((e = chk())) return e;
+			if (s < skip) continue;
+			uint32_t me = (hMT6835.angle << 11) * (uint32_t)pp;
+			int32_t d = (int32_t)(theta - ((dir > 0) ? me : 0u - me) - ref); /* this point's offset - first guess */
+			acc += d;
+			n++;
+			if (d < dmin) dmin = d;
+			if (d > dmax) dmax = d;
+		}
+	}
+	g_theta_cmd = theta; /* back where the averaging started */
+	uint32_t off = ref + (uint32_t)(int32_t)(acc / n);
 
 	g_params.pole_pairs = (uint8_t)pp;
 	g_params.enc_dir = dir;
 	g_params.elec_offset = off;
 	g_params.flags |= PF_ELEC_OFFSET_VALID;
+	const float to_deg = 360.0f / 4294967296.0f;
 	say("encoder dir %+d, pole pairs %d (measured %.2f), offset %lu\r\n", dir, pp, ppf, (unsigned long)off);
+	say("single point was %+.1f deg off the average; spread over the turn %.1f deg elec (nonlinearity + lag)\r\n",
+		(double)((float)(int32_t)(ref - off) * to_deg), (double)((float)(dmax - dmin) * to_deg));
 	return NULL;
 }
 

@@ -40,6 +40,8 @@ PLOTS = [
     ("Id / Iq (A)", [(5, "Id", "#ff55ff"), (6, "Iq", "#f0f0f0")], True),
     ("Speed (rpm)", [(7, "rpm", "#f0c040"), (8, "ref", "#ff5555")], True),
     ("Position (turns)", [(9, "pos", "#40d0e0"), (10, "ref", "#ff5555")], True),
+    ("Observer - encoder (deg elec)", [(11, "err", "#ff9040")], False),
+    ("Observer flux / blend", [(12, "|flux|/lambda", "#40d0e0"), (13, "weight", "#f0c040")], False),
 ]
 
 QUICK = [("Print params", "p"), ("Help", "?")]
