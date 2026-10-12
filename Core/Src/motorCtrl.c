@@ -1,3 +1,7 @@
+/* the 25 kHz ISR body: -O2 even in a size-optimized (-Os) build, the loop must end ~19 us after the ADC.
+ * Before the includes, so the inline helpers (pi_ctrl.h, cordicMgr.h) are compiled the same way */
+#pragma GCC optimize("O2")
+
 #include "motorCtrl.h"
 
 #include <math.h>

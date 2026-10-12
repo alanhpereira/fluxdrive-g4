@@ -2,8 +2,6 @@
 
 #include <math.h>
 #include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
@@ -77,14 +75,194 @@ static void uart_wait_idle(void) {
 	}
 }
 
+/* minimal vsnprintf, so newlib's printf (and its float/bignum code) stays out of flash:
+ * %[+][0][width][.prec][l] with d i u x X c s f %. %f takes the promoted double but formats it in float
+ * math (~7 significant digits, at most 6 decimals, |v| < 4e9 else "ovf"). Truncates at size - 1 */
+static int fmt_v(char* buf, int size, const char* f, va_list ap) {
+	char* p = buf;
+	char* const end = buf + size - 1;
+	while (*f) {
+		if (*f != '%') {
+			if (p < end) *p++ = *f;
+			f++;
+			continue;
+		}
+		f++;
+		int plus = 0, zero = 0, width = 0, prec = -1;
+		for (;; f++) {
+			if (*f == '+') plus = 1;
+			else if (*f == '0') zero = 1;
+			else break;
+		}
+		while (*f >= '0' && *f <= '9') width = width * 10 + (*f++ - '0');
+		if (*f == '.') {
+			prec = 0;
+			while (*++f >= '0' && *f <= '9') prec = prec * 10 + (*f - '0');
+		}
+		if (*f == 'l') f++; /* long is int here */
+		char t[24];			/* digits, built backwards */
+		int n = 0;
+		char sign = 0;
+		const char* s = NULL;
+		const char c = *f;
+		if (c) f++;
+		switch (c) {
+			case 'd':
+			case 'i': {
+				int v = va_arg(ap, int);
+				uint32_t u = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
+				sign = v < 0 ? '-' : plus ? '+' : 0;
+				do t[n++] = (char)('0' + u % 10);
+				while (u /= 10);
+				break;
+			}
+			case 'u':
+			case 'x':
+			case 'X': {
+				uint32_t u = va_arg(ap, uint32_t);
+				const uint32_t base = c == 'u' ? 10 : 16;
+				const char* dg = c == 'x' ? "0123456789abcdef" : "0123456789ABCDEF";
+				do t[n++] = dg[u % base];
+				while (u /= base);
+				break;
+			}
+			case 'f': {
+				float v = (float)va_arg(ap, double);
+				if (prec < 0 || prec > 6) prec = 6;
+				sign = v < 0.0f ? '-' : plus ? '+' : 0;
+				v = fabsf(v);
+				if (v != v) s = "nan";
+				else if (v >= 4.0e9f) s = "ovf";
+				else {
+					uint32_t scale = 1;
+					for (int k = 0; k < prec; k++) scale *= 10;
+					uint32_t ip = (uint32_t)v;
+					uint32_t fr = (uint32_t)((v - (float)ip) * (float)scale + 0.5f);
+					if (fr >= scale) {
+						fr -= scale;
+						ip++;
+					}
+					for (int k = 0; k < prec; k++, fr /= 10) t[n++] = (char)('0' + fr % 10);
+					if (prec) t[n++] = '.';
+					do t[n++] = (char)('0' + ip % 10);
+					while (ip /= 10);
+				}
+				break;
+			}
+			case 'c':
+				t[n++] = (char)va_arg(ap, int);
+				break;
+			case 's':
+				s = va_arg(ap, const char*);
+				break;
+			default: /* "%%", or an unknown conversion printed as is */
+				t[n++] = c;
+				break;
+		}
+		int len = s ? (int)strlen(s) : n;
+		int pad = width - len - (sign ? 1 : 0);
+		if (!zero || s)
+			for (; pad > 0; pad--)
+				if (p < end) *p++ = ' ';
+		if (sign && p < end) *p++ = sign;
+		for (; pad > 0; pad--)
+			if (p < end) *p++ = '0';
+		if (s)
+			while (*s && p < end) *p++ = *s++;
+		else
+			while (n && p < end) *p++ = t[--n];
+	}
+	*p = 0;
+	return (int)(p - buf);
+}
+
 /* only call while telemetry is paused (begin()) */
 static void say(const char* fmt, ...) {
 	char b[220];
 	va_list ap;
 	va_start(ap, fmt);
-	int n = vsnprintf(b, sizeof b, fmt, ap);
+	int n = fmt_v(b, sizeof b, fmt, ap);
 	va_end(ap);
-	if (n > 0) HAL_UART_Transmit(&huart1, (uint8_t*)b, (uint16_t)(n < (int)sizeof b ? n : (int)sizeof b - 1), 100);
+	if (n > 0) HAL_UART_Transmit(&huart1, (uint8_t*)b, (uint16_t)n, 100);
+}
+
+/* ------------------------------------------------------------------ number parsing (no strtof/strtod) */
+/* decimal number "[+-]digits[.digits][e[+-]digits]" after optional blanks, as value = m * 10^e10 */
+typedef struct {
+	uint64_t m;
+	int e10;
+	int neg;
+} dec_t;
+
+/* returns 0 if there are no digits. *end (if not NULL) is set past the number */
+static int parse_dec(const char* s, const char** end, dec_t* d) {
+	int nd = 0, frac = 0;
+	d->m = 0;
+	d->e10 = 0;
+	d->neg = 0;
+	while (*s == ' ') s++;
+	if (*s == '-' || *s == '+') d->neg = *s++ == '-';
+	for (;; s++) {
+		if (*s == '.' && !frac) {
+			frac = 1;
+			continue;
+		}
+		if (*s < '0' || *s > '9') break;
+		nd++;
+		if (d->m < 100000000000000000ull) { /* keep 18 digits, further ones only scale */
+			d->m = d->m * 10 + (uint64_t)(*s - '0');
+			d->e10 -= frac;
+		}
+		else if (!frac)
+			d->e10++;
+	}
+	if (!nd) return 0;
+	if ((*s == 'e' || *s == 'E') && ((s[1] >= '0' && s[1] <= '9') || ((s[1] == '-' || s[1] == '+') && s[2] >= '0' && s[2] <= '9'))) {
+		int eneg = *++s == '-', e = 0;
+		if (*s == '-' || *s == '+') s++;
+		for (; *s >= '0' && *s <= '9'; s++)
+			if (e < 100) e = e * 10 + (*s - '0');
+		d->e10 += eneg ? -e : e;
+	}
+	if (end) *end = s;
+	return 1;
+}
+
+static float dec_to_f(const dec_t* d) {
+	int e = d->e10 < 0 ? -d->e10 : d->e10;
+	float p = 1.0f; /* exact up to 1e10 */
+	while (e--) p *= 10.0f;
+	float v = d->e10 < 0 ? (float)d->m / p : (float)d->m * p;
+	return d->neg ? -v : v;
+}
+
+/* float argument; returns 0 (and leaves *v) if there is no number */
+static int parse_f(const char* s, const char** end, float* v) {
+	dec_t d;
+	if (!parse_dec(s, end, &d)) return 0;
+	*v = dec_to_f(&d);
+	return 1;
+}
+
+/* Q32.32 turns, exact to 1e-9 turn without double math; returns 0 if no number or |value| >= 2e9 */
+static int parse_q32(const char* s, pos_q32_t* q) {
+	dec_t d;
+	if (!parse_dec(s, NULL, &d)) return 0;
+	while (d.e10 < -9) { /* fr << 32 below must not overflow */
+		d.m /= 10;
+		d.e10++;
+	}
+	for (; d.e10 > 0; d.e10--) {
+		if (d.m >= 2000000000ull) return 0;
+		d.m *= 10;
+	}
+	uint64_t p = 1;
+	for (int k = d.e10; k < 0; k++) p *= 10;
+	const uint64_t ip = d.m / p, fr = d.m % p;
+	if (ip >= 2000000000ull) return 0;
+	const int64_t v = (int64_t)((ip << 32) + ((fr << 32) + p / 2) / p);
+	*q = d.neg ? -v : v;
+	return 1;
 }
 
 static void begin(void) {
@@ -367,7 +545,7 @@ static const char* cal_encoder(void) {
 	if (revs < 0.2f) return "rotor did not follow the field (raise current, check load)";
 	int8_t dir = (total >= 0) ? 1 : -1;
 	float ppf = (float)N_REVS / revs;
-	int pp = (int)lroundf(ppf);
+	int pp = (int)(ppf + 0.5f); /* ppf > 0 */
 	if (pp < 1 || pp > 255 || fabsf(ppf - (float)pp) > 0.2f) {
 		say("pole pairs came out %.2f, not an integer: rotor lost steps\r\n", ppf);
 		return "sweep unreliable";
@@ -532,17 +710,20 @@ static const char* cal_kv(void) {
 	g_iq_ref = 0.0f;
 	HAL_Delay(20); /* current settles to zero */
 	spd_init(&s);
-	double n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+	/* running means and centred sums (Welford): stays accurate in float, unlike n*sxx - sx*sx */
+	int n = 0;
+	float mx = 0.0f, my = 0.0f, cxx = 0.0f, cxy = 0.0f;
 	t0 = HAL_GetTick();
 	while (w > 0.3f * w0 && HAL_GetTick() - t0 < 5000) {
 		HAL_Delay(1);
 		w = spd_update(&s);
 		float y = g_vq_f - g_params.rq * g_iq_f;
-		n += 1.0;
-		sx += w;
-		sy += y;
-		sxx += (double)w * w;
-		sxy += (double)w * y;
+		n++;
+		float dx = w - mx;
+		mx += dx / (float)n;
+		my += (y - my) / (float)n;
+		cxx += dx * (w - mx);
+		cxy += dx * (y - my);
 		if ((e = chk())) {
 			kv_coast(&s, w);
 			return e;
@@ -550,17 +731,16 @@ static const char* cal_kv(void) {
 	}
 	if ((e = kv_coast(&s, w0))) return e;
 
-	double den = n * sxx - sx * sx;
-	if (n < 50 || den <= 0.0) return "too few samples during coast-down";
-	float lambda = (float)((n * sxy - sx * sy) / den); /* V*s/rad electrical, peak phase */
-	float c = (float)((sy - lambda * sx) / n);
+	if (n < 50 || !(cxx > 0.0f)) return "too few samples during coast-down";
+	float lambda = cxy / cxx; /* V*s/rad electrical, peak phase */
+	float c = my - lambda * mx;
 	if (lambda <= 0.0f) return "back-EMF has the wrong sign (encoder offset/direction?)";
 
 	/* line-to-line peak convention: Kt = 1.5 * pp * lambda = 8.27 / kv */
 	float kv = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * lambda);
 	g_params.kv = kv;
 	say("kv = %.1f rpm/V   (lambda %.3f mWb, Kt %.4f Nm/A, offset %.3f V, %d samples, peak %.0f rpm)\r\n",
-		(double)kv, (double)(lambda * 1e3f), (double)(1.5f * (float)g_params.pole_pairs * lambda), (double)c, (int)n,
+		(double)kv, (double)(lambda * 1e3f), (double)(1.5f * (float)g_params.pole_pairs * lambda), (double)c, n,
 		(double)(w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f));
 	return NULL;
 }
@@ -592,7 +772,11 @@ static int run_enter(int outer) {
 
 /* 'v <rpm>': speed mode */
 static int run_vel(char* args) {
-	float rpm = strtof(args, NULL);
+	float rpm;
+	if (!parse_f(args, NULL, &rpm)) {
+		say("FAILED: usage v <rpm>\r\n");
+		return 0;
+	}
 	float lim = g_params.vel_lim * 60.0f;
 	if (fabsf(rpm) > lim) {
 		rpm = copysignf(lim, rpm);
@@ -612,16 +796,16 @@ static int run_pos(char* args) {
 		say("FAILED: set the position gain first (s pkp ...)\r\n");
 		return 0;
 	}
-	double t = strtod(args, NULL); /* double: 53 bits hold the full Q32.32 range at encoder resolution */
-	if (!(fabs(t) < 2.0e9)) {
-		say("FAILED: target out of range\r\n");
+	pos_q32_t t; /* parsed straight to Q32.32: a float would lose the encoder resolution far from home */
+	if (!parse_q32(args, &t)) {
+		say("FAILED: usage a <turns>, |turns| < 2e9\r\n");
 		return 0;
 	}
 	if (!run_enter(1)) return 0;
 	g_id_ref = 0.0f;
 
 	/* hand over the reference and wait until currentLoop() has latched it, then switch */
-	g_pos_ref_new = (pos_q32_t)llround(t * POS_Q32_ONE);
+	g_pos_ref_new = t;
 	g_pos_ref_req = 1;
 	uint32_t t0 = HAL_GetTick();
 	while (g_pos_ref_req) {
@@ -631,15 +815,18 @@ static int run_pos(char* args) {
 		}
 	}
 	g_loop = LOOP_POS;
-	say("position %.4f turns (now %.4f)   ('o' stops)\r\n", (double)t, (double)g_pos);
+	say("position %.4f turns (now %.4f)   ('o' stops)\r\n", (double)((float)t * (float)(1.0 / POS_Q32_ONE)), (double)g_pos);
 	return 1;
 }
 
 /* current mode: 'g <id> <iq>', or 'i <iq>' with id = 0 */
 static int run_start(char* args, int iq_only) {
-	char* end;
-	float id = iq_only ? 0.0f : strtof(args, &end);
-	float iq = strtof(iq_only ? args : end, NULL);
+	const char* s = args;
+	float id = 0.0f, iq;
+	if ((!iq_only && !parse_f(s, &s, &id)) || !parse_f(s, NULL, &iq)) {
+		say(iq_only ? "FAILED: usage i <iq>\r\n" : "FAILED: usage g <id> <iq>\r\n");
+		return 0;
+	}
 	float mag = sqrtf(id * id + iq * iq);
 	if (mag > g_params.rated_current) { /* scale the vector, keep its direction */
 		float sc = g_params.rated_current / mag;
@@ -714,13 +901,21 @@ static const struct {
 };
 
 static void set_param(char* args) {
-	char* key = strtok(args, " ");
-	char* val = strtok(NULL, " ");
-	if (!key || !val) {
+	/* split "<key> <value>" in place (strtok would link newlib's assert -> fprintf -> stdio) */
+	char* key = args;
+	while (*key == ' ') key++;
+	char* val = key;
+	while (*val && *val != ' ') val++;
+	if (*val) *val++ = 0;
+	if (!*key || !*val) {
 		say("usage: s <key> <value>\r\n");
 		return;
 	}
-	float f = strtof(val, NULL);
+	float f;
+	if (!parse_f(val, NULL, &f)) {
+		say("'%s' is not a number\r\n", val);
+		return;
+	}
 	for (unsigned i = 0; i < sizeof kTab / sizeof kTab[0]; i++) {
 		if (strcmp(key, kTab[i].k) != 0) continue;
 		if (kTab[i].t == 'f')
@@ -814,11 +1009,13 @@ static void dispatch(char* line) {
 			run("resistance", cal_resistance);
 			break;
 		case 'l':
-			s_l_amps = strtof(line + 1, NULL); /* "l" alone: 0, the default current */
+			s_l_amps = 0.0f; /* "l" alone: 0, the default current */
+			parse_f(line + 1, NULL, &s_l_amps);
 			run("inductance d", cal_ld);
 			break;
 		case 'q':
-			s_l_amps = strtof(line + 1, NULL);
+			s_l_amps = 0.0f;
+			parse_f(line + 1, NULL, &s_l_amps);
 			run("inductance q", cal_lq);
 			break;
 		case 'p':

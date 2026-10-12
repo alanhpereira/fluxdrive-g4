@@ -88,6 +88,11 @@ HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835) {
 	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, tmp & 0x0f);
 	return status;
 }
+
+/* from here to the end runs every PWM period (TIM1 update IRQ, currentLoop()): keep it at -O2 in a
+ * size-optimized build. The blocking register functions above stay small */
+#pragma GCC optimize("O2")
+
 static inline uint32_t MT6835_DecodeAngle(const volatile uint8_t* data) {
 	return ((uint32_t)data[0] << 13) | ((uint32_t)data[1] << 5) | ((uint32_t)data[2] >> 3);
 }

@@ -1,93 +1,82 @@
 # Flash optimization handoff
 
-**Goal:** free enough flash for a CANopen slave stack on FDCAN1, without slowing the 25 kHz control ISR.
+**Goal:** free enough flash for a CANopen slave stack on FDCAN1, without slowing the 25 kHz control ISR:
+- CiA 301 (NMT, SDO, PDO, EMCY, heartbeat)
+- CiA 305 LSS (node-ID and bit rate set over the bus)
+- CiA 402 drive profile (FSA state machine, controlword/statusword, PP/PV/HM/CSP modes)
 
-Measured on 2026-10-12, firmware at the observer/params v4 state (branch `dev`).
+The USB CDC stack **stays**: configuration is planned to move from USART1 to USB.
+
+Updated 2026-10-12 (branch `dev`), after steps 1, 3 and 4 below.
 
 ## Where things stand
 
-| Build | Flash used | Free in the 120 KB region |
-|---|---|---|
-| Debug (`-Og`, what "Build STM" produces) | 90.5 KB | 29.5 KB |
-| Release `-Os` | 81.7 KB | 38.3 KB |
-| Release `-O2` | 88.3 KB | 31.7 KB |
-| Release `-Os -flto` | 74.4 KB | 45.6 KB |
+| Build | Before | Now | Free in the 120 KB region |
+|---|---|---|---|
+| Debug (`-Og`, "Build STM") | 90.5 KB | 71.2 KB | 48.8 KB |
+| Release `-Os` (ISR path `-O2`), "Build STM release" | 81.7 KB | 62.7 KB | 57.3 KB |
+
+RAM: 18.7 KB of 32 KB (was 19.1 KB).
 
 **Flash layout** (STM32G431VB, 128 KB, 2 KB pages):
 
 | Pages | Range | Use |
 |---|---|---|
 | 0–59 | 0x08000000–0x0801DFFF | Program (`FLASH` LENGTH = 120K in `STM32G431XX_FLASH.ld`) |
-| 60–61 | 0x0801E000–0x0801EFFF | Free, kept in reserve (e.g. CANopen storage) |
+| 60–61 | 0x0801E000–0x0801EFFF | Reserved for CANopen storage (LSS node-ID/bit rate, OD persistence) |
 | 62–63 | 0x0801F000–0x0801FFFF | Motor parameters, A/B slots (`params.c`) |
 
 **CANopen budget (estimate, not measured):**
-- **CANopenNode v4, minimal slave** (NMT + heartbeat, SDO server, EMCY, a few PDOs, an object dictionary sized for this drive): roughly 15–25 KB at `-Os`. Plus 2–3 KB more of `stm32g4xx_hal_fdcan` once it is actually used (only 572 bytes are linked today).
-- **RAM:** about 2–4 KB more. RAM is at 19.1 KB of 32 KB today.
-- **Before committing to a target,** build the chosen stack with an empty application and measure it.
+- **CANopenNode v4, CiA 301 slave plus LSS slave:** roughly 15–25 KB at `-Os`. That covers NMT, heartbeat, SDO server, EMCY, a few PDOs, and an object dictionary sized for this drive.
+- **FDCAN HAL:** 2–3 KB more once it is actually used.
+- **CiA 402 layer:** the FSA, mode switching, and the 0x6040/0x6041/0x6060/0x607A/0x60FF… objects mapped onto `g_mode`/`g_loop`/refs. Another ~4–8 KB plus its OD entries.
+- **Total:** about 25–35 KB. That fits in either build today. Measure the chosen stack with an empty application before committing.
+- **RAM:** about 2–4 KB more.
 
-With the debug build as it is, ~29 KB free is borderline. Steps 1–3 below give comfortable margin. Steps 4–5 are optional.
+## Done
 
-## Where the flash goes (`-Os` build)
+### 1. `-Os` release build with an `-O2` ISR path
+- **Pragmas:** `motorCtrl.c` and `curSnsCtrl.c` start with `#pragma GCC optimize("O2")`, placed before the includes so the `pi_ctrl.h`/`cordicMgr.h` inlines are covered too. `mt6835.c` has the same pragma from `MT6835_DecodeAngle` to the end: the trigger, `MT6835_Sample()` and the IRQ handler. This costs 0.8 KB against a plain `-Os` build, and it applies to the debug build too.
+- **Still at the build's level:** HAL's `HAL_ADC_IRQHandler` and the UART/DMA HAL calls used for telemetry, because `Drivers/` can't be edited. If the loop time gets tight in release, that is the place to look (or replace those calls with LL).
+- **VS Code:** the tasks "Build STM release" and "Flash STM release" (`DEBUG=0 "OPTIMIZATION=-Os -g"`; `-g` adds no flash) and the launch config "Attach STM32 (release)" are new. "Build STM"/"Flash STM"/"Debug STM32" still use the debug build.
+- **Stale objects:** `make` does not rebuild when only `OPTIMIZATION` changes. Delete `build/release/` after changing flags.
 
-From `python software/flash_report.py` (it reads `build/Driver_TCC.map`):
+### 3. No `strtof`/`strtod`
+- **Parsers:** `parse_f()` and `parse_q32()` in `calib.c` handle `[+-]digits[.digits][e[+-]digits]`. `a <turns>` parses straight to Q32.32 with no double math (exact to 1e-9 turn, |turns| < 2e9).
+- **Behavior change:** commands with a missing or non-numeric argument (`v`, `a`, `g`, `i`, `s`) now fail with a usage message instead of reading 0. `l`/`q` with no argument still mean "default current, store".
+- **`cal_kv()`:** the regression uses float running means (Welford) instead of `double` sums.
+- **`strtok`:** in `set_param()` it was replaced by a manual split, because `strtok` calls `assert`, which linked `fprintf` and newlib's stdio/`malloc` (~4.5 KB).
 
-| Component | Bytes | Notes |
-|---|---|---|
-| Application | 23.6 K | `calib.o` alone is 16.4 K: 7.8 K code + 8.5 K strings (help text, messages) |
-| HAL/LL drivers | 22.9 K | UART 4.1 K, TIM 3.0 K, ADC 4.7 K, PCD 3.4 K, I2C 1.7 K, SPI 1.5 K… |
-| USB CDC stack | 9.8 K | **Initialized but never used** (`MX_USB_Device_Init()`, stock template) |
-| `strtod`/`strtof` + bignum helpers | 7.9 K | From 7 call sites in `calib.c`, including one `strtod` for `a <turns>` |
-| Rest of libc_nano | 6.3 K | `vfprintf`, `memcpy` and similar; mostly needed |
-| CubeMX init code | 4.9 K | Needed |
-| `printf` `%f` (`_printf_float`, `_dtoa_r`) | 4.5 K | Pulled in by `__asm__(".global _printf_float")` in `main.c` and 26 `%f` formats in `calib.c` |
-| libgcc | 4.1 K | Soft-float **double** arithmetic (`strtod`, `double` in `run_pos()`/`cal_kv()`), `__udivmoddi4` (int64 division) |
-| libm | 0.9 K | `logf` (inductance curve), `lroundf` |
+### 4. No newlib `printf`
+- **Formatter:** `say()` uses `fmt_v()` in `calib.c`, a subset `vsnprintf` with `%f` done in float. `__asm__(".global _printf_float")` is gone from `main.c`.
+- **Checked on the host:** compiled with the host gcc and compared with the host libc's `vsnprintf`/`strtod` for every format string used in `calib.c` and about 30 parser inputs, including garbage, exponents and range limits.
+- **Left:** libgcc 2.5 KB. That is float→double promotion for varargs (`__aeabi_f2d`/`d2f`, which share one object with the double add) plus 64-bit division, and it's not worth more effort.
 
-`strtod` and `_dtoa_r` share the bignum helpers (`Balloc`, `mprec`, …). Those helpers, about 3 K of the 7.9 K, only go away once **both** `strtof`/`strtod` and `%f` are gone.
+## Not done / still available
 
-## Work items, in suggested order
+### 2. Remove USB CDC: **skipped on purpose**
+USB is planned for configuration. When that work starts, the console in `calib.c` can run over CDC unchanged: `say()` only needs a different transmit call, and `cmd_poll()` a different byte source. Then USART1 can carry telemetry only.
 
-### 1. Build with `-Os`, keep the ISR path fast. Saves ≈ 9 KB, low effort
-- **Gotcha:** `make -f STM32Make.make` with the default `DEBUG=1` **ignores `OPTIMIZATION`** and always builds `-Og`. A release build needs `DEBUG=0 OPTIMIZATION=-Os`; it goes into `build/release/`.
-- **Keep the hot path at `-O2`:** wrap `motorCtrl.c`, `curSnsCtrl.c` and the burst/DMA part of `mt6835.c` in `#pragma GCC optimize("O2")`, or mark the hot functions `__attribute__((optimize("O2")))`. The control loop budget is tight. `currentLoop()` measured 13 µs typical and 18.7 µs max at `-Og`, against about 19 µs available before the next counter bottom.
-- **Decide what gets flashed:** `make flash` programs `$(RELEASE_DIRECTORY)/$(TARGET).elf`, so `make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os flash` flashes the release build. The VS Code tasks and the cortex-debug launch configs point at `build/debug/`. Decide which build is the everyday one and update `.vscode/tasks.json` / `launch.json` to match. Keep a debug configuration for stepping.
-- **Verify:** use `f` for loop time and max (must stay under ~19 µs) and the encoder `late` counter (must stay 0). Then `r`, `v 1000`, `v 6000` with telemetry.
+### 5. If more is needed later
+- **LTO (`-flto`), roughly 5–7 KB:** STM32Make passes `-Wa,-a,-ad,-alms=...` listing flags per file, which LTO drops with a warning; remove them for LTO builds. Check that the weak HAL callbacks and `TIM1_UP_TIM16_IRQHandler` in `mt6835.c` still link to the right definitions. Check how `#pragma GCC optimize` interacts with LTO, and re-measure loop timing.
+- **HAL UART → LL, ≈ 3 KB:** USART1 only does DMA TX plus byte RX. If USB takes over config, UART RX goes away too.
+- **Shorter strings in `calib.c`, ≈ 1–3 KB:** do this last; the messages are useful at the bench.
 
-### 2. Remove the unused USB CDC device. Saves ≈ 10 KB plus RAM, low effort, CubeMX change
-- **In `Driver TCC.ioc`:** disable the USB_DEVICE middleware and the USB peripheral (PA11/PA12, `USB_LP_IRQn`, `RCC.CK48CLockSelection`), then regenerate. **Don't** hand-delete `USB_Device/` or `MX_USB_Device_Init()`: CubeMX would put them back.
-- **After regenerating, check:**
-  - `TIM1_UP_TIM16_IRQn` is still disabled in the .ioc (see the CLAUDE.md gotcha).
-  - `FLASH` LENGTH in the linker script is still 120K.
-  - All `USER CODE` blocks survived.
-- **Confirm nothing uses USB first:** grep for `CDC_Transmit` and `usbd`.
-- **Verify:** it builds, `p` and telemetry work over USART1, and the RAM figure drops.
-
-### 3. Replace `strtof`/`strtod` with a small decimal parser. Saves ≈ 5–7 KB, moderate effort
-- **What to parse:** command arguments only need `[-]digits[.digits]`. The callers are `run_vel`, `run_pos`, `run_start` (`g`/`i`), `set_param`, and the `l`/`q` argument in `dispatch`.
-- **`a <turns>`:** today it parses to `double` to keep Q32.32 resolution (`calib.c`, `run_pos`). Parse straight into `int64_t` Q32.32 instead (integer part `<< 32`, plus the fraction scaled by 2³²). That also removes the soft-double code from libgcc.
-- **Check for other `double` math:** `cal_kv()` uses `double` accumulators for its regression, and the libgcc soft-double code stays linked if anything still uses `double`. Check with `arm-none-eabi-nm --size-sort` for `__aeabi_d*` after the change.
-- **Verify:** `s`, `v`, `a`, `g`, `i`, `l 8` and `q 8` with positive, negative and fractional values, plus garbage input (it should be rejected or read as 0, as today).
-
-### 4. Drop `printf` `%f`. Saves ≈ 4.5 KB, plus ≈ 3 KB of shared bignum code if step 3 is done; moderate effort, touches many strings
-- **Replace the formatting:** write a small fixed-point formatter, for example `fmt_f(char* buf, float v, int decimals)`, or print scaled integers. Then remove `__asm__(".global _printf_float")` from `main.c` (it sits in a USER CODE block).
-- **There are 26 `%f` sites in `calib.c`.** `print_params()` and the calibration results are the bulk.
-- **Watch the protocol:** the plotter parses binary frames, not text, so text formatting changes don't affect it. But keep `p` output readable, because people read it.
-
-### 5. Optional, if more is needed
-- **LTO (`-flto`), ≈ 7 KB more:** STM32Make passes `-Wa,-a,-ad,-alms=...` listing flags per file, which LTO drops with a warning; remove them for LTO builds. Check that the weak HAL callbacks (`HAL_ADCEx_InjectedConvCpltCallback` etc.) and `TIM1_UP_TIM16_IRQHandler` in `mt6835.c` still link to the right definitions, and re-measure loop timing.
-- **HAL UART → LL, ≈ 3 KB:** USART1 only does DMA TX of frames and text, plus RX polling (`HAL_UART_Transmit_DMA`, `huart1.gState`). Only worth it if needed.
-- **Shorter strings in `calib.c`, ≈ 1–3 KB:** the help text and messages are 8.5 KB. Do this last; the messages are useful at the bench.
+## Must be verified on hardware (not done yet)
+- **Loop timing:** `f` in both builds. `currentLoop` max must stay under ~19 µs, and encoder `late` must stay 0.
+- **Commands:** `p`, then `s` with fractional, negative and exponent values (`s ld 2.2e-5`) and garbage (`s kv abc` must be rejected). Then `v 1000`, `v -500`, `a 2.5`, `a -0.25`, `g 0 1`, `i 0.5`, `l 8`, `q 8`.
+- **`k`:** run kv and compare the result with the value saved before this change (same motor), because the regression arithmetic changed.
 
 ## Constraints to keep
 - **CubeMX:** `Driver TCC.ioc` is the source of truth. Generated files only change inside `USER CODE` blocks (see CLAUDE.md).
-- **Timing:** `currentLoop()` must finish within ~19 µs of the ADC trigger. Any optimization-level change needs a `f` check on hardware.
-- **Parameter pages:** pages 62–63 must stay out of the program region, and the parameter layout must not change as a side effect (`PARAM_VERSION` 4).
+- **Timing:** `currentLoop()` must finish within ~19 µs of the ADC trigger.
+- **Parameter pages:** pages 62–63 stay out of the program region, and pages 60–61 stay free for CANopen.
 - **Telemetry:** the frame layout and checksum must stay in sync with `software/plotter.py`.
+- **No newlib text I/O:** see the CLAUDE.md gotcha. A stray `snprintf` or `strtof` brings back up to ~19 KB.
 
 ## How to measure
 ```
-make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os     # release build -> build/release/, map -> build/Driver_TCC.map
+make -f STM32Make.make -j DEBUG=0 "OPTIMIZATION=-Os -g"   # release build -> build/release/, map -> build/Driver_TCC.map
 python software/flash_report.py                         # component / object / section breakdown
 arm-none-eabi-nm --size-sort -S build/release/Driver_TCC.elf | tail -40
 ```

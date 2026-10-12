@@ -15,7 +15,7 @@ FLASH_LO, FLASH_HI = 0x08000000, 0x08020000
 
 # groups worth tracking while trimming; a section is counted in the first group that matches
 GROUPS = [
-    ("USB CDC stack (unused)", lambda sec, obj: re.search(r"usbd_|_pcd|ll_usb|usb_device", obj)),
+    ("USB CDC stack (kept for future config)", lambda sec, obj: re.search(r"usbd_|_pcd|ll_usb|usb_device", obj)),
     ("printf %f (_printf_float, dtoa)", lambda sec, obj: "libc_nano" in obj and re.search(r"_printf_float|_dtoa|cvt|exponent|frexp", sec)),
     ("strtod/strtof + bignum helpers", lambda sec, obj: "libc_nano" in obj and re.search(
         r"strto|gethex|hexnan|_match|mprec|Balloc|Bfree|lshift|multadd|ulp|b2d|d2b|ratio|hi0bits|lo0bits|s2b|pow5mult|i2b|multiply|mcmp|mdiff|any_on|copybits", sec)),

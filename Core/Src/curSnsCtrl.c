@@ -1,3 +1,6 @@
+/* ADC callback -> currentLoop(): -O2 even in a size-optimized (-Os) build */
+#pragma GCC optimize("O2")
+
 #include "curSnsCtrl.h"
 #include "adc.h"
 #include "dac.h"

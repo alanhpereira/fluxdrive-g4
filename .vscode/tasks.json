@@ -45,6 +45,30 @@
             "problemMatcher": [
                 "$gcc"
             ]
+        },
+        {
+            "label": "Build STM release",
+            "type": "shell",
+            "command": "make -f STM32Make.make -j DEBUG=0 \"OPTIMIZATION=-Os -g\"",
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "Flash STM release",
+            "type": "shell",
+            "command": "make -f STM32Make.make -j DEBUG=0 \"OPTIMIZATION=-Os -g\" flash",
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
         }
     ]
 }

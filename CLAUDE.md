@@ -16,7 +16,7 @@ This is the firmware for a graduation-thesis BLDC/PMSM motor driver. It runs fie
 
 The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is generated from `STM32-for-VSCode.config.yaml` plus the CubeMX `Makefile`. Toolchain paths are in `.stm32env`: arm-none-eabi-gcc 13.2 and OpenOCD 0.12 under `C:/DEV/TOOLS/...`.
 
-- Build: VS Code task "Build STM", or `make -f STM32Make.make -j`. Output goes to `build/debug/Driver_TCC.elf`. That debug build is always `-Og`: `OPTIMIZATION` is only used with `DEBUG=0` (e.g. `make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`), which builds into `build/release/`; `make ... DEBUG=0 ... flash` flashes that one. Flash budget and trimming plan: `docs/flash-optimization-handoff.md`, measured with `python software/flash_report.py`.
+- Build: VS Code task "Build STM", or `make -f STM32Make.make -j`. Output goes to `build/debug/Driver_TCC.elf`. That debug build is always `-Og`: `OPTIMIZATION` is only used with `DEBUG=0` (e.g. `make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`), which builds into `build/release/`; `make ... DEBUG=0 ... flash` flashes that one. Tasks "Build STM release" / "Flash STM release" do this with `-Os -g`, and the launch config "Attach STM32 (release)" goes with them. `make` only rebuilds objects when sources or `STM32Make.make` change, not when `OPTIMIZATION` changes: delete `build/release/` when you switch flags. Flash budget and trimming plan: `docs/flash-optimization-handoff.md`, measured with `python software/flash_report.py`. Plan for zero/low-speed sensorless (HFI): `docs/hfi-handoff.md`.
 - Flash: task "Flash STM", or `make -f STM32Make.make flash`. This uses ST-Link through OpenOCD (`openocd.cfg`).
 - Erase: `make -f STM32Make.make erase`. This also wipes the stored motor parameters.
 - Debug: the cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, with live watch enabled.
@@ -31,7 +31,7 @@ There are no unit tests. Changes are verified on hardware through the serial con
 - `stm32g4xx_hal_msp.c`, `stm32g4xx_it.c`
 - `USB_Device/`, `Drivers/`, `Middlewares/`, `Makefile`, the linker script, and the startup file
 
-Code you add to those files **must** sit between `/* USER CODE BEGIN x */` and `/* USER CODE END x */` markers, or CubeMX will delete it. `main.c` follows the same rule. All the hand-written logic is in its own files, listed below. USB CDC is initialized but unused (stock template).
+Code you add to those files **must** sit between `/* USER CODE BEGIN x */` and `/* USER CODE END x */` markers, or CubeMX will delete it. `main.c` follows the same rule. All the hand-written logic is in its own files, listed below. USB CDC is initialized but unused (stock template). It stays in the build on purpose: configuration is planned to move to USB, and CANopen over FDCAN1 to carry normal operation.
 
 The flash length in the linker script is set to 120K on purpose. Pages 60 and 61 are kept free (reserved, e.g. for CANopen storage), and the last two 2 KB pages (62 and 63) hold the parameters. If CubeMX regenerates `STM32G431XX_FLASH.ld`, set FLASH back to 120K (never above 124K).
 
@@ -100,4 +100,5 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 - Current and voltage scaling come from the hard-coded constants and offsets in `curSnsCtrl.c` (`CS_SHUNT`, `CS_GAIN`, `cur_offset[]`). The stored `cur_scale`, `cur_off`, `vin_scale`, `vbus_max` and `temp_max` params are **not used** by the control path yet.
 - `SVPWM()` writes nothing for `FAULT_CLEAR_MIN_TIME` ms after a fault is cleared.
 - Leaving `CTRL_RUN` while the motor spins applies a zero vector, which short-brakes it. `run_stop()` and `kv_coast()` exist to slow down first. Keep that behavior.
-- `__asm__(".global _printf_float")` in `main.c` enables `%f` in newlib-nano `printf`. `-fno-math-errno` makes `sqrtf` compile to a single `vsqrt` instruction.
+- **No newlib text I/O.** `say()` formats with `fmt_v()` in `calib.c`, which supports `%[+][0][width][.prec][l]` with `d i u x X c s f %`; `%f` is limited to 6 decimals and |v| < 4e9. Command arguments go through `parse_f()`/`parse_q32()`. Don't call `printf`/`snprintf`/`sprintf`, `strtof`/`strtod`/`atof`, `strtok` (via `assert`) or `assert`: each links back several KB of stdio, bignum or float-printing code (together ~15–19 KB). Check with `arm-none-eabi-nm` for `_vfprintf_r`, `_printf_float`, `_strtod_r`. `-fno-math-errno` makes `sqrtf` compile to a single `vsqrt` instruction.
+- `motorCtrl.c`, `curSnsCtrl.c` and the burst/DMA half of `mt6835.c` carry `#pragma GCC optimize("O2")`, so the ISR path is `-O2` in both the `-Og` debug build and the `-Os` release build. In the debug build, locals in `currentLoop()` may show as optimized out. Put new ISR-path code in those files (or under the same pragma).
