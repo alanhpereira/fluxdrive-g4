@@ -178,7 +178,7 @@ int MT6835_Sample(MT6835_HandleTypeDef* h, float* age_s) {
 			h->crc_errors++;
 			if (h->crc_check) {
 				/* noise gives isolated failures; every group failing means the CRC rule does not match
-				 * this sensor: stop rejecting (the 'f' command shows it) */
+				 * this sensor: stop rejecting (diagnostics 0x4002:8 shows it) */
 				if (++h->crc_fail_run >= 25) h->crc_check = 0;
 				continue; /* try the group before, 3 us older */
 			}

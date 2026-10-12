@@ -23,14 +23,13 @@ typedef enum { CTRL_OFF = 0,
 extern volatile ctrl_mode_t g_mode;
 
 /* what feeds the current loop in CTRL_RUN */
-typedef enum { LOOP_CURRENT = 0, /* g_id_ref/g_iq_ref set by the 'g' command */
+typedef enum { LOOP_CURRENT = 0, /* g_id_ref/g_iq_ref set by MSG_RUN_CUR */
 			   LOOP_VEL,		  /* speed PI -> g_iq_ref */
 			   LOOP_POS,		  /* position P -> speed PI -> g_iq_ref */
 } loop_t;
 extern volatile loop_t g_loop;
 extern volatile float g_vd_cmd, g_vq_cmd; /* volts, used in CTRL_CAL */
 extern volatile uint32_t g_theta_cmd;	  /* forced electrical angle in CTRL_CAL, 2^32 = 360 deg */
-extern volatile uint8_t g_telem_en;		  /* 0 while a command is talking, so text and frames never mix */
 
 /* step/decay recorder, filled by currentLoop() */
 #define REC_N 600

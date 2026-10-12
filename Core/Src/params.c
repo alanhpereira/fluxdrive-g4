@@ -33,7 +33,7 @@ static const motor_params_t k_defaults = {
 	.vbus_min = 8.0f,
 	.vbus_max = 30.0f,
 	.temp_max = 80.0f,
-	.vel_kp = 0.0f, /* tune before using 'v'/'a' */
+	.vel_kp = 0.0f, /* tune before speed/position mode */
 	.vel_ki = 0.0f,
 	.pos_kp = 20.0f,
 	.vel_lim = 10.0f,
@@ -87,6 +87,12 @@ int params_load(void) {
 	}
 	g_params = *slotPtr(g_active);
 	return 0;
+}
+
+int params_dirty(void) {
+	if (g_active < 0) return 1;
+	const size_t a = offsetof(motor_params_t, flags), b = offsetof(motor_params_t, crc);
+	return memcmp((const uint8_t*)&g_params + a, (const uint8_t*)slotPtr(g_active) + a, b - a) != 0;
 }
 
 HAL_StatusTypeDef params_save(void) {

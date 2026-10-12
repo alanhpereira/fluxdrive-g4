@@ -449,7 +449,7 @@ void currentLoop(void) {
 			v_q = g_vq_cmd;
 		}
 	}
-	/* ~0.4 ms low-pass, read by slow routines in main ('k' back-EMF) */
+	/* ~0.4 ms low-pass, read by slow routines in main (kv calibration back-EMF) */
 	g_vq_f += 0.1f * (v_q - g_vq_f);
 	g_iq_f += 0.1f * (iq - g_iq_f);
 
@@ -474,7 +474,7 @@ void currentLoop(void) {
 		s_obs_vb = v_beta * vin * INV_SQRT3;
 	}
 
-	/* decay/step recorder used by the 'l' and 'q' commands */
+	/* decay/step recorder used by the Ld/Lq calibrations */
 	if (g_rec_state == 1) {
 		g_rec_n = 0;
 		g_rec_state = 2;
@@ -488,7 +488,7 @@ void currentLoop(void) {
 	if (++cycles_since_last_frame >= 10) {
 		cycles_since_last_frame = 0;
 		seq++;
-		if (g_telem_en && huart1.gState == HAL_UART_STATE_READY) {
+		if (huart1.gState == HAL_UART_STATE_READY) { /* else main is sending a protocol reply: skip a frame */
 			telemetry.seq = seq;
 			telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
 			telemetry.v[1] = g_vin;

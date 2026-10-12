@@ -1,20 +1,18 @@
 #include "calib.h"
 
 #include <math.h>
-#include <stdarg.h>
-#include <string.h>
+#include <string.h> /* memcpy */
 
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
 #include "tim.h"
-#include "usart.h"
 #include "mt6835.h"
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "pi_ctrl.h"
+#include "proto.h"
 
 volatile ctrl_mode_t g_mode = CTRL_OFF;
 volatile float g_vd_cmd, g_vq_cmd;
 volatile uint32_t g_theta_cmd;
-volatile uint8_t g_telem_en = 1;
 volatile float g_rec[REC_N];
 volatile uint16_t g_rec_n;
 volatile uint8_t g_rec_state, g_rec_use_q;
@@ -36,239 +34,18 @@ void pi_apply(void) {
 	g_pi_vel.ki_ts = g_params.vel_ki / OUTER_FS_HZ;
 }
 
-/* ------------------------------------------------------------------ UART RX (single bytes, IRQ) */
-#define RXQ 32
-static volatile uint8_t rxq[RXQ];
-static volatile uint8_t rxh, rxt;
-static uint8_t rxb;
+/* ------------------------------------------------------------------ command origin */
+/* commands arrive as binary frames (proto.c); the one being run has token s_tok, which its events carry */
+static uint8_t s_tok;
+volatile uint8_t g_busy;
 
 void cmd_init(void) {
-	HAL_UART_Receive_IT(&huart1, &rxb, 1);
+	proto_init();
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef* h) {
-	if (h == &huart1) {
-		uint8_t n = (uint8_t)((rxh + 1) % RXQ);
-		if (n != rxt) {
-			rxq[rxh] = rxb;
-			rxh = n;
-		}
-		HAL_UART_Receive_IT(&huart1, &rxb, 1);
-	}
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef* h) {
-	if (h == &huart1) HAL_UART_Receive_IT(&huart1, &rxb, 1); /* overrun/noise must not kill RX */
-}
-
-static int rx_pop(uint8_t* c) {
-	if (rxt == rxh) return 0;
-	*c = rxq[rxt];
-	rxt = (uint8_t)((rxt + 1) % RXQ);
-	return 1;
-}
-
-/* ------------------------------------------------------------------ text output */
-static void uart_wait_idle(void) {
-	uint32_t t0 = HAL_GetTick();
-	while (huart1.gState != HAL_UART_STATE_READY && HAL_GetTick() - t0 < 50) {
-	}
-}
-
-/* minimal vsnprintf, so newlib's printf (and its float/bignum code) stays out of flash:
- * %[+][0][width][.prec][l] with d i u x X c s f %. %f takes the promoted double but formats it in float
- * math (~7 significant digits, at most 6 decimals, |v| < 4e9 else "ovf"). Truncates at size - 1 */
-static int fmt_v(char* buf, int size, const char* f, va_list ap) {
-	char* p = buf;
-	char* const end = buf + size - 1;
-	while (*f) {
-		if (*f != '%') {
-			if (p < end) *p++ = *f;
-			f++;
-			continue;
-		}
-		f++;
-		int plus = 0, zero = 0, width = 0, prec = -1;
-		for (;; f++) {
-			if (*f == '+') plus = 1;
-			else if (*f == '0') zero = 1;
-			else break;
-		}
-		while (*f >= '0' && *f <= '9') width = width * 10 + (*f++ - '0');
-		if (*f == '.') {
-			prec = 0;
-			while (*++f >= '0' && *f <= '9') prec = prec * 10 + (*f - '0');
-		}
-		if (*f == 'l') f++; /* long is int here */
-		char t[24];			/* digits, built backwards */
-		int n = 0;
-		char sign = 0;
-		const char* s = NULL;
-		const char c = *f;
-		if (c) f++;
-		switch (c) {
-			case 'd':
-			case 'i': {
-				int v = va_arg(ap, int);
-				uint32_t u = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
-				sign = v < 0 ? '-' : plus ? '+' : 0;
-				do t[n++] = (char)('0' + u % 10);
-				while (u /= 10);
-				break;
-			}
-			case 'u':
-			case 'x':
-			case 'X': {
-				uint32_t u = va_arg(ap, uint32_t);
-				const uint32_t base = c == 'u' ? 10 : 16;
-				const char* dg = c == 'x' ? "0123456789abcdef" : "0123456789ABCDEF";
-				do t[n++] = dg[u % base];
-				while (u /= base);
-				break;
-			}
-			case 'f': {
-				float v = (float)va_arg(ap, double);
-				if (prec < 0 || prec > 6) prec = 6;
-				sign = v < 0.0f ? '-' : plus ? '+' : 0;
-				v = fabsf(v);
-				if (v != v) s = "nan";
-				else if (v >= 4.0e9f) s = "ovf";
-				else {
-					uint32_t scale = 1;
-					for (int k = 0; k < prec; k++) scale *= 10;
-					uint32_t ip = (uint32_t)v;
-					uint32_t fr = (uint32_t)((v - (float)ip) * (float)scale + 0.5f);
-					if (fr >= scale) {
-						fr -= scale;
-						ip++;
-					}
-					for (int k = 0; k < prec; k++, fr /= 10) t[n++] = (char)('0' + fr % 10);
-					if (prec) t[n++] = '.';
-					do t[n++] = (char)('0' + ip % 10);
-					while (ip /= 10);
-				}
-				break;
-			}
-			case 'c':
-				t[n++] = (char)va_arg(ap, int);
-				break;
-			case 's':
-				s = va_arg(ap, const char*);
-				break;
-			default: /* "%%", or an unknown conversion printed as is */
-				t[n++] = c;
-				break;
-		}
-		int len = s ? (int)strlen(s) : n;
-		int pad = width - len - (sign ? 1 : 0);
-		if (!zero || s)
-			for (; pad > 0; pad--)
-				if (p < end) *p++ = ' ';
-		if (sign && p < end) *p++ = sign;
-		for (; pad > 0; pad--)
-			if (p < end) *p++ = '0';
-		if (s)
-			while (*s && p < end) *p++ = *s++;
-		else
-			while (n && p < end) *p++ = t[--n];
-	}
-	*p = 0;
-	return (int)(p - buf);
-}
-
-/* only call while telemetry is paused (begin()) */
-static void say(const char* fmt, ...) {
-	char b[220];
-	va_list ap;
-	va_start(ap, fmt);
-	int n = fmt_v(b, sizeof b, fmt, ap);
-	va_end(ap);
-	if (n > 0) HAL_UART_Transmit(&huart1, (uint8_t*)b, (uint16_t)n, 100);
-}
-
-/* ------------------------------------------------------------------ number parsing (no strtof/strtod) */
-/* decimal number "[+-]digits[.digits][e[+-]digits]" after optional blanks, as value = m * 10^e10 */
-typedef struct {
-	uint64_t m;
-	int e10;
-	int neg;
-} dec_t;
-
-/* returns 0 if there are no digits. *end (if not NULL) is set past the number */
-static int parse_dec(const char* s, const char** end, dec_t* d) {
-	int nd = 0, frac = 0;
-	d->m = 0;
-	d->e10 = 0;
-	d->neg = 0;
-	while (*s == ' ') s++;
-	if (*s == '-' || *s == '+') d->neg = *s++ == '-';
-	for (;; s++) {
-		if (*s == '.' && !frac) {
-			frac = 1;
-			continue;
-		}
-		if (*s < '0' || *s > '9') break;
-		nd++;
-		if (d->m < 100000000000000000ull) { /* keep 18 digits, further ones only scale */
-			d->m = d->m * 10 + (uint64_t)(*s - '0');
-			d->e10 -= frac;
-		}
-		else if (!frac)
-			d->e10++;
-	}
-	if (!nd) return 0;
-	if ((*s == 'e' || *s == 'E') && ((s[1] >= '0' && s[1] <= '9') || ((s[1] == '-' || s[1] == '+') && s[2] >= '0' && s[2] <= '9'))) {
-		int eneg = *++s == '-', e = 0;
-		if (*s == '-' || *s == '+') s++;
-		for (; *s >= '0' && *s <= '9'; s++)
-			if (e < 100) e = e * 10 + (*s - '0');
-		d->e10 += eneg ? -e : e;
-	}
-	if (end) *end = s;
-	return 1;
-}
-
-static float dec_to_f(const dec_t* d) {
-	int e = d->e10 < 0 ? -d->e10 : d->e10;
-	float p = 1.0f; /* exact up to 1e10 */
-	while (e--) p *= 10.0f;
-	float v = d->e10 < 0 ? (float)d->m / p : (float)d->m * p;
-	return d->neg ? -v : v;
-}
-
-/* float argument; returns 0 (and leaves *v) if there is no number */
-static int parse_f(const char* s, const char** end, float* v) {
-	dec_t d;
-	if (!parse_dec(s, end, &d)) return 0;
-	*v = dec_to_f(&d);
-	return 1;
-}
-
-/* Q32.32 turns, exact to 1e-9 turn without double math; returns 0 if no number or |value| >= 2e9 */
-static int parse_q32(const char* s, pos_q32_t* q) {
-	dec_t d;
-	if (!parse_dec(s, NULL, &d)) return 0;
-	while (d.e10 < -9) { /* fr << 32 below must not overflow */
-		d.m /= 10;
-		d.e10++;
-	}
-	for (; d.e10 > 0; d.e10--) {
-		if (d.m >= 2000000000ull) return 0;
-		d.m *= 10;
-	}
-	uint64_t p = 1;
-	for (int k = d.e10; k < 0; k++) p *= 10;
-	const uint64_t ip = d.m / p, fr = d.m % p;
-	if (ip >= 2000000000ull) return 0;
-	const int64_t v = (int64_t)((ip << 32) + ((fr << 32) + p / 2) / p);
-	*q = d.neg ? -v : v;
-	return 1;
-}
-
-static void begin(void) {
-	g_telem_en = 0;
-	uart_wait_idle();
-}
+/* event to the host about the command being run: EV(code, float, ...) */
+#define EV(code, ...) proto_event(s_tok, code, sizeof((const float[]){__VA_ARGS__}) / sizeof(float), (const float[]){__VA_ARGS__})
+#define EV0(code) proto_event(s_tok, code, 0, NULL)
 
 /* speed/position mode: brake to (almost) zero speed under the speed loop first, so switching off
  * does not short-brake a spinning motor. Then ramp the current references to zero and switch off */
@@ -304,24 +81,22 @@ static void finish(void) {
 	g_vq_cmd = 0;
 	g_mode = CTRL_OFF;
 	g_loop = LOOP_CURRENT;
-	g_telem_en = 1;
 }
 
 /* ------------------------------------------------------------------ helpers */
-/* returns an error string if the routine must stop, NULL if all is well */
-static const char* chk(void) {
-	uint8_t c;
-	while (rx_pop(&c))
-		if (c == 'x') return "aborted by user";
-	if (checkAndClearBridgeFault() != 0) return "bridge fault";
-	if (g_vin < g_params.vbus_min) return "bus voltage too low";
-	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return "overcurrent";
-	return NULL;
+/* returns ST_OK, or why the routine must stop. Serves the protocol in busy mode: READ works, ABORT and
+ * STOP abort, anything else gets ST_BUSY */
+static st_t chk(void) {
+	if (proto_poll(1)) return ST_ABORTED;
+	if (checkAndClearBridgeFault() != 0) return ST_BRIDGE_FAULT;
+	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
+	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
+	return ST_OK;
 }
 
-static const char* precheck(void) {
-	if (!(TIM1->BDTR & TIM_BDTR_MOE)) return "bridge disabled (fault latched?)";
-	if (g_params.rated_current <= 0.0f || g_params.max_current <= 0.0f) return "set rated/imax first (s rated 1.0)";
+static st_t precheck(void) {
+	if (!(TIM1->BDTR & TIM_BDTR_MOE)) return ST_BRIDGE_OFF;
+	if (g_params.rated_current <= 0.0f || g_params.max_current <= 0.0f) return ST_NEED_RATED;
 	return chk();
 }
 
@@ -350,19 +125,19 @@ static float avg_axis(int use_q, int n) {
 }
 
 /* raise Vd (20 mV every 5 ms) at theta = 0 until Id reaches i_target; rotor aligns on the way */
-static const char* ramp_d_to_current(float i_target, float* v_out) {
+static st_t ramp_d_to_current(float i_target, float* v_out) {
 	const float vmax = 0.8f * g_vin / SQRT3;
 	float v = 0.0f;
 	while (g_id < i_target) {
 		v += 0.02f;
-		if (v > vmax) return "voltage limit hit before reaching target current (wiring? current sign?)";
+		if (v > vmax) return ST_VLIMIT;
 		g_vd_cmd = v;
 		HAL_Delay(5);
-		const char* e = chk();
+		st_t e = chk();
 		if (e) return e;
 	}
 	*v_out = v;
-	return NULL;
+	return ST_OK;
 }
 
 /* time between the 75% and 25% crossings of a decaying current is tau * ln(3);
@@ -381,8 +156,8 @@ static float decay_tau(const float* x, int n, float i0, float fs) {
 }
 
 /* ------------------------------------------------------------------ resistance */
-static const char* cal_resistance(void) {
-	const char* e;
+static st_t cal_resistance(void) {
+	st_t e;
 	float v_hi;
 	if ((e = precheck())) return e;
 
@@ -398,7 +173,7 @@ static const char* cal_resistance(void) {
 	HAL_Delay(300);
 	float i_lo = avg_axis(0, 200);
 	if ((e = chk())) return e;
-	if (i_hi - i_lo < 0.05f) return "current change too small (current sense scale/sign?)";
+	if (i_hi - i_lo < 0.05f) return ST_DI_SMALL;
 
 	/* two points cancel the fixed dead-time / MOSFET drop */
 	float r = (v_hi - v_lo) / (i_hi - i_lo);
@@ -406,8 +181,8 @@ static const char* cal_resistance(void) {
 	g_params.rd = r;
 	g_params.rq = r; /* surface PM: Rq = Rd. The rotor cannot be held for a q-axis DC test */
 	g_params.flags |= PF_R_VALID;
-	say("R = %.4f ohm   (%.3f V @ %.3f A, %.3f V @ %.3f A, voltage offset %.3f V)\r\n", r, v_hi, i_hi, v_lo, i_lo, v_off);
-	return NULL;
+	EV(EV_R, r, v_hi, i_hi, v_lo, i_lo, v_off);
+	return ST_OK;
 }
 
 /* ------------------------------------------------------------------ inductance */
@@ -428,7 +203,7 @@ static void print_flux_curve(const float* x, int n, float i0, float r, float v_o
 		}
 	int j0 = 1;
 	while (j0 < z && x[j0] > 0.97f * i0) j0++; /* first sample after the voltage step */
-	say("secant L along the decay (I0 %.2f A, v_off %.3f V):\r\n", (double)i0, (double)v_off);
+	EV(EV_LCURVE, i0, v_off);
 	for (int j = j0; j < z && x[j] > 0.1f * i0; j++) {
 		float area = 0.5f * x[z - 1] * (tz - (float)(z - 1)) * h; /* last bit, linear to zero */
 		for (int k = j; k < z - 1; k++) {
@@ -436,20 +211,20 @@ static void print_flux_curve(const float* x, int n, float i0, float r, float v_o
 			area += (a > b && b > 0.0f) ? h * (a - b) / logf(a / b) : 0.5f * h * (a + b);
 		}
 		float psi = r * area + v_off * (tz - (float)j) * h;
-		say("  i %6.2f A   L %6.1f uH\r\n", (double)x[j], (double)(psi / x[j] * 1e6f));
+		EV(EV_LCURVE_PT, x[j], psi / x[j]);
 	}
 }
 
-static float s_l_amps; /* test current from the command line ('l 8'), 0 = default */
+static float s_l_amps; /* test current from the CAL argument, 0 = default (0.4 x rated, stored) */
 
-static const char* cal_inductance(int use_q) {
-	const char* e;
+static st_t cal_inductance(int use_q) {
+	st_t e;
 	float v;
 	if ((e = precheck())) return e;
-	if (!(g_params.flags & PF_R_VALID)) return "run 'r' first";
+	if (!(g_params.flags & PF_R_VALID)) return ST_NEED_R;
 	const int report_only = s_l_amps > 0.0f; /* an explicit current measures a point, it does not calibrate */
 	const float amps = report_only ? s_l_amps : 0.4f * g_params.rated_current;
-	if (amps > 0.9f * g_params.max_current) return "test current must stay below 0.9 x imax (s imax ...)";
+	if (amps > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
 
 	g_mode = CTRL_CAL;
 	g_theta_cmd = 0;
@@ -458,7 +233,7 @@ static const char* cal_inductance(int use_q) {
 	HAL_Delay(700); /* rotor settles on the d axis */
 
 	if (use_q) {
-		say("hold the shaft firmly. starting in 5 s\r\n");
+		EV(EV_HOLD_SHAFT, 5.0f);
 		for (int i = 0; i < 500; i++) {
 			HAL_Delay(10);
 			if ((e = chk())) return e;
@@ -470,7 +245,7 @@ static const char* cal_inductance(int use_q) {
 
 	float i0 = avg_axis(use_q, 200);
 	if ((e = chk())) return e;
-	if (i0 < 0.05f) return "current too low";
+	if (i0 < 0.05f) return ST_I_LOW;
 
 	/* drop the voltage to zero and record the decay */
 	g_rec_state = 0;
@@ -480,20 +255,19 @@ static const char* cal_inductance(int use_q) {
 	g_rec_state = 1;
 	uint32_t t0 = HAL_GetTick();
 	while (g_rec_state != 3)
-		if (HAL_GetTick() - t0 > 500) return "recording timeout (is currentLoop running?)";
+		if (HAL_GetTick() - t0 > 500) return ST_REC_TIMEOUT;
 
 	static float buf[REC_N];
 	for (int k = 0; k < REC_N; k++) buf[k] = g_rec[k];
 	print_flux_curve(buf, REC_N, i0, g_params.rd, v - g_params.rd * i0); /* v_off: what R*i0 does not explain */
 	float tau = decay_tau(buf, REC_N, i0, CTRL_FS_HZ);
-	if (tau < 0.0f) return "current did not fall to 25% inside the window (L/R too slow)";
-	if (tau * CTRL_FS_HZ < 3.0f) return "L/R shorter than ~3 samples, cannot resolve";
+	if (tau < 0.0f) return ST_LR_SLOW;
+	if (tau * CTRL_FS_HZ < 3.0f) return ST_LR_FAST;
 
 	float L = tau * g_params.rd;
 	if (report_only) {
-		say("L%c from the 75->25%% decay time = %.1f uH at %.2f A (not stored; 's l%c' to keep a value)\r\n",
-			use_q ? 'q' : 'd', (double)(L * 1e6f), (double)i0, use_q ? 'q' : 'd');
-		return NULL;
+		EV(EV_L, use_q, L, tau, i0, 0.0f);
+		return ST_OK;
 	}
 	if (use_q) {
 		g_params.lq = L;
@@ -503,16 +277,16 @@ static const char* cal_inductance(int use_q) {
 		g_params.lq = L; /* surface PM default, overwrite with 'q' if you measure it */
 		g_params.flags |= PF_L_VALID;
 	}
-	say("L%c = %.1f uH   (tau = %.1f us, I0 = %.3f A)\r\n", use_q ? 'q' : 'd', L * 1e6f, tau * 1e6f, i0);
-	return NULL;
+	EV(EV_L, use_q, L, tau, i0, 1.0f);
+	return ST_OK;
 }
 
-static const char* cal_ld(void) { return cal_inductance(0); }
-static const char* cal_lq(void) { return cal_inductance(1); }
+static st_t cal_ld(void) { return cal_inductance(0); }
+static st_t cal_lq(void) { return cal_inductance(1); }
 
 /* ------------------------------------------------------------------ encoder: direction, pole pairs, offset */
-static const char* cal_encoder(void) {
-	const char* e;
+static st_t cal_encoder(void) {
+	st_t e;
 	float v;
 	const int N_REVS = 20;	/* electrical revolutions to sweep */
 	const float F_E = 2.0f; /* electrical Hz */
@@ -521,11 +295,11 @@ static const char* cal_encoder(void) {
 	g_mode = CTRL_CAL;
 	g_theta_cmd = 0;
 	g_vd_cmd = g_vq_cmd = 0;
-	say("aligning...\r\n");
+	EV0(EV_ALIGN);
 	if ((e = ramp_d_to_current(0.5f * g_params.rated_current, &v))) return e;
 	HAL_Delay(700);
 
-	say("sweeping %d electrical revolutions...\r\n", N_REVS);
+	EV(EV_SWEEP, N_REVS);
 	const uint32_t inc = (uint32_t)(F_E / 1000.0f * 4294967296.0f); /* per 1 ms */
 	const int steps = (int)(N_REVS * 1000.0f / F_E);
 	uint32_t theta = 0, prev = hMT6835.angle;
@@ -542,13 +316,13 @@ static const char* cal_encoder(void) {
 	g_theta_cmd = 0; /* the sweep is an integer number of turns, so this is not a jump */
 
 	float revs = fabsf((float)total) / 2097152.0f; /* mechanical revolutions */
-	if (revs < 0.2f) return "rotor did not follow the field (raise current, check load)";
+	if (revs < 0.2f) return ST_NO_FOLLOW;
 	int8_t dir = (total >= 0) ? 1 : -1;
 	float ppf = (float)N_REVS / revs;
 	int pp = (int)(ppf + 0.5f); /* ppf > 0 */
 	if (pp < 1 || pp > 255 || fabsf(ppf - (float)pp) > 0.2f) {
-		say("pole pairs came out %.2f, not an integer: rotor lost steps\r\n", ppf);
-		return "sweep unreliable";
+		EV(EV_PP_BAD, ppf);
+		return ST_PP_NONINT;
 	}
 
 	HAL_Delay(1000); /* settle on the d axis at theta = 0 */
@@ -559,7 +333,7 @@ static const char* cal_encoder(void) {
 	/* one point carries the encoder nonlinearity at that spot and the friction lag of the approach. Average
 	 * offset = theta_cmd - encoder over one mechanical turn forward and one back: the nonlinearity
 	 * (periodic in the mechanical angle) and the lag (sign follows the direction) both cancel */
-	say("averaging the offset over one turn each way...\r\n");
+	EV0(EV_OFFSET_AVG);
 	const int turn_steps = (int)(pp * 1000.0f / F_E);
 	const int skip = 100; /* ms after each start/reversal while the lag builds up */
 	int64_t acc = 0;
@@ -589,22 +363,20 @@ static const char* cal_encoder(void) {
 	g_params.elec_offset = off;
 	g_params.flags |= PF_ELEC_OFFSET_VALID;
 	const float to_deg = 360.0f / 4294967296.0f;
-	say("encoder dir %+d, pole pairs %d (measured %.2f), offset %lu\r\n", dir, pp, ppf, (unsigned long)off);
-	say("single point was %+.1f deg off the average; spread over the turn %.1f deg elec (nonlinearity + lag)\r\n",
-		(double)((float)(int32_t)(ref - off) * to_deg), (double)((float)(dmax - dmin) * to_deg));
-	return NULL;
+	EV(EV_ENC, dir, pp, ppf, (float)(int32_t)(ref - off) * to_deg, (float)(dmax - dmin) * to_deg);
+	return ST_OK;
 }
 
 /* ------------------------------------------------------------------ current PI autotune */
 /* pole-zero cancellation: zero at R/L cancels the winding pole, closed loop becomes first order at wc */
-static const char* pi_autotune(void) {
+static st_t pi_autotune(void) {
 	const uint32_t need = PF_R_VALID | PF_L_VALID;
-	if ((g_params.flags & need) != need) return "measure R and L first ('r', 'l')";
-	if (!(g_params.cur_BW > 0.0f)) return "set the bandwidth first (s bw 500)";
+	if ((g_params.flags & need) != need) return ST_NEED_RL;
+	if (!(g_params.cur_BW > 0.0f)) return ST_NEED_BW;
 
 	const float bw_max = CTRL_FS_HZ / 20.0f;
 	if (g_params.cur_BW > bw_max) {
-		say("bw %.0f Hz above fs/20, clamped to %.0f Hz\r\n", (double)g_params.cur_BW, (double)bw_max);
+		EV(EV_BW_CLAMPED, g_params.cur_BW, bw_max);
 		g_params.cur_BW = bw_max;
 	}
 	const float wc = 2.0f * (float)M_PI * g_params.cur_BW;
@@ -614,9 +386,8 @@ static const char* pi_autotune(void) {
 	g_params.ki_q = g_params.rq * wc;
 	g_params.flags |= PF_PI_VALID;
 	pi_apply();
-	say("bw %.0f Hz:  d kp %.4f ki %.2f   q kp %.4f ki %.2f  (RAM only, 'w' saves)\r\n", (double)g_params.cur_BW,
-		(double)g_params.kp_d, (double)g_params.ki_d, (double)g_params.kp_q, (double)g_params.ki_q);
-	return NULL;
+	EV(EV_TUNE, g_params.cur_BW, g_params.kp_d, g_params.ki_d, g_params.kp_q, g_params.ki_q);
+	return ST_OK;
 }
 
 /* ------------------------------------------------------------------ kv (back-EMF constant) */
@@ -645,27 +416,27 @@ static float spd_update(spd_t* s) {
 
 /* with iq held at zero, wait until the rotor has almost stopped (switching off while spinning
  * applies a zero vector, which short-brakes the motor) */
-static const char* kv_coast(spd_t* s, float w_ref) {
+static st_t kv_coast(spd_t* s, float w_ref) {
 	uint32_t t0 = HAL_GetTick();
 	g_iq_ref = 0.0f;
 	float w = w_ref;
 	while (fabsf(w) > 0.05f * fabsf(w_ref) && HAL_GetTick() - t0 < 15000) {
 		HAL_Delay(1); /* encoder delta must stay under half a turn per sample */
 		w = spd_update(s);
-		if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return "overcurrent";
+		if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
 	}
-	return NULL;
+	return ST_OK;
 }
 
 /* spin up with constant iq, then let it coast with iq = 0: the PI output is then pure back-EMF,
  * vq = lambda * we. Fit vq - R*iq against we; the intercept absorbs dead-time error */
-static const char* cal_kv(void) {
-	const char* e;
+static st_t cal_kv(void) {
+	st_t e;
 	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID;
-	if ((g_params.flags & need) != need) return "run 'e', 'r', 'l' and 't' first";
+	if ((g_params.flags & need) != need) return ST_NEED_ERLT;
 	if ((e = precheck())) return e;
 
-	say("motor will spin freely: unload the shaft. starting in 2 s ('x' aborts)\r\n");
+	EV(EV_UNLOAD_SHAFT, 2.0f);
 	for (int i = 0; i < 200; i++) {
 		HAL_Delay(10);
 		if ((e = chk())) return e;
@@ -698,11 +469,11 @@ static const char* cal_kv(void) {
 	}
 	if (bemf < 0.1f * vmax) {
 		kv_coast(&s, w);
-		return "too slow to measure back-EMF (load/friction? raise KV_IQ_FRAC)";
+		return ST_KV_SLOW;
 	}
 	if (w <= 0.0f) {
 		kv_coast(&s, w);
-		return "spun backwards (encoder offset/direction? rerun 'e')";
+		return ST_KV_BACKWARDS;
 	}
 
 	/* coast-down: least squares y = lambda * x + c, x = we, y = vq - R*iq */
@@ -731,34 +502,28 @@ static const char* cal_kv(void) {
 	}
 	if ((e = kv_coast(&s, w0))) return e;
 
-	if (n < 50 || !(cxx > 0.0f)) return "too few samples during coast-down";
+	if (n < 50 || !(cxx > 0.0f)) return ST_KV_FEW;
 	float lambda = cxy / cxx; /* V*s/rad electrical, peak phase */
 	float c = my - lambda * mx;
-	if (lambda <= 0.0f) return "back-EMF has the wrong sign (encoder offset/direction?)";
+	if (lambda <= 0.0f) return ST_KV_SIGN;
 
 	/* line-to-line peak convention: Kt = 1.5 * pp * lambda = 8.27 / kv */
 	float kv = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * lambda);
 	g_params.kv = kv;
-	say("kv = %.1f rpm/V   (lambda %.3f mWb, Kt %.4f Nm/A, offset %.3f V, %d samples, peak %.0f rpm)\r\n",
-		(double)kv, (double)(lambda * 1e3f), (double)(1.5f * (float)g_params.pole_pairs * lambda), (double)c, n,
-		(double)(w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f));
-	return NULL;
+	EV(EV_KV, kv, lambda, (1.5f * (float)g_params.pole_pairs * lambda), c, n, (w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f));
+	return ST_OK;
 }
 
 /* ------------------------------------------------------------------ closed loop current run */
 /* checks, then puts the current loop in CTRL_RUN (current mode, zero references) if it is not
- * running yet. Returns 1 if running */
-static int run_enter(int outer) {
-	const char* e = NULL;
+ * running yet. Returns ST_OK if running */
+static st_t run_enter(int outer) {
 	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID;
-	if ((g_params.flags & need) != need) e = "run 'e' and 't' first";
-	else if (outer && !(g_params.vel_kp > 0.0f)) e = "set the speed gains first (s vkp ..., s vki ...)";
-	else if (outer && !(g_params.vel_lim > 0.0f)) e = "set the speed limit first (s vlim <turn/s>)";
-	else e = precheck();
-	if (e) {
-		say("FAILED: %s\r\n", e);
-		return 0;
-	}
+	if ((g_params.flags & need) != need) return ST_NEED_ET;
+	if (outer && !(g_params.vel_kp > 0.0f)) return ST_NEED_VGAINS;
+	if (outer && !(g_params.vel_lim > 0.0f)) return ST_NEED_VLIM;
+	st_t e = precheck();
+	if (e) return e;
 	if (g_mode != CTRL_RUN) {
 		g_mode = CTRL_OFF; /* currentLoop() holds the integrators at zero */
 		HAL_Delay(1);
@@ -767,324 +532,192 @@ static int run_enter(int outer) {
 		g_iq_ref = 0.0f;
 		g_mode = CTRL_RUN;
 	}
-	return 1;
+	return ST_OK;
 }
 
-/* 'v <rpm>': speed mode */
-static int run_vel(char* args) {
-	float rpm;
-	if (!parse_f(args, NULL, &rpm)) {
-		say("FAILED: usage v <rpm>\r\n");
-		return 0;
-	}
+/* speed mode, rpm */
+static st_t run_vel(float rpm) {
+	if (!(fabsf(rpm) < 1.0e7f)) return ST_BAD_ARG; /* also NaN */
 	float lim = g_params.vel_lim * 60.0f;
 	if (fabsf(rpm) > lim) {
 		rpm = copysignf(lim, rpm);
-		say("limited to vlim %.0f rpm\r\n", (double)lim);
+		EV(EV_RPM_LIMITED, lim);
 	}
-	if (!run_enter(1)) return 0;
+	st_t e = run_enter(1);
+	if (e) return e;
 	g_id_ref = 0.0f;
 	g_vel_ref = rpm / 60.0f; /* reference first, then the switch: the ISR never sees a stale one */
 	g_loop = LOOP_VEL;
-	say("speed %.1f rpm   ('o' stops)\r\n", (double)rpm);
-	return 1;
+	return ST_OK;
 }
 
-/* 'a <turns>': position mode, turns from home ('h') */
-static int run_pos(char* args) {
-	if (!(g_params.pos_kp > 0.0f)) {
-		say("FAILED: set the position gain first (s pkp ...)\r\n");
-		return 0;
-	}
-	pos_q32_t t; /* parsed straight to Q32.32: a float would lose the encoder resolution far from home */
-	if (!parse_q32(args, &t)) {
-		say("FAILED: usage a <turns>, |turns| < 2e9\r\n");
-		return 0;
-	}
-	if (!run_enter(1)) return 0;
+/* position mode, turns from home ('h') */
+static st_t run_pos(pos_q32_t t) {
+	if (!(g_params.pos_kp > 0.0f)) return ST_NEED_PKP;
+	st_t e = run_enter(1);
+	if (e) return e;
 	g_id_ref = 0.0f;
 
 	/* hand over the reference and wait until currentLoop() has latched it, then switch */
 	g_pos_ref_new = t;
 	g_pos_ref_req = 1;
 	uint32_t t0 = HAL_GetTick();
-	while (g_pos_ref_req) {
-		if (HAL_GetTick() - t0 > 10) {
-			say("FAILED: control loop not running\r\n");
-			return 0;
-		}
-	}
+	while (g_pos_ref_req)
+		if (HAL_GetTick() - t0 > 10) return ST_LOOP_DEAD;
 	g_loop = LOOP_POS;
-	say("position %.4f turns (now %.4f)   ('o' stops)\r\n", (double)((float)t * (float)(1.0 / POS_Q32_ONE)), (double)g_pos);
-	return 1;
+	return ST_OK;
 }
 
-/* current mode: 'g <id> <iq>', or 'i <iq>' with id = 0 */
-static int run_start(char* args, int iq_only) {
-	const char* s = args;
-	float id = 0.0f, iq;
-	if ((!iq_only && !parse_f(s, &s, &id)) || !parse_f(s, NULL, &iq)) {
-		say(iq_only ? "FAILED: usage i <iq>\r\n" : "FAILED: usage g <id> <iq>\r\n");
-		return 0;
-	}
+/* current mode */
+static st_t run_cur(float id, float iq) {
+	if (!(fabsf(id) < 1.0e6f && fabsf(iq) < 1.0e6f)) return ST_BAD_ARG; /* also NaN */
 	float mag = sqrtf(id * id + iq * iq);
 	if (mag > g_params.rated_current) { /* scale the vector, keep its direction */
 		float sc = g_params.rated_current / mag;
 		id *= sc;
 		iq *= sc;
-		say("limited to rated %.2f A\r\n", (double)g_params.rated_current);
+		EV(EV_CUR_LIMITED, g_params.rated_current);
 	}
 
-	if (!run_enter(0)) return 0;
+	st_t e = run_enter(0);
+	if (e) return e;
 	g_loop = LOOP_CURRENT; /* switch first: from here on the ISR no longer writes g_iq_ref */
 	g_id_ref = id;
 	g_iq_ref = iq;
-	say("run id %.3f A  iq %.3f A   ('o' stops)\r\n", (double)id, (double)iq);
-	return 1;
+	return ST_OK;
 }
 
 /* called from cmd_poll() while running: stop on fault, low bus or overcurrent */
 static void run_watchdog(void) {
 	if (g_mode != CTRL_RUN) return;
-	const char* e = NULL;
-	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = "overcurrent";
-	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = "bridge fault";
-	else if (g_vin < g_params.vbus_min) e = "bus voltage too low";
-	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = "overspeed (1.5 x vlim)";
+	st_t e = ST_OK;
+	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = ST_OVERCURRENT;
+	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = ST_BRIDGE_FAULT;
+	else if (g_vin < g_params.vbus_min) e = ST_VBUS_LOW;
+	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
 	if (!e) return;
 
 	g_mode = CTRL_OFF; /* immediately, no ramp: the loop is not in control any more */
 	g_loop = LOOP_CURRENT;
 	g_id_ref = 0.0f;
 	g_iq_ref = 0.0f;
-	begin();
-	say("STOPPED: %s (id %.2f A, iq %.2f A)\r\n", e, (double)g_id, (double)g_iq);
-	g_telem_en = 1;
+	const float v[3] = {(float)e, g_id, g_iq};
+	proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 }
 
-/* ------------------------------------------------------------------ parameters over serial */
-static const struct {
-	const char* k;
-	void* p;
-	char t; /* f float, u uint8, i int8 */
-} kTab[] = {
-	{"kv", &g_params.kv, 'f'},
-	{"pp", &g_params.pole_pairs, 'u'},
-	{"dir", &g_params.enc_dir, 'i'},
-	{"rd", &g_params.rd, 'f'},
-	{"rq", &g_params.rq, 'f'},
-	{"ld", &g_params.ld, 'f'},
-	{"lq", &g_params.lq, 'f'},
-	{"rated", &g_params.rated_current, 'f'},
-	{"imax", &g_params.max_current, 'f'},
-	{"cscale", &g_params.cur_scale, 'f'},
-	{"vscale", &g_params.vin_scale, 'f'},
-	{"kpd", &g_params.kp_d, 'f'},
-	{"kid", &g_params.ki_d, 'f'},
-	{"kpq", &g_params.kp_q, 'f'},
-	{"kiq", &g_params.ki_q, 'f'},
-	{"bw", &g_params.cur_BW, 'f'},
-	{"vmin", &g_params.vbus_min, 'f'},
-	{"vmax", &g_params.vbus_max, 'f'},
-	{"tmax", &g_params.temp_max, 'f'},
-	{"vkp", &g_params.vel_kp, 'f'},
-	{"vki", &g_params.vel_ki, 'f'},
-	{"pkp", &g_params.pos_kp, 'f'},
-	{"vlim", &g_params.vel_lim, 'f'},
-	{"oblend", &g_params.obs_blend, 'u'},
-	{"ogain", &g_params.obs_gain, 'f'},
-	{"olo", &g_params.obs_lo_v, 'f'},
-	{"ohi", &g_params.obs_hi_v, 'f'},
-	{"oftol", &g_params.obs_flux_tol, 'f'},
-	{"oerr", &g_params.obs_err_max, 'f'},
-	{"acc", &g_params.acc_lim, 'f'},
-};
-
-static void set_param(char* args) {
-	/* split "<key> <value>" in place (strtok would link newlib's assert -> fprintf -> stdio) */
-	char* key = args;
-	while (*key == ' ') key++;
-	char* val = key;
-	while (*val && *val != ' ') val++;
-	if (*val) *val++ = 0;
-	if (!*key || !*val) {
-		say("usage: s <key> <value>\r\n");
-		return;
-	}
-	float f;
-	if (!parse_f(val, NULL, &f)) {
-		say("'%s' is not a number\r\n", val);
-		return;
-	}
-	for (unsigned i = 0; i < sizeof kTab / sizeof kTab[0]; i++) {
-		if (strcmp(key, kTab[i].k) != 0) continue;
-		if (kTab[i].t == 'f')
-			*(float*)kTab[i].p = f;
-		else if (kTab[i].t == 'u')
-			*(uint8_t*)kTab[i].p = (uint8_t)f;
-		else
-			*(int8_t*)kTab[i].p = (int8_t)f;
-		say("%s = %f (RAM only, 'w' saves)\r\n", key, f);
-		pi_apply();
-		return;
-	}
-	say("unknown key '%s'\r\n", key);
-}
-
-/* 'f': gate driver / bridge state, for start-up and fault debugging */
-static void print_fault(void) {
-	uint8_t st = 0;
-	HAL_StatusTypeDef rc = readBridgeStatus(&st);
-	if (rc != HAL_OK) say("driver status: I2C error %d\r\n", (int)rc);
-	else
-		say("driver status 0x%02X:%s%s%s%s%s\r\n", st, (st & 0x01) ? " VCC_UVLO" : "", (st & 0x02) ? " THSD" : "",
-			(st & 0x04) ? " VDS_P" : "", (st & 0x08) ? " RESET" : "", (st & 0x80) ? " (locked)" : "");
-	say("MOE %d  break flag %d  nFAULT %s  READY %s\r\n", (TIM1->BDTR & TIM_BDTR_MOE) ? 1 : 0,
-		(TIM1->SR & TIM_SR_BIF) ? 1 : 0, (GPIOE->IDR & GPIO_PIN_15) ? "high (ok)" : "LOW (fault)",
-		HAL_GPIO_ReadPin(DRV_RDY_GPIO_Port, DRV_RDY_Pin) ? "high" : "low");
-
-	/* encoder reads and loop timing: the read must end before the ADC ("late" stays 0, else lower
-	 * MT6835_GROUPS), and currentLoop() must end before the next counter bottom, ~19 us after the ADC */
-	const MT6835_HandleTypeDef* h = &hMT6835;
-	uint8_t es = h->status;
-	say("encoder: %lu reads  %lu CRC errors%s  %lu late  %lu stalls  status 0x%X%s%s%s\r\n", (unsigned long)h->samples,
-		(unsigned long)h->crc_errors, h->crc_check ? "" : " (CRC check off: every group failed)", (unsigned long)h->late,
-		(unsigned long)h->stalls, es,
-		(es & MT6835_ST_OVERSPEED) ? " OVERSPEED" : "", (es & MT6835_ST_WEAK_FIELD) ? " WEAK_FIELD" : "",
-		(es & MT6835_ST_UNDERVOLT) ? " UNDERVOLT" : "");
-	say("currentLoop %.1f us, max %.1f us since last 'f'\r\n", (double)(g_loop_cyc / 170.0f), (double)(g_loop_cyc_max / 170.0f));
-	g_loop_cyc_max = 0;
-}
-
-static void print_params(void) {
-	const motor_params_t* p = &g_params;
-	say("pp %u  dir %+d  offset %lu  kv %.2f\r\n", p->pole_pairs, p->enc_dir, (unsigned long)p->elec_offset, (double)p->kv);
-	say("Rd %.4f  Rq %.4f ohm   Ld %.1f  Lq %.1f uH\r\n", (double)p->rd, (double)p->rq, (double)(p->ld * 1e6f), (double)(p->lq * 1e6f));
-	say("rated %.2f A  imax %.2f A  cscale %.6f  vscale %.6f\r\n", (double)p->rated_current, (double)p->max_current, (double)p->cur_scale, (double)p->vin_scale);
-	say("kp/ki d %.4f %.2f  q %.4f %.2f  bw %.0f Hz\r\n", (double)p->kp_d, (double)p->ki_d, (double)p->kp_q, (double)p->ki_q, (double)p->cur_BW);
-	say("speed kp %.4f A/(turn/s) ki %.4f A/turn  pos kp %.2f 1/s  vlim %.2f turn/s (%.0f rpm)\r\n", (double)p->vel_kp,
-		(double)p->vel_ki, (double)p->pos_kp, (double)p->vel_lim, (double)(p->vel_lim * 60.0f));
-	say("observer: oblend %u  olo %.2f V  ohi %.2f V  ogain %.0f rad/s  oftol %.2f  oerr %.0f deg   acc %.0f rpm/s\r\n",
-		p->obs_blend, (double)p->obs_lo_v, (double)p->obs_hi_v, (double)p->obs_gain, (double)p->obs_flux_tol,
-		(double)p->obs_err_max, (double)p->acc_lim);
-	say("vbus %.1f..%.1f V  tmax %.0f C  flags 0x%02lX  seq %lu\r\n", (double)p->vbus_min, (double)p->vbus_max, (double)p->temp_max, (unsigned long)p->flags, (unsigned long)p->seq);
-}
-
-static void save_params(void) {
+static HAL_StatusTypeDef save_params(void) {
 	disableBridge(); /* the CPU stalls ~20 ms during the flash erase */
 	HAL_StatusTypeDef st = params_save();
-	say("save %s\r\n", st == HAL_OK ? "OK" : "FAILED");
 	initBridge(); /* use whatever your normal power-up sequence is */
+	return st;
 }
 
 void reset_encoder(void) {
 	g_mode = CTRL_OFF;
 	MT6835_StopBurst(&hMT6835);
 	HAL_Delay(10);
-	say("reseting mt6835 zero registers\r\n");
 	MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x07);
 	MT6835_ResetZero(&hMT6835);
 	MT6835_SaveEEPROM(&hMT6835);
-	say("saving to EEPROM wait 6s...\r\n");
+	EV(EV_EEPROM_WAIT, 6.0f);
 	HAL_Delay(6000);
-	say("Done\r\n");
 
 	MT6835_StartBurst(&hMT6835);
 }
 
-/* ------------------------------------------------------------------ dispatcher (line based, LF terminated) */
-static void run(const char* name, const char* (*fn)(void)) {
-	say("%s\r\n", name);
-	const char* err = fn();
-	say(err ? "FAILED: %s\r\n" : "done\r\n", err);
+static st_t cal_zero(void) {
+	reset_encoder();
+	return ST_OK;
 }
 
-static void dispatch(char* line) {
-	begin();
-	switch (line[0]) {
-		case 'e':
-			run("encoder", cal_encoder);
+static void home(void) {
+	if (g_mode == CTRL_RUN) run_stop(); /* a moving zero would kick the position loop */
+	g_home_req = 1;						/* currentLoop() takes the present position as 0 */
+}
+
+/* ------------------------------------------------------------------ binary commands (proto.c) */
+static st_t (*const k_cal[CAL_N])(void) = {
+	[CAL_ENC] = cal_encoder,
+	[CAL_R] = cal_resistance,
+	[CAL_LD] = cal_ld,
+	[CAL_LQ] = cal_lq,
+	[CAL_TUNE] = pi_autotune,
+	[CAL_KV] = cal_kv,
+	[CAL_ZERO] = cal_zero,
+};
+
+/* ACK first, then the routine blocks here (chk() keeps serving READ/ABORT/STOP), EV_DONE at the end */
+static void cal_message(const uint8_t* p, uint8_t len) {
+	float arg = 0.0f;
+	const uint8_t which = len == 5 ? p[0] : 0;
+	if (len == 5) memcpy(&arg, p + 1, 4);
+	st_t e = ST_OK;
+	if (which < 1 || which >= CAL_N || !(arg >= 0.0f && arg < 1000.0f)) e = ST_BAD_ARG;
+	else if (g_mode == CTRL_RUN) e = ST_RUNNING;
+	proto_reply_st(MSG_CAL, s_tok, e);
+	if (e) return;
+	g_busy = which;
+	s_l_amps = arg; /* Ld/Lq test current, 0 = default and store */
+	e = k_cal[which]();
+	finish();
+	g_busy = 0;
+	EV(EV_DONE, e, which);
+}
+
+void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
+	float a, b;
+	pos_q32_t t;
+	st_t e = ST_OK;
+	s_tok = tok; /* EV() reports to this request */
+	switch (type) {
+		case MSG_CAL:
+			cal_message(p, len);
+			s_tok = 0;
+			return;
+		case MSG_SAVE:
+			if (g_mode != CTRL_OFF) e = ST_RUNNING; /* 'w' would cut the bridge under a running motor */
+			else if (save_params() != HAL_OK) e = ST_SAVE_FAILED;
 			break;
-		case 'r':
-			run("resistance", cal_resistance);
-			break;
-		case 'l':
-			s_l_amps = 0.0f; /* "l" alone: 0, the default current */
-			parse_f(line + 1, NULL, &s_l_amps);
-			run("inductance d", cal_ld);
-			break;
-		case 'q':
-			s_l_amps = 0.0f;
-			parse_f(line + 1, NULL, &s_l_amps);
-			run("inductance q", cal_lq);
-			break;
-		case 'p':
-			print_params();
-			break;
-		case 's':
-			set_param(line + 1);
-			break;
-		case 'w':
-			save_params();
-			break;
-		case 'k':
-			run("kv", cal_kv);
-			break;
-		case 't':
-			run("autotune", pi_autotune);
-			break;
-		case 'g':
-		case 'i':
-		case 'v':
-		case 'a': {
-			int ok;
-			if (line[0] == 'g' || line[0] == 'i') ok = run_start(line + 1, line[0] == 'i');
-			else if (line[0] == 'v') ok = run_vel(line + 1);
-			else ok = run_pos(line + 1);
-			if (ok) {
-				g_telem_en = 1; /* keep running: no finish() */
-				return;
+		case MSG_RUN_CUR:
+			if (len != 8) e = ST_BAD_ARG;
+			else {
+				memcpy(&a, p, 4);
+				memcpy(&b, p + 4, 4);
+				e = run_cur(a, b);
 			}
 			break;
-		}
-		case 'h':
-			if (g_mode == CTRL_RUN) run_stop(); /* a moving zero would kick the position loop */
-			g_home_req = 1; /* currentLoop() takes the present position as 0 */
-			say("home set\r\n");
+		case MSG_RUN_VEL:
+			if (len != 4) e = ST_BAD_ARG;
+			else {
+				memcpy(&a, p, 4);
+				e = run_vel(a);
+			}
 			break;
-		case 'o':
-			say("off\r\n");
-			break; /* finish() ramps down and switches off */
-		case 'z':
-			reset_encoder();
+		case MSG_RUN_POS:
+			if (len != 8) e = ST_BAD_ARG;
+			else {
+				memcpy(&t, p, 8);
+				e = run_pos(t);
+			}
 			break;
-		case 'f':
-			print_fault();
+		case MSG_HOME:
+			home();
+			finish();
 			break;
-		case '?':
-			say("e encoder  r resistance  l [A] Ld  q [A] Lq (hold shaft; with A: measure only)  t PI autotune  k kv (spins)\r\n"
-				"g <id> <iq> current  i <iq> (id = 0)  v <rpm> speed  a <turns> position  h home  o off\r\n"
-				"p print  f fault/encoder/timing status  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
+		case MSG_STOP:
+			finish(); /* ramps down and switches off */
 			break;
 		default:
-			break; /* unknown / stray text: ignored */
+			e = ST_BAD_TYPE;
+			break;
 	}
-	finish();
+	/* a run command that failed stops */
+	if (e && (type == MSG_RUN_CUR || type == MSG_RUN_VEL || type == MSG_RUN_POS)) finish();
+	proto_reply_st(type, tok, e);
+	s_tok = 0;
 }
 
 void cmd_poll(void) {
-	static char line[48];
-	static int n;
-	uint8_t c;
 	run_watchdog();
-	while (rx_pop(&c)) {
-		if (c == '\r') continue;
-		if (c != '\n') {
-			if (n < (int)sizeof line - 1) line[n++] = (char)c;
-			continue;
-		}
-		line[n] = 0;
-		n = 0;
-		if (line[0]) dispatch(line);
-	}
+	proto_poll(0); /* frames -> objdict / cmd_message() */
 }

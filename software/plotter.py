@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Telemetry viewer and command console for the STSPIN32G4 FOC firmware.
+Telemetry viewer and config GUI for the STSPIN32G4 FOC firmware.
 
-Frame (72 bytes, little-endian):
+Telemetry frame (72 bytes, little-endian):
     0xA5 0x5A | seq (uint16) | 16 x float32 | sum (uint32)
-    sum = rotate-left-by-1-and-add over the first 17 words, seed 0x5A5AA5A5 (frame_sum() in motorCtrl.c)
+    sum = rotate-left-by-1-and-add over the first 17 words, seed 0x5A5AA5A5 (frame_sum() in motorCtrl.c,
+    protocol.telem_ok() here)
+Config messages (A5 5C ..., protocol.py) share the link; the Config tab (config_tab.py) sends all commands.
 
 Usage:
     pip install pyserial numpy pyqtgraph PyQt6        (PyQt5 / PySide6 also work)
@@ -28,8 +30,9 @@ import serial
 import serial.tools.list_ports
 from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
-HDR = b"\xA5\x5A"
-FRAME = 72
+import protocol as P
+from config_tab import ConfigTab, RunPanel
+
 NF = 16  # floats per frame
 
 # One entry per plot: (title, [(float index, label, color), ...], shown by default)
@@ -45,34 +48,22 @@ PLOTS = [
     ("Speed sources (rpm)", [(7, "used", "#f0f0f0"), (14, "observer", "#ff9040"), (15, "encoder", "#40d0e0")], False),
 ]
 
-QUICK = [("Print params", "p"), ("Help", "?")]
-
-
-def frame_ok(frame):
-    s = 0x5A5AA5A5
-    for w in struct.unpack_from("<17I", frame):
-        s = (((s << 1) | (s >> 31)) + w) & 0xFFFFFFFF
-    return s == struct.unpack_from("<I", frame, 68)[0]
-
-
-def printable(b):
-    return bytes(c for c in b if c in (9, 10) or 32 <= c < 127).decode()
-
 
 # ---------------------------------------------------------------------------------------------- serial
 class Receiver(threading.Thread):
-    """Reads the port, separates checksummed frames from text, keeps a ring buffer of frames."""
+    """Reads the port, separates telemetry frames and config messages (anything else is dropped),
+    keeps a ring buffer of frames."""
 
     def __init__(self, ser, capacity):
         super().__init__(daemon=True)
         self.ser = ser
         self.lock = threading.Lock()
-        self.text = collections.deque()  # decoded text chunks for the console
         self.running = True
         self.error = None
         self.frames = 0
         self.dropped = 0
-        self.resyncs = 0
+        self.split = P.Splitter()
+        self.on_message = None  # protocol.Link.on_message(type, tok, payload), called from this thread
         self.log = None
         self.last_raw = None
         self.useq = 0
@@ -85,9 +76,11 @@ class Receiver(threading.Thread):
             self.seqs = np.zeros(capacity, np.int64)
             self.head = 0
 
+    @property
+    def resyncs(self):
+        return self.split.resyncs
+
     def run(self):
-        buf = bytearray()
-        txt = bytearray()
         while self.running:
             try:
                 n = self.ser.in_waiting
@@ -97,32 +90,11 @@ class Receiver(threading.Thread):
                 break
             if not chunk:
                 continue
-            buf += chunk
-            while True:
-                i = buf.find(HDR)
-                if i < 0:
-                    keep = 1 if buf[-1:] == HDR[:1] else 0  # header may be split across reads
-                    txt += buf[: len(buf) - keep]
-                    del buf[: len(buf) - keep]
-                    break
-                if i:
-                    txt += buf[:i]
-                    del buf[:i]
-                if len(buf) < FRAME:
-                    break
-                frame = bytes(buf[:FRAME])
-                if frame_ok(frame):
-                    del buf[:FRAME]
-                    self._store(frame)
-                else:
-                    self.resyncs += 1  # header bytes inside text or a corrupted frame
-                    txt += buf[:1]
-                    del buf[:1]
-            if txt:
-                s = printable(txt)
-                if s:
-                    self.text.append(s)
-                txt.clear()
+            for kind, d in self.split.feed(chunk):
+                if kind == "telem":
+                    self._store(d)
+                elif kind == "msg" and self.on_message:
+                    self.on_message(*d)
         if self.log:
             self.log.close()
             self.log = None
@@ -159,7 +131,7 @@ class Receiver(threading.Thread):
 
 
 class Sender(threading.Thread):
-    """Writes command lines one byte per ms: the firmware's RX queue is small."""
+    """The only writer of the port: whole protocol frames, one at a time."""
 
     def __init__(self, ser):
         super().__init__(daemon=True)
@@ -168,8 +140,8 @@ class Sender(threading.Thread):
         self.ev = threading.Event()
         self.running = True
 
-    def send(self, line):
-        self.q.append(line)
+    def send_raw(self, frame):
+        self.q.append(bytes(frame))
         self.ev.set()
 
     def run(self):
@@ -177,54 +149,20 @@ class Sender(threading.Thread):
             self.ev.wait(0.1)
             self.ev.clear()
             while self.q and self.running:
-                for ch in (self.q.popleft() + "\n").encode():
-                    try:
-                        self.ser.write(bytes([ch]))
-                    except (serial.SerialException, OSError):
-                        return
-                    time.sleep(0.001)
+                try:
+                    self.ser.write(self.q.popleft())
+                except (serial.SerialException, OSError):
+                    return
 
 
 # ---------------------------------------------------------------------------------------------- widgets
-class CommandLine(QtWidgets.QLineEdit):
-    """Line edit with up/down history."""
-
-    submitted = QtCore.Signal(str)
-
-    def __init__(self):
-        super().__init__()
-        self.hist, self.pos = [], 0
-        self.setPlaceholderText("command, e.g.  v 300   a 0.5   s vkp 1   (Enter sends, Up/Down history)")
-        self.returnPressed.connect(self._submit)
-
-    def _submit(self):
-        t = self.text().strip()
-        if not t:
-            return
-        if not self.hist or self.hist[-1] != t:
-            self.hist.append(t)
-        self.pos = len(self.hist)
-        self.clear()
-        self.submitted.emit(t)
-
-    def keyPressEvent(self, e):
-        k = e.key()
-        if k == QtCore.Qt.Key.Key_Up and self.hist:
-            self.pos = max(0, self.pos - 1)
-            self.setText(self.hist[self.pos])
-        elif k == QtCore.Qt.Key.Key_Down and self.hist:
-            self.pos = min(len(self.hist), self.pos + 1)
-            self.setText(self.hist[self.pos] if self.pos < len(self.hist) else "")
-        else:
-            super().keyPressEvent(e)
-
-
 class Main(QtWidgets.QMainWindow):
     def __init__(self, port=None):
         super().__init__()
         self.setWindowTitle("Driver TCC telemetry")
         self.settings = QtCore.QSettings("driverTCC", "plotter")
-        self.ser = self.rx = self.tx = None
+        self.ser = self.rx = self.tx = self.link = None
+        self.config = ConfigTab(self)
         self.paused = False
         self.curves = []
         self.last_frames, self.last_t = 0, time.monotonic()
@@ -251,8 +189,9 @@ class Main(QtWidgets.QMainWindow):
         self.conn_btn.clicked.connect(self.toggle_connection)
         f.addRow(self.conn_btn)
         sl.addWidget(g)
+        sl.addWidget(RunPanel(self.config))  # Connection and Run stay visible on every tab
 
-        g = QtWidgets.QGroupBox("Display")
+        g = self.display_box = QtWidgets.QGroupBox("Display")
         f = QtWidgets.QFormLayout(g)
         self.window_s = QtWidgets.QDoubleSpinBox(decimals=1, minimum=0.1, maximum=60.0, singleStep=0.5, suffix=" s")
         self.loop_hz = QtWidgets.QDoubleSpinBox(decimals=0, minimum=100, maximum=200000, singleStep=1000, suffix=" Hz")
@@ -260,6 +199,8 @@ class Main(QtWidgets.QMainWindow):
         self.cpf = QtWidgets.QSpinBox(minimum=1, maximum=1000)
         self.cpf.setToolTip("Control cycles between telemetry frames")
         self.refresh = QtWidgets.QSpinBox(minimum=5, maximum=200, singleStep=5, suffix=" Hz")
+        for w in (self.window_s, self.loop_hz, self.cpf, self.refresh):
+            w.setLocale(QtCore.QLocale.c())
         self.refresh.setToolTip("Plot redraw rate. Higher is smoother but costs CPU; data is never lost either way")
         f.addRow("Window", self.window_s)
         f.addRow("Loop rate", self.loop_hz)
@@ -279,7 +220,7 @@ class Main(QtWidgets.QMainWindow):
         f.addRow(auto)
         sl.addWidget(g)
 
-        g = QtWidgets.QGroupBox("Plots")
+        g = self.plots_box = QtWidgets.QGroupBox("Plots")
         v = QtWidgets.QVBoxLayout(g)
         self.plot_checks = []
         for title, _, _ in PLOTS:
@@ -288,57 +229,24 @@ class Main(QtWidgets.QMainWindow):
             v.addWidget(cb)
             self.plot_checks.append(cb)
         sl.addWidget(g)
-
-        g = QtWidgets.QGroupBox("Commands")
-        v = QtWidgets.QVBoxLayout(g)
-        stop = QtWidgets.QPushButton("STOP  (o)")
-        stop.setObjectName("stop")
-        stop.setMinimumHeight(44)
-        stop.clicked.connect(lambda: self.send("o"))
-        v.addWidget(stop)
-        row = QtWidgets.QHBoxLayout()
-        for label, cmd in QUICK:
-            b = QtWidgets.QPushButton(label)
-            b.clicked.connect(lambda _=False, c=cmd: self.send(c))
-            row.addWidget(b)
-        v.addLayout(row)
-        sl.addWidget(g)
         sl.addStretch(1)
 
-        # ---- plots + console
+        # ---- plots
         self.glw = pg.GraphicsLayoutWidget()
         self.glw.scene().sigMouseClicked.connect(lambda ev: ev.double() and self.reset_view())
-        console = QtWidgets.QWidget()
-        cl = QtWidgets.QVBoxLayout(console)
-        cl.setContentsMargins(0, 0, 0, 0)
-        self.log = QtWidgets.QPlainTextEdit(readOnly=True)
-        self.log.setMaximumBlockCount(5000)
-        mono = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
-        self.log.setFont(mono)
-        self.cmd = CommandLine()
-        self.cmd.setFont(mono)
-        self.cmd.submitted.connect(self.send)
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(self.cmd, 1)
-        clear = QtWidgets.QPushButton("Clear")
-        clear.clicked.connect(self.log.clear)
-        row.addWidget(clear)
-        cl.addWidget(self.log, 1)
-        cl.addLayout(row)
-
-        self.vsplit = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        self.vsplit.addWidget(self.glw)
-        self.vsplit.addWidget(console)
-        self.vsplit.setStretchFactor(0, 4)
-        self.vsplit.setStretchFactor(1, 1)
         scroll = QtWidgets.QScrollArea(widgetResizable=True)
         scroll.setWidget(side)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll.setMinimumWidth(side.sizeHint().width() + 20)
-        hs = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        scroll.setMinimumWidth(side.minimumSizeHint().width() + 24)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self.glw, "Scope")
+        self.tabs.addTab(self.config, "Config")
+        self.tabs.currentChanged.connect(self.tab_changed)
+        hs = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)  # sidebar left of the tabs, whichever is shown
         hs.addWidget(scroll)
-        hs.addWidget(self.vsplit)
+        hs.addWidget(self.tabs)
         hs.setStretchFactor(1, 1)
+        hs.setSizes([scroll.minimumWidth(), 10000])  # sidebar as narrow as its contents allow
         self.setCentralWidget(hs)
 
         self.status = QtWidgets.QLabel()
@@ -361,16 +269,14 @@ class Main(QtWidgets.QMainWindow):
             self.restoreGeometry(geo)
         else:
             self.resize(1400, 900)
-        split = s.value("vsplit")
-        if split is not None:
-            self.vsplit.restoreState(split)
+        self.tabs.setCurrentIndex(int(s.value("tab", 0)))
+        self.tab_changed(self.tabs.currentIndex())
         for w in (self.window_s, self.loop_hz, self.cpf):
             w.valueChanged.connect(self.resize_buffer)
 
         self.scan_ports(prefer=port or s.value("port"))
         self.build_plots()
         self.set_connected(False)
-        self.cmd.setFocus()
 
         self.timer = QtCore.QTimer(timerType=QtCore.Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.update_view)
@@ -380,6 +286,12 @@ class Main(QtWidgets.QMainWindow):
             self.toggle_connection()
 
     # ------------------------------------------------------------------ helpers
+    def tab_changed(self, i):
+        """Display and Plots only matter for the Scope tab"""
+        scope = self.tabs.widget(i) is self.glw
+        self.display_box.setVisible(scope)
+        self.plots_box.setVisible(scope)
+
     def frame_dt(self):
         return self.cpf.value() / self.loop_hz.value()
 
@@ -396,12 +308,8 @@ class Main(QtWidgets.QMainWindow):
             self.port.setCurrentIndex(i)
 
     def say(self, text, color=None):
-        if color:
-            self.log.appendHtml(f'<span style="color:{color}">{text}</span>')
-        else:
-            self.log.moveCursor(QtGui.QTextCursor.MoveOperation.End)
-            self.log.insertPlainText(text)
-        self.log.moveCursor(QtGui.QTextCursor.MoveOperation.End)
+        """to the log in the Config tab"""
+        self.config.log(text, color)
 
     # ------------------------------------------------------------------ plots
     def build_plots(self):
@@ -447,8 +355,11 @@ class Main(QtWidgets.QMainWindow):
     def update_view(self):
         rx = self.rx
         if rx:
-            while rx.text:
-                self.say(rx.text.popleft())
+            link = self.link
+            if link:
+                link.drain()
+                while link.events:
+                    self.config.on_event(*link.events.popleft())
             if rx.error:
                 self.say(f"connection lost: {rx.error}", "#ff6060")
                 self.disconnect()
@@ -467,7 +378,8 @@ class Main(QtWidgets.QMainWindow):
                 rec = "   ● REC" if rx.log else ""
                 self.status.setText(
                     f"{self.ser.port} connected   {fps:,.0f} frames/s   frames {rx.frames:,}   "
-                    f"dropped {rx.dropped:,}   resyncs {rx.resyncs:,}{rec}")
+                    f"dropped {rx.dropped:,}   resyncs {rx.resyncs:,}{rec}"
+                    + (f"   link timeouts {self.link.timeouts}" if self.link and self.link.timeouts else ""))
 
     # ------------------------------------------------------------------ connection
     def set_connected(self, on):
@@ -497,15 +409,21 @@ class Main(QtWidgets.QMainWindow):
         self.settings.setValue("baud", str(baud))
         self.rx = Receiver(self.ser, self.capacity())
         self.tx = Sender(self.ser)
+        self.link = P.Link(self.tx.send_raw)
+        self.rx.on_message = self.link.on_message
         self.rx.start()
         self.tx.start()
+        self.link.start()
         self.last_frames, self.last_t = 0, time.monotonic()
         self.set_connected(True)
         self.say(f"connected to {dev} @ {baud}", "#60c060")
+        self.config.on_connect()
 
     def disconnect(self):
         if self.rec_btn.isChecked():
             self.rec_btn.setChecked(False)
+        if self.link:
+            self.link.stop()
         for th in (self.rx, self.tx):
             if th:
                 th.running = False
@@ -518,15 +436,9 @@ class Main(QtWidgets.QMainWindow):
                 self.ser.close()
             except serial.SerialException:
                 pass
-        self.ser = self.rx = self.tx = None
+        self.ser = self.rx = self.tx = self.link = None
         self.set_connected(False)
-
-    def send(self, line):
-        if not self.tx:
-            self.say("not connected", "#ff6060")
-            return
-        self.say(f"&gt; {line}", "#7fb2ff")
-        self.tx.send(line)
+        self.config.on_disconnect()
 
     def toggle_record(self, on):
         if not self.rx:
@@ -556,7 +468,7 @@ class Main(QtWidgets.QMainWindow):
         s.setValue("cpf", self.cpf.value())
         s.setValue("refresh", self.refresh.value())
         s.setValue("geometry", self.saveGeometry())
-        s.setValue("vsplit", self.vsplit.saveState())
+        s.setValue("tab", self.tabs.currentIndex())
         self.disconnect()
         super().closeEvent(e)
 
@@ -590,6 +502,7 @@ def main():
 
     # useOpenGL: GPU drawing via Qt's own OpenGL widget (no PyOpenGL needed); painting is ~97% of the redraw cost
     pg.setConfigOptions(useOpenGL=True, antialias=False, background="#17181a", foreground="#c8c8c8")
+    QtCore.QLocale.setDefault(QtCore.QLocale.c())  # '.' as decimal separator in every input, whatever the OS uses
     app = pg.mkQApp("Driver TCC telemetry")
     dark_theme(app)
     w = Main(args.port)

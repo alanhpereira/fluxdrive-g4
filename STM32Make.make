@@ -89,8 +89,10 @@ Core/Src/i2c.c \
 Core/Src/main.c \
 Core/Src/motorCtrl.c \
 Core/Src/mt6835.c \
+Core/Src/objdict.c \
 Core/Src/opamp.c \
 Core/Src/params.c \
+Core/Src/proto.c \
 Core/Src/spi.c \
 Core/Src/stm32g4xx_hal_msp.c \
 Core/Src/stm32g4xx_it.c \

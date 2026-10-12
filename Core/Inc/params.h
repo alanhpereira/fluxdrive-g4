@@ -76,4 +76,7 @@ int params_load(void);
  * stalls for ~20 ms during the page erase. */
 HAL_StatusTypeDef params_save(void);
 
+/* 1 if g_params differs from the newest copy in flash (or there is none): unsaved changes */
+int params_dirty(void);
+
 #endif
