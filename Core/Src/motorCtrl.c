@@ -51,6 +51,7 @@ volatile float g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
 volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
+volatile uint16_t g_sl_lost_n;				  /* sensorless: consecutive cycles HFI was not tracking, see SL_LOST_N */
 
 volatile uint8_t control_enabled = 0;
 
@@ -307,9 +308,10 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 	return 1;
 }
 
-/* weight of the observer angle against the encoder one. diff = observer - encoder (Q32 electrical),
- * we = electrical speed in Q32 per second */
-static float obs_weight(int valid, uint32_t diff, float we) {
+/* weight of the observer angle against the base angle (encoder, or HFI when sensorless). diff = observer - base
+ * (Q32 electrical), we = electrical speed of the base in Q32 per second, blend = 0: run and log only,
+ * agree = 0: the base is not a reference for the agreement check (sensorless above SL_AGREE_MAX_TURNS) */
+static float obs_weight(int valid, uint32_t diff, float we, int blend, int agree) {
 	if (!valid) {
 		s_obs_good = 0;
 		s_obs_flux_bad = s_obs_enc_bad = 0;
@@ -320,7 +322,7 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 	float d = (float)(int32_t)diff * (1.0f / 4294967296.0f);
 	s_obs_err = d;
 	int flux_ok = fabsf(s_obs_ratio - 1.0f) < g_params.obs_flux_tol;
-	int enc_ok = fabsf(d) * 360.0f < g_params.obs_err_max;
+	int enc_ok = !agree || fabsf(d) * 360.0f < g_params.obs_err_max;
 	if (flux_ok) {
 		if (s_obs_flux_bad) s_obs_flux_bad--;
 	}
@@ -341,7 +343,7 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 		s_obs_good = (flux_ok && enc_ok) ? s_obs_good + 1 : 0; /* locking: strict */
 	}
 	float w = 0.0f;
-	if (g_params.obs_blend && s_obs_good >= OBS_LOCK_N) {
+	if (blend && s_obs_good >= OBS_LOCK_N) {
 		float emf = s_obs_lambda * fabsf(we) * (2.0f * (float)M_PI / 4294967296.0f); /* V peak */
 		float span = g_params.obs_hi_v - g_params.obs_lo_v;
 		if (span > 0.0f)
@@ -356,7 +358,7 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 }
 
 /* Speed from the observer alone: a PLL (same bandwidth as the encoder one) on the observer's electrical
- * angle. Needs only a starting speed (seed, mechanical turn/s): the encoder's, or HFI's in hfi_mode 2.
+ * angle. Needs only a starting speed (seed, mechanical turn/s): the base's (encoder, or HFI when sensorless).
  * Blended into the speed with the same weight as the angle */
 static uint32_t s_opll_ph; /* Q32 electrical */
 static float s_opll_vel;   /* electrical turn/s */
@@ -401,27 +403,32 @@ void currentLoop(void) {
 	uint32_t th_obs = 0;
 	int obs = obs_update(i_alpha, i_beta, &th_obs); /* runs in every mode so it is converged when needed */
 
-	/* hfi_mode 2: HFI replaces the encoder for commutation, speed and the observer's references (seed speed,
-	 * back-EMF level, agreement check) while it tracks. Position stays on the encoder, which counts turns */
+	/* angle source (ang_src). Sensorless: HFI is the base for commutation, speed and the observer's references
+	 * (seed speed, back-EMF level, agreement check); the encoder is only logged. Encoder modes: the encoder is
+	 * the base, and the observer blends in only in ANG_ENC_OBS. Position always comes from the encoder */
+	const int sl = g_params.ang_src == ANG_SENSORLESS;
 	uint32_t th_hfi;
 	float vel_hfi;
-	const int hfi2 = g_params.hfi_mode == 2 && g_mode == CTRL_RUN;
-	const int hfi_ok = hfi2 && hfi_estimate(&th_hfi, &vel_hfi);
-	obs_pll(obs, th_obs, hfi_ok ? vel_hfi : hfi2 ? s_vel : s_pll_vel);
+	const int hfi_ok = hfi_estimate(&th_hfi, &vel_hfi); /* always fills both, valid or not */
 
 	/* encoder angle, advanced by the known delays to the current sample. Blended with the observer by
 	 * speed, it gives theta_m = rotor angle when the currents were sampled (Park); theta_o = rotor angle
 	 * while the new voltage is applied (inverse Park). Forced during calibration */
 	float pp = (float)g_params.pole_pairs;
-	float we = s_pll_vel * pp * 4294967296.0f; /* electrical Q32 per second, encoder */
+	float we_enc = s_pll_vel * pp * 4294967296.0f; /* electrical Q32 per second, encoder */
 	uint32_t th_enc = elec_angle(ang);
 #if ANGLE_COMP
-	th_enc += (uint32_t)(int32_t)(we * age_cur);
+	th_enc += (uint32_t)(int32_t)(we_enc * age_cur);
 #endif
-	/* the observer blends in on top of the base: the encoder, or HFI in hfi_mode 2 */
-	const uint32_t th_base = hfi_ok ? th_hfi : th_enc;
-	const float vel_base = hfi_ok ? vel_hfi : s_pll_vel;
-	float w = hfi_ok ? obs_weight(obs, th_obs - th_hfi, vel_hfi * pp * 4294967296.0f) : obs_weight(obs, th_obs - th_enc, we);
+	const uint32_t th_base = sl ? th_hfi : th_enc;
+	const float vel_base = sl ? vel_hfi : s_pll_vel;
+	const float we = vel_base * pp * 4294967296.0f; /* electrical Q32 per second, of the base */
+	obs_pll(obs, th_obs, vel_base);
+	/* sensorless always blends the observer in (HFI alone cannot reach full speed); ENCODER never does */
+	const int blend = sl || (g_params.ang_src == ANG_ENC_OBS && g_params.obs_blend);
+	/* the observer's agreement check and back-EMF level use the base: HFI when sensorless, else the encoder */
+	const int agree = !sl || fabsf(vel_base) < SL_AGREE_MAX_TURNS; /* sensorless: HFI is wrong at speed */
+	float w = obs_weight(obs, th_obs - th_base, we, blend, agree);
 	/* injection off once the observer has it all, back on below 90 % (hysteresis: w is noisy at the edge) */
 	static uint8_t hfi_pause;
 	if (w >= 1.0f)
@@ -456,9 +463,16 @@ void currentLoop(void) {
 	/* high-frequency injection: voltage to add, and the PIs get the fundamental only */
 	ctrl_mode_t mode = g_mode;
 	float inj_a, inj_b;
-	hfi_out_t hf = hfi_step(mode == CTRL_RUN, hfi_pause, s_vel, i_alpha, i_beta, theta_m, th_enc, &inj_a, &inj_b);
+	hfi_out_t hf = hfi_step(mode == CTRL_RUN, sl, hfi_pause, s_vel, i_alpha, i_beta, theta_m, th_enc, &inj_a, &inj_b);
 	if (hf == HFI_INJECT) hfi_filter(&id, &iq);
-	const int hold = hf == HFI_HOLD; /* polarity pulses / hfi_mode 2 start: PIs and outer loops wait */
+	const int hold = hf == HFI_HOLD; /* polarity pulses / sensorless start: PIs and outer loops wait */
+	/* sensorless: count the cycles HFI is not tracking (the watchdog stops the motor after SL_LOST_N). The
+	 * held cycles and the saliency map (HFI_MAP, no tracking by design) do not count */
+	if (sl && mode == CTRL_RUN && !hold && g_hfi_cmd != HFI_MAP && !hfi_ok) {
+		if (g_sl_lost_n < UINT16_MAX) g_sl_lost_n++;
+	}
+	else
+		g_sl_lost_n = 0;
 
 	/* voltage command in volts */
 	float vin = g_vin > 1.0f ? g_vin : 1.0f;
@@ -532,7 +546,7 @@ void currentLoop(void) {
 			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
 			telemetry.v[9] = g_pos;
 			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
-			telemetry.v[11] = s_obs_err * 360.0f; /* observer - encoder, deg electrical; NaN without R, L, kv */
+			telemetry.v[11] = s_obs_err * 360.0f; /* observer - base (encoder, HFI when sensorless), deg electrical; NaN without R, L, kv */
 			telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
 			telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
 			telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */

@@ -40,10 +40,10 @@
 #define POL_PULSE 2
 #define POL_REST 50
 #define POL_PAIRS 8
-#define ACQ_N 3750 /* hfi_mode 2 start: 150 ms of tracking from an arbitrary angle before the polarity check */
+#define ACQ_N 3750 /* sensorless start: 150 ms of tracking from an arbitrary angle before the polarity check */
 
 /* internal states next to the hfi_cmd_t ones */
-#define S_ACQ 10   /* hfi_mode 2 start: tracking, PIs held, then HFI_POL */
+#define S_ACQ 10   /* sensorless start: tracking, PIs held, then HFI_POL */
 #define S_PAUSE 11 /* injection off at speed (observer in full control): the estimate follows th_m */
 
 volatile uint8_t g_hfi_cmd;
@@ -71,7 +71,7 @@ static uint8_t s_ri, s_fill;
 /* polarity sequence */
 static uint16_t s_pt;
 static float s_i0, s_pk, s_sp, s_sn;
-static uint8_t s_pol_auto; /* this HFI_POL is the hfi_mode 2 start, not the CAL_HFI_POL one */
+static uint8_t s_pol_auto; /* this HFI_POL is the sensorless start, not the CAL_HFI_POL one */
 static uint16_t s_acq;
 static uint8_t s_report; /* raise g_hfi_start_done on the first tracking cycle after the start */
 
@@ -86,6 +86,7 @@ static void wave_restart(float i_a, float i_b) {
 
 static void set_off(void) {
 	s_state = HFI_OFF;
+	s_vel = 0.0f; /* the estimate's speed must not outlive the tracking (telemetry, observer seed) */
 	g_hfi_err = g_hfi_err_f = g_hfi_rpm = g_hfi_amp = NAN;
 }
 
@@ -136,13 +137,13 @@ static hfi_out_t pol_step(float i_a, float i_b, float* v_a, float* v_b) {
 	return HFI_HOLD;
 }
 
-hfi_out_t hfi_step(int run, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b) {
+hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b) {
 	*v_a = *v_b = 0.0f;
 	uint8_t want = HFI_OFF;
 	int autostart = 0;
 	if (run) {
 		want = g_hfi_cmd;
-		if (want == HFI_OFF && g_params.hfi_mode >= 1 && !g_busy && ready()) {
+		if (want == HFI_OFF && (sensorless || g_params.hfi_mode >= 1) && !g_busy && ready()) {
 			want = HFI_TRACK;
 			autostart = 1;
 		}
@@ -162,14 +163,14 @@ hfi_out_t hfi_step(int run, int pause, float vel, float i_a, float i_b, uint32_t
 		s_vel = 0.0f;
 		s_amp = 0.0f;
 		g_hfi_err_f = NAN; /* set from the first tracking cycle */
-		if (autostart && g_params.hfi_mode == 2) {
-			/* encoderless start: lock from wherever, then the polarity pulses; the PIs wait */
+		if (autostart && sensorless) {
+			/* sensorless start: lock from wherever, then the polarity pulses; the PIs wait */
 			s_ph = 0;
 			s_acq = 0;
 			s_state = S_ACQ;
 		}
 		else {
-			s_ph = autostart ? th_enc : g_hfi_theta0; /* estimate-only mode starts on the encoder */
+			s_ph = autostart ? th_enc : g_hfi_theta0; /* encoder modes start on the encoder */
 			s_state = (want == HFI_MAP) ? HFI_MAP : HFI_TRACK;
 		}
 	}
@@ -280,10 +281,9 @@ hfi_out_t hfi_step(int run, int pause, float vel, float i_a, float i_b, uint32_t
 }
 
 int hfi_estimate(uint32_t* th, float* vel) {
-	if (!(s_state == S_PAUSE || (s_state == HFI_TRACK && s_amp > HFI_MIN_SIG))) return 0;
 	*th = s_ph; /* advanced by one period at the end of the last hfi_step() */
 	*vel = s_vel / (float)g_params.pole_pairs;
-	return 1;
+	return s_state == S_PAUSE || (s_state == HFI_TRACK && s_amp > HFI_MIN_SIG);
 }
 
 void hfi_filter(float* id, float* iq) {

@@ -2,7 +2,7 @@
 
 **Goal:** get a rotor-angle estimate at zero and low speed without the encoder, to cover the range below the back-EMF observer's band (`obs_lo_v`, about 400–800 rpm on the 345 kv test motor). Together with the existing observer this makes encoderless operation possible. I/f startup was ruled out on purpose.
 
-**Status, 2026-10-12:** steps 1–3 are implemented (saliency map, estimate-only tracking, polarity check), but nothing has been run on hardware yet. Whether HFI is feasible at all depends on the motor's saliency, which step 1 measures. Steps 4–6 (commutating from HFI, blending with the observer, encoderless start) wait for those results. Keep the encoder fitted throughout development: it is the reference every step is checked against.
+**Status:** steps 1–6 are implemented as the `angsrc` = 2 (sensorless) mode, with the encoder modes unchanged (`angsrc` 0 and 1). Steps 4–6 ran on hardware on the 2026-10-12 motor with the encoder fitted (see below); the encoder-free bring-up and the new mode are not yet tested on hardware. Keep the encoder fitted for the checks: it is the reference every step is compared against.
 
 ## First hardware run (2026-10-12, 31 V, Ld 67 µH / Lq 171 µH, rated 8 A)
 - **Saliency (go/no-go):** `hsal` = +24.7 % at id = 0, so HFI is feasible on this motor.
@@ -18,12 +18,12 @@
   - **Standstill:** held while the shaft was twisted.
   - **±50 rpm:** fine.
   - **Handover, 0 → 1000 → 0 rpm:** the observer weight rose from 0.08 at 430 rpm to 0.95 at 850 rpm. The injection was off at 1000 rpm and came back at 720 rpm without a glitch.
-  - **Failure seen:** another start tripped `ST_HFI_LOST` at id = iq = 0, probably the polarity coming out wrong (check `hpi` = 5 A is saved). Each start now sends `EV_HFI_START` (contrast, flipped, HFI−encoder) and stops with `ST_HFI_POL_WEAK` below 5 % contrast.
+  - **Failure seen:** another start tripped `ST_HFI_LOST` at id = iq = 0. Cause: `hpi` was raised to 5 A in RAM but not saved, so the polarity pulses ran at 1 A and came out wrong. Not a firmware fault. Each start now sends `EV_HFI_START` (contrast, flipped, HFI−encoder) and stops with `ST_HFI_POL_WEAK` below 5 % contrast.
 - **Steps 5 and 6, design:**
   - **Handover:** once the observer reaches full weight (`ohi`), the injection pauses and the HFI estimate follows the commutation angle and speed. The injection resumes below 90 % weight from that angle, with the HF amplitude kept, so the estimate stays valid. The current PIs then drop the injection filter too.
-  - **Encoderless start (`hmode` = 2):** each run begins with `S_ACQ`, 150 ms of tracking from angle 0 with the PIs and outer loops held, then the polarity pulses, then control. A run command therefore starts ~185 ms late. Starting while the motor already spins fast is not handled.
-  - **Observer without the encoder:** in `hmode` = 2 the observer's PLL seed, its back-EMF level and its agreement check come from HFI (or from the commutation speed while paused).
-  - **What still uses the encoder:** turn counting for position mode, the `ST_HFI_LOST` safety stop (90°) and the logging.
+  - **Sensorless start (`angsrc` = 2):** each run begins with `S_ACQ`, 150 ms of tracking from angle 0 with the PIs and outer loops held, then the polarity pulses, then control. A run command therefore starts ~185 ms late. Starting while the motor already spins fast is not handled.
+  - **Observer without the encoder:** in `angsrc` = 2 the observer's PLL seed, its back-EMF level and its agreement check come from HFI (or from the commutation speed while paused).
+  - **What still uses the encoder:** nothing in sensorless except logging. Position mode is refused (`ST_NEED_ENC_POS`). The safety stop is now `ST_HFI_LOST` after 50 ms without HFI tracking (`SL_LOST_N`).
   - **CCM fill:** 9.2–9.5 KB of 10 KB.
 
 ## What is implemented (and how to run it)
@@ -33,7 +33,7 @@
 - **Params (v5, object 0x4031, Config tab group "HF injection"):** `hmode` (0 off / 1 estimate only), `hhalf`, `hv` (V), `hbw` (Hz, default 50), `hid` (d bias, A), `hsal` (stored by the map), `hpi` (polarity pulse current, A).
 - **Telemetry:** `v[2..4]` used to be the phase currents. They now carry HFI − encoder (deg elec), the HFI PLL speed (rpm) and the demodulated HF current step (A). All three are NaN when HFI is off. With HFI on, `v[5..6]` (id/iq) are the filtered values the PIs see. The plotter has "HFI − encoder", "HFI speed" and "HFI signal" plots.
 - **Step 1, saliency map:** calibration `h` (`CAL_HFI_MAP`) in the Config tab. It runs closed-loop current control on the encoder with id = bias and iq = 0, and injects at 24 angles from the encoder d axis, 40 ms of averaging each. It logs L at each angle, then a fit: L min/max, the axis offset from d (cross-saturation), and saliency with a verdict (≥10 % comfortable, 5–10 % workable, below 5 % too low). With the argument at "default" it maps at bias 0, 0.25 and 0.5 × rated and at `hid`, and stores `hsal` from the `hid` sweep. With an explicit bias it maps only that bias and stores nothing. Size `hv` so that the "HFI signal" is several × 12.6 mA: roughly `hv`·40 µs/L per step.
-- **Step 2, estimate only:** set `hmode` = 1. HFI then starts from the encoder angle whenever the motor runs (not during calibrations) and logs HFI − encoder. Commutation stays on the encoder. In speed/position mode, id = `hid`. In current mode, set id yourself.
+- **Step 2, estimate only:** set `hmode` = 1 (with `angsrc` 0 or 1). HFI then starts from the encoder angle whenever the motor runs (not during calibrations) and logs HFI − encoder. Commutation stays on the encoder. In speed/position mode, id = `hid`. In current mode, set id yourself.
 - **Step 3, polarity:** calibration `p` (`CAL_HFI_POL`). HFI locks from a random angle (300 ms). Then come 8 pairs of +d/−d pulses: each pulse is 2 periods, sized from `hpi` and Ld, followed by 50 periods of rest. The routine compares the peak currents, flips the estimate by 180° if −d gave more current, and logs HFI − encoder before and after plus the contrast. It fails with "did not lock" or "wrong side". Run it from many rotor positions.
 - **To check after every step:** `currentLoop()` max time and encoder `late` in diagnostics. `hfi_step` is about 2 KB at `-O2` and adds one CORDIC sin/cos per cycle.
 
@@ -82,7 +82,7 @@ Alternatives, if the square-wave method struggles: sinusoidal rotating injection
    Position mode also needs the encoder's turn counting. Without the encoder it would need HFI angle accumulation, and its accuracy is limited.
 
 ## Code structure for steps 4–6
-- **Angle source:** selection in `currentLoop()` grows from encoder/observer to encoder/HFI/observer. Keep the existing rule that every angle refers to the current-sample time (`theta_m`), with `OUT_DELAY_S` added for inverse Park. `hfi.c` keeps its estimate in `s_ph`. Export it, plus a lock flag, for `hmode` = 2 (commutate).
+- **Angle source:** `currentLoop()` picks the base from `angsrc`: the encoder, or HFI when sensorless, with the observer blended on top. Keep the existing rule that every angle refers to the current-sample time (`theta_m`), with `OUT_DELAY_S` added for inverse Park. `hfi.c` keeps its estimate in `s_ph`; `hfi_estimate()` returns it always, with a valid flag.
 - **Hand-over band:** step 5 needs `hlo`/`hhi` params (a v6 bump), with the injection faded out above the band.
 
 ## Risks

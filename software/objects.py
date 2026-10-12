@@ -57,9 +57,8 @@ class Obj:
 
 
 G_INFO, G_STATUS, G_DIAG = "Device info", "Status", "Diagnostics"
-G_MOTOR, G_SENS, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI = ("Motor", "Sensing (not used by the control path yet)",
-                                                        "Current loop", "Speed / position", "Limits", "Observer",
-                                                        "HF injection")
+G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI = ("Motor", "Current loop", "Speed / position", "Limits", "Observer",
+                                                "HF injection")
 BW_MAX = 25000.0 / 20
 
 OBJECTS = [
@@ -109,9 +108,11 @@ OBJECTS = [
         help="hard trip: the watchdog stops above it"),
     Obj(0x4010, 11, T_U32, STORED | NOTRUN, "flags", "Calibration flags", lo=0, hi=255, group=G_MOTOR,
         help="1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned. Restored by JSON import"),
-    # 0x4011 sensing
-    Obj(0x4011, 1, T_F32, STORED, "cscale", "Current scale", "A/count", lo=-1e9, hi=1e9, group=G_SENS, decimals=6),
-    Obj(0x4011, 2, T_F32, STORED, "vscale", "Bus voltage scale", "V/count", lo=-1e9, hi=1e9, group=G_SENS, decimals=6),
+    # 0x4011 angle source
+    Obj(0x4011, 1, T_U8, STORED | NOTRUN, "angsrc", "Angle source", lo=0, hi=2, group=G_MOTOR,
+        help="0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the "
+             "observer, no encoder in the loop (position mode refused, the encoder is only logged). "
+             "Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)"),
     # 0x4020 current loop
     Obj(0x4020, 1, T_F32, STORED | PI, "kpd", "Kp d", "V/A", lo=0, hi=1e6, group=G_CUR),
     Obj(0x4020, 2, T_F32, STORED | PI, "kid", "Ki d", "V/(A·s)", lo=0, hi=1e6, group=G_CUR, decimals=2),
@@ -143,12 +144,9 @@ OBJECTS = [
         help="|flux|/lambda must stay within 1 ± tol"),
     Obj(0x4030, 6, T_F32, STORED, "oerr", "Max observer error", "deg elec", lo=0, hi=180, group=G_OBS, decimals=0),
     # 0x4031 high-frequency injection
-    Obj(0x4031, 1, T_U8, STORED | NOTRUN, "hmode", "HFI mode", lo=0, hi=2, group=G_HFI,
-        help="0 off; 1 estimate only: injects and tracks while running (not during calibrations), "
-             "commutation stays on the encoder; 2 sensorless: each run starts with ~150 ms of HFI lock and the "
-             "polarity pulses, then commutation, speed and the observer's references come from HFI; the observer "
-             "takes over above ohi and the injection stops. The encoder only counts turns for position mode and "
-             "stops the motor above 90 deg disagreement. 1 and 2 add hid in speed/position mode"),
+    Obj(0x4031, 1, T_U8, STORED | NOTRUN, "hmode", "HFI mode", lo=0, hi=1, group=G_HFI,
+        help="0 off; 1 track and log while running (not during calibrations), in the encoder angle sources only. "
+             "Sensorless (angsrc 2) always injects. Injection adds hid in speed/position mode"),
     Obj(0x4031, 2, T_U8, STORED | NOTRUN, "hhalf", "Half wave", "PWM periods", lo=2, hi=8, group=G_HFI,
         help="injection flips every hhalf periods (2 = 6.25 kHz square wave). 1 cannot work: "
              "the samples would sit on the midpoints of the current triangle"),
@@ -165,7 +163,7 @@ OBJECTS = [
 
 BY_KEY = {o.key: o for o in OBJECTS}
 BY_ADDR = {(o.index, o.sub): o for o in OBJECTS}
-PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI, G_SENS]
+PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI]
 
 # PF_* in params.h
 PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID = 1, 2, 4, 8, 16

@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-/* what main asks for. HFI_OFF leaves it to g_params.hfi_mode (1: track and log while running, not busy) */
+/* what main asks for. HFI_OFF: autostart while running (sensorless, or hfi_mode 1), not during a calibration */
 typedef enum {
 	HFI_OFF = 0,
 	HFI_TRACK, /* inject on the estimated d axis, the PLL tracks it; starts from g_hfi_theta0 */
@@ -18,7 +18,7 @@ typedef enum {
 typedef enum {
 	HFI_IDLE = 0, /* nothing added */
 	HFI_INJECT,	  /* add the injection, feed the PIs through hfi_filter(), keep hfi_v of voltage free */
-	HFI_HOLD,	  /* polarity pulses or the hfi_mode 2 start: hold the PIs and the outer loops, apply only the returned voltage */
+	HFI_HOLD,	  /* polarity pulses or the sensorless start: hold the PIs and the outer loops, apply only the returned voltage */
 } hfi_out_t;
 
 #define HFI_HALF_MAX 8 /* PWM periods per half wave, upper limit of g_params.hfi_half */
@@ -34,20 +34,21 @@ extern volatile float g_hfi_acc_par, g_hfi_acc_perp;
 
 extern volatile uint8_t g_hfi_pol_flip;		  /* last HFI_POL: 1 if the estimate was turned by 180 deg */
 extern volatile float g_hfi_pol_contrast;	  /* (peak+ - peak-) / (peak+ + peak-) before any flip */
-extern volatile uint8_t g_hfi_start_done;	  /* hfi_mode 2 start finished (set by the ISR, cleared by main) */
+extern volatile uint8_t g_hfi_start_done;	  /* sensorless start finished (set by the ISR, cleared by main) */
 extern volatile float g_hfi_err, g_hfi_err_f; /* HFI - encoder, electrical turns, raw / ~4 ms low-pass; NaN when not tracking */
 extern volatile float g_hfi_rpm;			  /* HFI PLL speed, mechanical rpm; NaN when not tracking */
 extern volatile float g_hfi_amp;			  /* demodulated HF current step along the injection axis, A; NaN when off */
 
-/* once per cycle, after Clarke/Park. run: CTRL_RUN. pause: the observer has full weight, stop injecting and
- * follow th_m at vel (mechanical turn/s, the speed in use). i_a, i_b: currents just sampled. th_m: commutation
- * angle at the sample, th_enc: encoder angle at the sample (logging only). Returns what to do; *v_a, *v_b is
- * the voltage to add (alpha-beta, volts) */
-hfi_out_t hfi_step(int run, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b);
+/* once per cycle, after Clarke/Park. run: CTRL_RUN. sensorless: the sensorless start runs when HFI starts
+ * (lock, then polarity pulses). pause: the observer has full weight, stop injecting and follow th_m at vel
+ * (mechanical turn/s, the speed in use). i_a, i_b: currents just sampled. th_m: commutation angle at the
+ * sample, th_enc: encoder angle at the sample (logging only). Returns what to do; *v_a, *v_b is the voltage
+ * to add (alpha-beta, volts) */
+hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b);
 
 /* HFI angle for this cycle's sample (Q32 electrical, predicted by the last hfi_step()) and mechanical speed
- * (turn/s). Returns 0 unless HFI is tracking with a usable signal or paused at speed (then it is the
- * commutation angle carried forward). 0 during the hfi_mode 2 start. Call before hfi_step() */
+ * (turn/s). Always fills both, even when not valid; returns 1 when HFI is tracking with a usable signal or
+ * paused at speed (then it is the commutation angle carried forward). Call before hfi_step() */
 int hfi_estimate(uint32_t* th, float* vel);
 
 /* with HFI_INJECT: replaces id, iq by their mean over one injection period (the fundamental) */

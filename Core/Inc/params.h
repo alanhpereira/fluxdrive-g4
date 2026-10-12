@@ -11,8 +11,13 @@
 #define PF_L_VALID (1u << 3)
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
 
+/* angle source (ang_src): what commutation, speed and the observer's references come from */
+#define ANG_ENCODER 0u   /* encoder only; the observer and HFI run and log, nothing blends in */
+#define ANG_ENC_OBS 1u   /* encoder, with the observer blended in above obs_lo_v (obs_blend) */
+#define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo_v; no encoder in the loop, position mode refused */
+
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 5u /* bump when the struct layout changes: older copies are rejected, defaults load */
+#define PARAM_VERSION 6u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -31,13 +36,12 @@ typedef struct {
 	uint32_t elec_offset; /* electrical angle offset, 2^32 = 360 deg */
 	uint8_t pole_pairs;
 	int8_t enc_dir; /* +1 or -1 */
-	uint8_t reserved0[2];
+	uint8_t ang_src; /* ANG_* */
+	uint8_t reserved0;
 
 	/* sensing */
-	float cur_scale;	/* A per count, sign included */
 	int16_t cur_off[3]; /* per-channel offset, counts */
 	uint8_t reserved1[2];
-	float vin_scale; /* V per count */
 
 	/* controller */
 	float kp_d, ki_d, kp_q, ki_q;
@@ -62,7 +66,7 @@ typedef struct {
 	uint8_t obs_blend;	/* 1: blend the observer into angle and speed, 0: run and log it only */
 
 	/* high-frequency injection (hfi.c) */
-	uint8_t hfi_mode; /* 0 off, 1 estimate only (track and log while running), 2 sensorless (HFI + observer, encoderless start) */
+	uint8_t hfi_mode; /* 0 off, 1 track and log while running in the encoder modes (sensorless always injects) */
 	uint8_t hfi_half; /* PWM periods per half wave of the injection, 2..HFI_HALF_MAX */
 	uint8_t reserved2;
 	float hfi_v;	 /* injection amplitude, V */

@@ -84,8 +84,11 @@ typedef enum {
 	ST_HFI_NO_SIGNAL, /* no HF current response */
 	ST_HFI_NO_LOCK,	 /* HFI did not lock on an axis */
 	ST_HFI_POL_WRONG, /* polarity check ended on the wrong side */
-	ST_HFI_LOST,	  /* driving on HFI: HFI and encoder disagree */
-	ST_HFI_POL_WEAK, /* sensorless start: polarity contrast too low to trust */
+	ST_HFI_LOST,	  /* sensorless: HFI stopped tracking (50 ms without a lock) */
+	ST_HFI_POL_WEAK, /* sensorless: polarity contrast too low to trust */
+	ST_NEED_TUNE,	 /* run the PI autotune ('t') first */
+	ST_NEED_KV,		 /* set kv first ('k', or from the datasheet) */
+	ST_NEED_ENC_POS, /* position mode needs the encoder (ang_src 0 or 1) */
 	ST_N
 } st_t;
 
@@ -120,7 +123,7 @@ enum {
 	EV_HFI_PT,		 /* bias (A), angle from d (deg elec), L along it (H), across/along ratio */
 	EV_HFI_FIT,		 /* bias (A), a0, a2, b2 (1/H: 1/L = a0 + a2 cos 2phi + b2 sin 2phi), saliency, stored (0/1) */
 	EV_HFI_POL,		 /* error before (deg elec, HFI - encoder), error after, flipped (0/1), contrast */
-	EV_HFI_START,	 /* hfi_mode 2 start (tok 0): contrast, flipped (0/1), HFI - encoder (deg elec) */
+	EV_HFI_START,	 /* sensorless start (tok 0) or sensorless polarity test: contrast, flipped (0/1), HFI - encoder (deg elec) */
 };
 
 void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() */

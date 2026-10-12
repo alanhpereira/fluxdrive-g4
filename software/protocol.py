@@ -45,8 +45,10 @@ STATUS = [
     "set the injection voltage (hv) first", "run the HFI saliency map first (hsal = 0)",
     "no HF current response (raise hv? check hhalf)", "HFI did not lock on an axis (saliency too low? hbw?)",
     "polarity check ended on the wrong side (raise hpi?)",
-    "HFI lost the rotor (HFI and encoder disagree by more than 90 deg elec)",
-    "sensorless start: polarity contrast below 5 % (raise hpi)",
+    "sensorless: HFI stopped tracking for 50 ms (raise hv? check the polarity)",
+    "polarity contrast below 5 % (raise hpi)",
+    "run the PI autotune (t) first", "set kv first (k, or from the datasheet)",
+    "position mode needs the encoder (angle source 0 or 1)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 SDO = {
@@ -126,7 +128,7 @@ EVENTS = {
     EV_HFI_PT: lambda v: f"  id {v[0]:5.2f} A  phi {v[1]:5.1f} deg   L {v[2] * 1e6:7.2f} uH   across/along {v[3]:+.3f}",
     EV_HFI_FIT: _fmt_hfi_fit,
     EV_HFI_POL: _fmt_hfi_pol,
-    EV_HFI_START: lambda v: (f"sensorless start: polarity contrast {v[0] * 100:+.1f} % "
+    EV_HFI_START: lambda v: (f"polarity contrast {v[0] * 100:+.1f} % "
                              f"({'flipped' if v[1] else 'kept'}), HFI - encoder {v[2]:+.1f} deg"),
 }
 

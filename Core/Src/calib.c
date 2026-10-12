@@ -86,6 +86,16 @@ static void finish(void) {
 }
 
 /* ------------------------------------------------------------------ helpers */
+#define HFI_POL_MIN 0.05f /* polarity contrast below this is a guess, not a measurement */
+
+static st_t hfi_check(void);
+static st_t hfi_lock_and_pol(float* before, float* after);
+
+/* sensorless: ST_HFI_LOST once HFI has not tracked for SL_LOST_N cycles. Checked by chk() and the watchdog */
+static st_t sl_lost(void) {
+	return (g_params.ang_src == ANG_SENSORLESS && g_sl_lost_n >= SL_LOST_N) ? ST_HFI_LOST : ST_OK;
+}
+
 /* returns ST_OK, or why the routine must stop. Serves the protocol in busy mode: READ works, ABORT and
  * STOP abort, anything else gets ST_BUSY */
 static st_t chk(void) {
@@ -93,6 +103,7 @@ static st_t chk(void) {
 	if (checkAndClearBridgeFault() != 0) return ST_BRIDGE_FAULT;
 	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
 	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
+	if (sl_lost() != ST_OK) return ST_HFI_LOST;
 	return ST_OK;
 }
 
@@ -407,6 +418,10 @@ static void spd_init(spd_t* s) {
 }
 
 static float spd_update(spd_t* s) {
+	if (g_params.ang_src == ANG_SENSORLESS) { /* HFI speed (mechanical rpm), electrical rad/s; 0 while not tracking */
+		const float r = g_hfi_rpm;
+		return (r == r) ? r * (2.0f * (float)M_PI / 60.0f) * (float)g_params.pole_pairs : 0.0f;
+	}
 	uint32_t a = hMT6835.angle, t = TIM2->CNT;
 	int32_t d = enc_delta(a, s->ang);
 	float dt = (float)(t - s->us) * 1e-6f;
@@ -426,6 +441,7 @@ static st_t kv_coast(spd_t* s, float w_ref) {
 		HAL_Delay(1); /* encoder delta must stay under half a turn per sample */
 		w = spd_update(s);
 		if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
+		if (sl_lost() != ST_OK) return ST_HFI_LOST;
 	}
 	return ST_OK;
 }
@@ -434,8 +450,15 @@ static st_t kv_coast(spd_t* s, float w_ref) {
  * vq = lambda * we. Fit vq - R*iq against we; the intercept absorbs dead-time error */
 static st_t cal_kv(void) {
 	st_t e;
-	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID;
-	if ((g_params.flags & need) != need) return ST_NEED_ERLT;
+	const int sl = g_params.ang_src == ANG_SENSORLESS;
+	if (sl) {
+		if ((e = hfi_check())) return e;
+		if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+	}
+	else {
+		const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID;
+		if ((g_params.flags & need) != need) return ST_NEED_ERLT;
+	}
 	if ((e = precheck())) return e;
 
 	EV(EV_UNLOAD_SHAFT, 2.0f);
@@ -450,6 +473,14 @@ static st_t cal_kv(void) {
 	g_id_ref = 0.0f;
 	g_iq_ref = 0.0f;
 	g_mode = CTRL_RUN;
+	if (sl) {
+		/* sensorless: HFI speed needs the polarity right first, or the spin-up runs backwards */
+		float before, after;
+		if ((e = hfi_lock_and_pol(&before, &after))) return e;
+		if (!(fabsf(g_hfi_pol_contrast) >= HFI_POL_MIN)) return ST_HFI_POL_WEAK;
+	}
+	g_id_ref = 0.0f; /* kv runs at id = 0: the d-axis flux term is part of vq */
+	g_iq_ref = 0.0f;
 
 	/* spin-up */
 	const float vmax = 0.9f * g_vin / SQRT3;
@@ -519,11 +550,8 @@ static st_t cal_kv(void) {
 /* ------------------------------------------------------------------ closed loop current run */
 /* checks, then puts the current loop in CTRL_RUN (current mode, zero references) if it is not
  * running yet. Returns ST_OK if running */
-static st_t run_enter(int outer) {
-	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID;
-	if ((g_params.flags & need) != need) return ST_NEED_ET;
-	if (outer && !(g_params.vel_kp > 0.0f)) return ST_NEED_VGAINS;
-	if (outer && !(g_params.vel_lim > 0.0f)) return ST_NEED_VLIM;
+/* puts the current loop in CTRL_RUN (zero references) if it is not running yet. Calibrations use it as is */
+static st_t cal_enter(void) {
 	st_t e = precheck();
 	if (e) return e;
 	if (g_mode != CTRL_RUN) {
@@ -537,9 +565,31 @@ static st_t run_enter(int outer) {
 	return ST_OK;
 }
 
-/* d-axis current under the speed/position loops: the HFI bias while HFI runs in estimate mode */
+/* what the chosen angle source needs before a run (speed/position too when outer). Encoder modes need the
+ * electrical offset from 'e'; sensorless needs no encoder at all, but R, L, the PI, kv, the saliency map and hv */
+static st_t run_enter(int outer) {
+	if (g_params.ang_src == ANG_SENSORLESS) {
+		const uint32_t rl = PF_R_VALID | PF_L_VALID;
+		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
+		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
+		if (!(g_params.kv > 0.0f)) return ST_NEED_KV;
+		if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+		if (!(g_params.hfi_v > 0.0f)) return ST_NEED_HV;
+		if (!(g_params.hfi_pol_i > 0.0f)) return ST_I_LOW;
+	}
+	else {
+		const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID;
+		if ((g_params.flags & need) != need) return ST_NEED_ET;
+	}
+	if (outer && !(g_params.vel_kp > 0.0f)) return ST_NEED_VGAINS;
+	if (outer && !(g_params.vel_lim > 0.0f)) return ST_NEED_VLIM;
+	return cal_enter();
+}
+
+/* d-axis current under the speed/position loops: the HFI bias while HFI runs (always when sensorless) */
 static float id_bias(void) {
-	return (g_params.hfi_mode >= 1 && g_params.hfi_sal != 0.0f) ? g_params.hfi_id : 0.0f;
+	const int hfi_on = g_params.ang_src == ANG_SENSORLESS || g_params.hfi_mode >= 1;
+	return (hfi_on && g_params.hfi_sal != 0.0f) ? g_params.hfi_id : 0.0f;
 }
 
 /* speed mode, rpm */
@@ -560,6 +610,7 @@ static st_t run_vel(float rpm) {
 
 /* position mode, turns from home ('h') */
 static st_t run_pos(pos_q32_t t) {
+	if (g_params.ang_src == ANG_SENSORLESS) return ST_NEED_ENC_POS; /* turns come from the encoder */
 	if (!(g_params.pos_kp > 0.0f)) return ST_NEED_PKP;
 	st_t e = run_enter(1);
 	if (e) return e;
@@ -601,8 +652,15 @@ static st_t run_cur(float id, float iq) {
 #define HFI_SIG_MIN 0.03f /* A per informative cycle, ~2 LSB */
 
 static st_t hfi_check(void) {
-	const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID | PF_L_VALID;
-	if ((g_params.flags & need) != need) return ST_NEED_ERLT;
+	if (g_params.ang_src == ANG_SENSORLESS) {
+		const uint32_t rl = PF_R_VALID | PF_L_VALID; /* no encoder offset needed */
+		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
+		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
+	}
+	else {
+		const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID | PF_L_VALID;
+		if ((g_params.flags & need) != need) return ST_NEED_ERLT;
+	}
 	if (!(g_params.hfi_v > 0.0f)) return ST_NEED_HV;
 	return ST_OK;
 }
@@ -655,7 +713,9 @@ static st_t hfi_map_at(float bias, int store) {
 	a2 *= 2.0f / HMAP_N;
 	b2 *= 2.0f / HMAP_N;
 	float sal = sqrtf(a2 * a2 + b2 * b2) / a0;
-	if (a2 < 0.0f) sal = -sal; /* the low-inductance axis is nearer q than d */
+	/* the low-inductance axis is nearer q than d. Sensorless has no reference angle, so the fit's phase says
+	 * nothing about d: it stores the magnitude, taking the low-inductance axis as d (Ld < Lq) */
+	if (a2 < 0.0f && g_params.ang_src != ANG_SENSORLESS) sal = -sal;
 	if (store) g_params.hfi_sal = sal;
 	EV(EV_HFI_FIT, bias, a0, a2, b2, sal, store);
 	return ST_OK;
@@ -683,29 +743,26 @@ static st_t cal_hfi_map(void) {
 	}
 	for (int i = 0; i < n; i++)
 		if (fabsf(bias[i]) > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
-	if ((e = run_enter(0))) return e;
-	g_iq_ref = 0.0f;
+	if ((e = cal_enter())) return e;
+	g_iq_ref = 0.0f; /* no torque: the rotor stays where it is, so the map needs no encoder and no held shaft */
+	g_hfi_theta0 = 0; /* sensorless: the reference the injection angles are measured from, frozen during the map */
 	for (int i = 0; i < n; i++)
 		if ((e = hfi_map_at(bias[i], i == store))) return e;
 	return ST_OK;
 }
 
-/* lock from a random starting angle, then the polarity pulses (handoff step 3: run it from many rotor
- * positions, it must come out right every time). Reports HFI - encoder before and after */
-static st_t cal_hfi_pol(void) {
+/* lock from g_hfi_theta0 (a random angle), then the polarity pulses. before, after: HFI - encoder (deg elec)
+ * just before and after the pulses. The pulses decide the polarity by themselves, so this runs without an
+ * encoder too (the caller reads the contrast) */
+static st_t hfi_lock_and_pol(float* before, float* after) {
 	st_t e;
-	if ((e = hfi_check())) return e;
-	if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
-	if (!(g_params.hfi_pol_i > 0.0f)) return ST_I_LOW;
-	if (g_params.hfi_pol_i > 0.9f * g_params.max_current || g_params.hfi_id > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
-	if ((e = run_enter(0))) return e;
 	g_iq_ref = 0.0f;
 	g_id_ref = g_params.hfi_id;
 	g_hfi_theta0 = DWT->CYCCNT * 2654435761u; /* random start: either polarity can come out */
 	g_hfi_cmd = HFI_TRACK;
 	if ((e = wait_ms(300))) return e;
 	if (!(g_hfi_amp > HFI_SIG_MIN)) return ST_HFI_NO_SIGNAL;
-	const float before = g_hfi_err_f * 360.0f;
+	*before = g_hfi_err_f * 360.0f;
 
 	g_id_ref = 0.0f; /* the pulses start from no current */
 	if ((e = wait_ms(30))) return e;
@@ -717,7 +774,26 @@ static st_t cal_hfi_pol(void) {
 	}
 	g_id_ref = g_params.hfi_id;
 	if ((e = wait_ms(100))) return e;
-	const float after = g_hfi_err_f * 360.0f;
+	*after = g_hfi_err_f * 360.0f;
+	return ST_OK;
+}
+
+/* polarity check (handoff step 3: run it from many rotor positions, it must come out right every time).
+ * Encoder: the lock must be within 45 deg of d or -d, and the flip must land on d. Sensorless: the pulse
+ * contrast must be clear enough to trust (the same bar as the sensorless start) */
+static st_t cal_hfi_pol(void) {
+	st_t e;
+	if ((e = hfi_check())) return e;
+	if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+	if (!(g_params.hfi_pol_i > 0.0f)) return ST_I_LOW;
+	if (g_params.hfi_pol_i > 0.9f * g_params.max_current || g_params.hfi_id > 0.9f * g_params.max_current) return ST_I_TEST_HIGH;
+	if ((e = cal_enter())) return e;
+	float before = NAN, after = NAN;
+	if ((e = hfi_lock_and_pol(&before, &after))) return e;
+	if (g_params.ang_src == ANG_SENSORLESS) {
+		EV(EV_HFI_START, g_hfi_pol_contrast, g_hfi_pol_flip, after);
+		return fabsf(g_hfi_pol_contrast) >= HFI_POL_MIN ? ST_OK : ST_HFI_POL_WEAK;
+	}
 	EV(EV_HFI_POL, before, after, g_hfi_pol_flip, g_hfi_pol_contrast);
 
 	float ax = fabsf(before); /* distance from the nearer of d and -d */
@@ -727,14 +803,11 @@ static st_t cal_hfi_pol(void) {
 	return ST_OK;
 }
 
-#define HFI_LOST_DEG 90.0f /* hfi_mode 2: HFI - encoder beyond this (4 ms low-pass) stops the motor */
-#define HFI_POL_MIN 0.05f  /* hfi_mode 2 start: |contrast| below this is a guess, not a measurement */
-
 /* called from cmd_poll() while running: stop on fault, low bus or overcurrent */
 static void run_watchdog(void) {
 	if (g_mode != CTRL_RUN) return;
 	st_t e = ST_OK;
-	if (g_hfi_start_done) { /* report the sensorless start; refuse to run on a coin toss */
+	if (g_hfi_start_done) { /* report the sensorless start (its polarity pulses); refuse to run on a coin toss */
 		g_hfi_start_done = 0;
 		const float s[3] = {g_hfi_pol_contrast, g_hfi_pol_flip, g_hfi_err * 360.0f};
 		proto_event(0, EV_HFI_START, 3, s);
@@ -746,8 +819,7 @@ static void run_watchdog(void) {
 	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = ST_BRIDGE_FAULT;
 	else if (g_vin < g_params.vbus_min) e = ST_VBUS_LOW;
 	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
-	/* driving on HFI: the encoder is only the safety net. Its own error reaches ~40 deg electrical (mount) */
-	else if (g_params.hfi_mode == 2 && fabsf(g_hfi_err_f) * 360.0f > HFI_LOST_DEG) e = ST_HFI_LOST;
+	else if (sl_lost() != ST_OK) e = ST_HFI_LOST; /* sensorless: HFI stopped tracking */
 	if (!e) return;
 
 	g_mode = CTRL_OFF; /* immediately, no ramp: the loop is not in control any more */

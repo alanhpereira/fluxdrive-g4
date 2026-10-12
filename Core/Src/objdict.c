@@ -68,9 +68,8 @@ static const obj_t k_tab[] = {
 	{0x4010, 9, T_F32, OF_STORED, F(g_params.rated_current), 0.0f, 50.0f},
 	{0x4010, 10, T_F32, OF_STORED, F(g_params.max_current), 0.0f, 50.0f},
 	{0x4010, 11, T_U32, OF_STORED | OF_NOTRUN, F(g_params.flags), 0.0f, 255.0f},
-	/* 0x4011 sensing (not used by the control path yet) */
-	{0x4011, 1, T_F32, OF_STORED, F(g_params.cur_scale), -BIG, BIG},
-	{0x4011, 2, T_F32, OF_STORED, F(g_params.vin_scale), -BIG, BIG},
+	/* 0x4011 angle source */
+	{0x4011, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.ang_src), 0.0f, 2.0f},
 	/* 0x4020 current loop */
 	{0x4020, 1, T_F32, OF_STORED | OF_PI, F(g_params.kp_d), 0.0f, 1.0e6f},
 	{0x4020, 2, T_F32, OF_STORED | OF_PI, F(g_params.ki_d), 0.0f, 1.0e6f},
@@ -95,7 +94,7 @@ static const obj_t k_tab[] = {
 	{0x4030, 5, T_F32, OF_STORED, F(g_params.obs_flux_tol), 0.0f, 1.0f},
 	{0x4030, 6, T_F32, OF_STORED, F(g_params.obs_err_max), 0.0f, 180.0f},
 	/* 0x4031 high-frequency injection */
-	{0x4031, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.hfi_mode), 0.0f, 2.0f},
+	{0x4031, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.hfi_mode), 0.0f, 1.0f},
 	{0x4031, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.hfi_half), 2.0f, (float)HFI_HALF_MAX},
 	{0x4031, 3, T_F32, OF_STORED, F(g_params.hfi_v), 0.0f, 10.0f},
 	{0x4031, 4, T_F32, OF_STORED, F(g_params.hfi_bw), 0.0f, 500.0f},

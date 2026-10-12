@@ -43,6 +43,9 @@ extern volatile float g_id, g_iq, g_vin;
 extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from currentLoop() */
 
 /* from currentLoop(): motor direction (positive = positive iq), relative to home */
+#define SL_LOST_N 1250 /* sensorless: HFI not tracking for this many cycles (50 ms) stops the motor */
+#define SL_AGREE_MAX_TURNS 10.0f /* sensorless: above this speed (turn/s, ~600 rpm) HFI is not checked against the observer */
+extern volatile uint16_t g_sl_lost_n; /* consecutive such cycles, from currentLoop() */
 extern volatile float g_vel;		   /* turn/s, PLL estimate */
 extern volatile float g_pos;		   /* turns, display/telemetry only: the loop uses pos_q32_t */
 extern volatile float g_rpm;		   /* g_vel * 60 */
