@@ -20,7 +20,7 @@ The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is
 - Flash: task "Flash STM", or `make -f STM32Make.make flash`. This uses ST-Link through OpenOCD (`openocd.cfg`).
 - Erase: `make -f STM32Make.make erase`. This also wipes the stored motor parameters.
 - Debug: the cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, with live watch enabled.
-- Plotter: `pip install pyserial numpy pyqtgraph PyQt6`, then `python software/plotter.py [COMx]`.
+- Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`.
 
 There are no unit tests. Changes are verified on hardware through the serial console and telemetry.
 
