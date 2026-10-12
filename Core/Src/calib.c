@@ -233,16 +233,50 @@ static const char* cal_resistance(void) {
 }
 
 /* ------------------------------------------------------------------ inductance */
+/* Flux linkage left at each sample of a decay at zero commanded voltage: L di/dt = -(R i + v_off), so
+ * psi(i_j) = integral from t_j to the zero crossing of (R i + v_off) dt, and L = psi / i is the secant
+ * inductance at i_j: what the observer uses (eta = x - L i). Needs no step timing and no fit. Segments
+ * between two positive samples are integrated as exponentials, so the few samples per time constant
+ * (L/R is ~3 PWM periods here) do not bias it */
+static void print_flux_curve(const float* x, int n, float i0, float r, float v_off) {
+	const float h = 1.0f / CTRL_FS_HZ;
+	int z = n - 1;
+	float tz = (float)(n - 1);
+	for (int k = 1; k < n; k++)
+		if (x[k] <= 0.0f) {
+			z = k;
+			tz = (float)(k - 1) + x[k - 1] / (x[k - 1] - x[k]);
+			break;
+		}
+	int j0 = 1;
+	while (j0 < z && x[j0] > 0.97f * i0) j0++; /* first sample after the voltage step */
+	say("secant L along the decay (I0 %.2f A, v_off %.3f V):\r\n", (double)i0, (double)v_off);
+	for (int j = j0; j < z && x[j] > 0.1f * i0; j++) {
+		float area = 0.5f * x[z - 1] * (tz - (float)(z - 1)) * h; /* last bit, linear to zero */
+		for (int k = j; k < z - 1; k++) {
+			float a = x[k], b = x[k + 1];
+			area += (a > b && b > 0.0f) ? h * (a - b) / logf(a / b) : 0.5f * h * (a + b);
+		}
+		float psi = r * area + v_off * (tz - (float)j) * h;
+		say("  i %6.2f A   L %6.1f uH\r\n", (double)x[j], (double)(psi / x[j] * 1e6f));
+	}
+}
+
+static float s_l_amps; /* test current from the command line ('l 8'), 0 = default */
+
 static const char* cal_inductance(int use_q) {
 	const char* e;
 	float v;
 	if ((e = precheck())) return e;
 	if (!(g_params.flags & PF_R_VALID)) return "run 'r' first";
+	const int report_only = s_l_amps > 0.0f; /* an explicit current measures a point, it does not calibrate */
+	const float amps = report_only ? s_l_amps : 0.4f * g_params.rated_current;
+	if (amps > 0.9f * g_params.max_current) return "test current must stay below 0.9 x imax (s imax ...)";
 
 	g_mode = CTRL_CAL;
 	g_theta_cmd = 0;
 	g_vd_cmd = g_vq_cmd = 0;
-	if ((e = ramp_d_to_current(0.4f * g_params.rated_current, &v))) return e;
+	if ((e = ramp_d_to_current(amps, &v))) return e;
 	HAL_Delay(700); /* rotor settles on the d axis */
 
 	if (use_q) {
@@ -272,11 +306,17 @@ static const char* cal_inductance(int use_q) {
 
 	static float buf[REC_N];
 	for (int k = 0; k < REC_N; k++) buf[k] = g_rec[k];
+	print_flux_curve(buf, REC_N, i0, g_params.rd, v - g_params.rd * i0); /* v_off: what R*i0 does not explain */
 	float tau = decay_tau(buf, REC_N, i0, CTRL_FS_HZ);
 	if (tau < 0.0f) return "current did not fall to 25% inside the window (L/R too slow)";
 	if (tau * CTRL_FS_HZ < 3.0f) return "L/R shorter than ~3 samples, cannot resolve";
 
 	float L = tau * g_params.rd;
+	if (report_only) {
+		say("L%c from the 75->25%% decay time = %.1f uH at %.2f A (not stored; 's l%c' to keep a value)\r\n",
+			use_q ? 'q' : 'd', (double)(L * 1e6f), (double)i0, use_q ? 'q' : 'd');
+		return NULL;
+	}
 	if (use_q) {
 		g_params.lq = L;
 	}
@@ -664,6 +704,13 @@ static const struct {
 	{"vki", &g_params.vel_ki, 'f'},
 	{"pkp", &g_params.pos_kp, 'f'},
 	{"vlim", &g_params.vel_lim, 'f'},
+	{"oblend", &g_params.obs_blend, 'u'},
+	{"ogain", &g_params.obs_gain, 'f'},
+	{"olo", &g_params.obs_lo_v, 'f'},
+	{"ohi", &g_params.obs_hi_v, 'f'},
+	{"oftol", &g_params.obs_flux_tol, 'f'},
+	{"oerr", &g_params.obs_err_max, 'f'},
+	{"acc", &g_params.acc_lim, 'f'},
 };
 
 static void set_param(char* args) {
@@ -722,6 +769,9 @@ static void print_params(void) {
 	say("kp/ki d %.4f %.2f  q %.4f %.2f  bw %.0f Hz\r\n", (double)p->kp_d, (double)p->ki_d, (double)p->kp_q, (double)p->ki_q, (double)p->cur_BW);
 	say("speed kp %.4f A/(turn/s) ki %.4f A/turn  pos kp %.2f 1/s  vlim %.2f turn/s (%.0f rpm)\r\n", (double)p->vel_kp,
 		(double)p->vel_ki, (double)p->pos_kp, (double)p->vel_lim, (double)(p->vel_lim * 60.0f));
+	say("observer: oblend %u  olo %.2f V  ohi %.2f V  ogain %.0f rad/s  oftol %.2f  oerr %.0f deg   acc %.0f rpm/s\r\n",
+		p->obs_blend, (double)p->obs_lo_v, (double)p->obs_hi_v, (double)p->obs_gain, (double)p->obs_flux_tol,
+		(double)p->obs_err_max, (double)p->acc_lim);
 	say("vbus %.1f..%.1f V  tmax %.0f C  flags 0x%02lX  seq %lu\r\n", (double)p->vbus_min, (double)p->vbus_max, (double)p->temp_max, (unsigned long)p->flags, (unsigned long)p->seq);
 }
 
@@ -764,9 +814,11 @@ static void dispatch(char* line) {
 			run("resistance", cal_resistance);
 			break;
 		case 'l':
+			s_l_amps = strtof(line + 1, NULL); /* "l" alone: 0, the default current */
 			run("inductance d", cal_ld);
 			break;
 		case 'q':
+			s_l_amps = strtof(line + 1, NULL);
 			run("inductance q", cal_lq);
 			break;
 		case 'p':
@@ -813,7 +865,7 @@ static void dispatch(char* line) {
 			print_fault();
 			break;
 		case '?':
-			say("e encoder  r resistance  l Ld  q Lq (hold shaft)  t PI autotune  k kv (spins)\r\n"
+			say("e encoder  r resistance  l [A] Ld  q [A] Lq (hold shaft; with A: measure only)  t PI autotune  k kv (spins)\r\n"
 				"g <id> <iq> current  i <iq> (id = 0)  v <rpm> speed  a <turns> position  h home  o off\r\n"
 				"p print  f fault/encoder/timing status  s <key> <val>  w save  z reset encoder zero  x abort\r\n");
 			break;

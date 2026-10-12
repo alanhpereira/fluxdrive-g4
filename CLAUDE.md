@@ -16,7 +16,7 @@ This is the firmware for a graduation-thesis BLDC/PMSM motor driver. It runs fie
 
 The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is generated from `STM32-for-VSCode.config.yaml` plus the CubeMX `Makefile`. Toolchain paths are in `.stm32env`: arm-none-eabi-gcc 13.2 and OpenOCD 0.12 under `C:/DEV/TOOLS/...`.
 
-- Build: VS Code task "Build STM", or `make -f STM32Make.make -j`. Output goes to `build/debug/Driver_TCC.elf`. Default optimization is `-Og`; override it with `OPTIMIZATION=-O2`.
+- Build: VS Code task "Build STM", or `make -f STM32Make.make -j`. Output goes to `build/debug/Driver_TCC.elf`. That debug build is always `-Og`: `OPTIMIZATION` is only used with `DEBUG=0` (e.g. `make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`), which builds into `build/release/`; `make ... DEBUG=0 ... flash` flashes that one. Flash budget and trimming plan: `docs/flash-optimization-handoff.md`, measured with `python software/flash_report.py`.
 - Flash: task "Flash STM", or `make -f STM32Make.make flash`. This uses ST-Link through OpenOCD (`openocd.cfg`).
 - Erase: `make -f STM32Make.make erase`. This also wipes the stored motor parameters.
 - Debug: the cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, with live watch enabled.
@@ -33,7 +33,7 @@ There are no unit tests. Changes are verified on hardware through the serial con
 
 Code you add to those files **must** sit between `/* USER CODE BEGIN x */` and `/* USER CODE END x */` markers, or CubeMX will delete it. `main.c` follows the same rule. All the hand-written logic is in its own files, listed below. USB CDC is initialized but unused (stock template).
 
-The flash length in the linker script is set to 116K on purpose. The last two 2 KB pages (62 and 63) hold the parameters. If CubeMX regenerates `STM32G431XX_FLASH.ld`, check that FLASH is still ≤ 124K.
+The flash length in the linker script is set to 120K on purpose. Pages 60 and 61 are kept free (reserved, e.g. for CANopen storage), and the last two 2 KB pages (62 and 63) hold the parameters. If CubeMX regenerates `STM32G431XX_FLASH.ld`, set FLASH back to 120K (never above 124K).
 
 Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no column limit, and `else` on a new line after `}`.
 
@@ -47,7 +47,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 | `bridgeCtrl.c/h` | TIM1 PWM start/stop, `setDuty()`/`setSamplePoint()` (CCR1-4), and the DAC2 short-circuit reference. `checkAndClearBridgeFault()` reads the gate-driver fault register over I2C and re-arms MOE after a break. |
 | `mt6835.c/h` | Encoder driver: register R/W, zero, EEPROM. Burst mode: `MT6835_StartBurst()` sends one burst command and leaves CS low. The sensor then shifts out 4-byte groups (angle H/M/L+status, CRC) whenever the SPI clocks. `TIM1_UP_TIM16_IRQHandler` (defined here) starts a register-level DMA read of `MT6835_GROUPS` groups at the TIM1 counter bottom, sized to end just before the ADC sample. `MT6835_Sample()`, called first in `currentLoop()`, takes the last complete group, checks its CRC, updates `hMT6835.angle` (21-bit) and the multi-turn `turns` counter, and returns the sample age. |
 | `calib.c/h` | Serial command console (`cmd_init`/`cmd_poll`), calibration routines, run modes, safety watchdog. Owns the shared ISR↔main globals (`g_mode`, `g_loop`, refs, PI states). |
-| `params.c/h` | `motor_params_t g_params`, stored in flash. Two A/B slots with seq number + CRC32. Versioned (v4), and migrates v2/v3 copies on load. |
+| `params.c/h` | `motor_params_t g_params`, stored in flash. Two A/B slots with seq number + CRC32. Versioned (v4); a copy with any other version is ignored and the defaults load. |
 | `pi_ctrl.h` | Inline PI with conditional-integration anti-windup. `pi_current_step()` shares the voltage circle between d and q, with d taking priority. |
 | `cordicMgr.h` | Hardware CORDIC sin/cos (`sincos_q31`, Q32 angle in, floats out). |
 
@@ -92,9 +92,8 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 ### Parameters in flash
 - `params_save()` refuses to run while MOE is set, because the page erase stalls the CPU about 20 ms. `w` therefore disables the bridge, saves, and re-inits it.
 - When changing `motor_params_t`:
-  - Append fields only, before `crc`, and keep the size a multiple of 8.
-  - Bump `PARAM_VERSION` and add migration in `isValid()`/`params_load()`.
-  - Fields that aren't stored are filled from `k_defaults`.
+  - Keep `crc` last and the size a multiple of 8. Give new fields a default in `k_defaults`.
+  - Bump `PARAM_VERSION`. There is no migration: after a layout change the stored copy is ignored, the defaults load, and everything must be recalibrated and saved with `w`.
 
 ## Gotchas
 - Keep the TIM1 update interrupt (`TIM1_UP_TIM16_IRQn`) **disabled in the .ioc**. `mt6835.c` enables it at runtime and owns `TIM1_UP_TIM16_IRQHandler`. If CubeMX generates a second handler, the link fails. The SPI1 DMA channels are reprogrammed by register on every read; leave them in NORMAL mode in the .ioc.

@@ -12,8 +12,7 @@
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 3u		/* bump when the struct layout changes */
-#define PARAM_V2_SIZE 104u	/* v2 = v3 without the outer loop block; migrated on load */
+#define PARAM_VERSION 4u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -47,11 +46,21 @@ typedef struct {
 	float vbus_min, vbus_max; /* V */
 	float temp_max;			  /* deg C */
 
-	/* outer loops (v3+, keep appended after v2 fields: v2 copies are migrated as a prefix) */
+	/* outer loops */
 	float vel_kp;  /* A per turn/s */
 	float vel_ki;  /* A per turn */
 	float pos_kp;  /* turn/s per turn */
 	float vel_lim; /* turn/s, position mode speed limit and overspeed trip (x1.5) */
+
+	/* back-EMF observer and speed ramp */
+	float obs_gain;		/* rad/s, flux magnitude correction */
+	float obs_lo_v;		/* peak back-EMF where the observer starts to get weight, V */
+	float obs_hi_v;		/* ...and where it has all of it */
+	float obs_flux_tol; /* |flux| / lambda must stay within 1 +- tol */
+	float obs_err_max;	/* deg electrical: sustained observer - encoder difference above this drops it */
+	float acc_lim;		/* rpm/s, speed reference ramp in the speed/position loops; 0 = off */
+	uint8_t obs_blend;	/* 1: blend the observer into angle and speed, 0: run and log it only */
+	uint8_t reserved2[7];
 
 	uint32_t crc; /* CRC32 of everything above; keep last */
 } motor_params_t;

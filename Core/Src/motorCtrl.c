@@ -167,10 +167,9 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 }
 
 /* ------------------------------------------------------------------ speed / position loops */
-/* The speed reference is slewed at ACC_LIM. Measured: ~22000 rpm/s per amp, so 60000 rpm/s is ~3 A plus
- * friction. That keeps the observer's load-dependent flux error small (it drops to ~0.8 of lambda at 8 A)
- * and stays clear of the ~8 A where the encoder mount slips */
-#define ACC_LIM (60000.0f / 60.0f) /* turn/s^2 */
+/* The speed reference is slewed at g_params.acc_lim (rpm/s, 0 = off). Measured: ~22000 rpm/s per amp, so
+ * 60000 rpm/s is ~3 A plus friction. That keeps the observer's load-dependent flux error small (it drops
+ * to ~0.8 of lambda at 8 A) and stays clear of the ~8 A where the encoder mount slips */
 
 /* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ */
 static void outer_loops(ctrl_mode_t mode) {
@@ -202,8 +201,10 @@ static void outer_loops(ctrl_mode_t mode) {
 				vref = lim;
 			else if (vref < -lim)
 				vref = -lim;
-			const float dv = ACC_LIM * (float)OUTER_DIV / CTRL_FS_HZ;
-			if (vref > vramp + dv)
+			const float dv = g_params.acc_lim * (1.0f / 60.0f) * (float)OUTER_DIV / CTRL_FS_HZ;
+			if (!(dv > 0.0f))
+				vramp = vref;
+			else if (vref > vramp + dv)
 				vramp += dv;
 			else if (vref < vramp - dv)
 				vramp -= dv;
@@ -229,15 +230,10 @@ static void outer_loops(ctrl_mode_t mode) {
 /* Nonlinear flux observer (Ortega et al. 2011, the one VESC/ODrive use), stationary frame:
  *   x' = v - R*i + k * eta * (lambda^2 - |eta|^2),   eta = x - L*i = rotor flux,  k = gain / (2 lambda^2)
  * The angle of eta is the electrical angle at the current sample, the same instant theta_m refers to.
- * It replaces the encoder for commutation (Park/inverse Park) above OBS_BLEND_LO_V of back-EMF, with a
- * linear blend up to OBS_BLEND_HI_V. Position and speed always come from the encoder PLL */
-#define OBS_BLEND 1			/* 0: the observer runs and is logged, but the encoder alone drives the angle */
-#define OBS_GAIN 1000.0f	/* rad/s */
-#define OBS_BLEND_LO_V 0.7f /* peak back-EMF (lambda * we) where the observer starts to get weight, V */
-#define OBS_BLEND_HI_V 1.4f /* ...and where it has all of it */
-#define OBS_FLUX_TOL 0.3f	/* |eta| must stay within lambda * (1 +- tol) */
-#define OBS_ERR_MAX 0.0833f /* turns electrical (30 deg): a larger observer - encoder difference drops the observer.
-							 * Leaves room for the encoder's own error (nonlinearity ~+-5, mount slip ~13 deg seen) */
+ * With g_params.obs_blend it replaces the encoder for commutation and speed above obs_lo_v of back-EMF,
+ * with a linear blend up to obs_hi_v. Position always comes from the encoder. Tuning (params, 's'):
+ * obs_gain (rad/s), obs_flux_tol, obs_err_max (deg electrical: leaves room for the encoder's own error,
+ * nonlinearity ~+-5 and a mount slip of ~13 deg have been seen) */
 #define OBS_LOCK_N 250		/* cycles (10 ms) both checks must hold before it gets any weight */
 /* Once locked, a failing check only drops the observer when it persists: each check keeps a leaky count
  * (+1 per failing cycle, -1 per passing one) and drops at these levels. The flux check is the observer's
@@ -250,7 +246,8 @@ static float s_obs_xa, s_obs_xb;	/* stator flux estimate, Wb */
 static float s_obs_ia, s_obs_ib;	/* currents at the previous sample, A */
 static float s_obs_va, s_obs_vb;	/* last voltage written to the bridge, V */
 static float s_obs_va1, s_obs_vb1;	/* the one written before it */
-static float s_obs_kv = -1.0f;		/* kv the constants below were computed from */
+static float s_obs_kv = -1.0f;		/* kv and gain the constants below were computed from */
+static float s_obs_gain = -1.0f;
 static float s_obs_lambda, s_obs_k; /* Wb peak phase (as cal_kv()), correction gain */
 static uint16_t s_obs_good;			/* consecutive cycles both checks passed (up to OBS_LOCK_N) */
 static uint16_t s_obs_flux_bad;		/* leaky counts of failing cycles, see OBS_FLUX_DROP_N */
@@ -269,9 +266,13 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 	if (g_params.kv != s_obs_kv) {
 		s_obs_kv = g_params.kv;
 		s_obs_lambda = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * s_obs_kv);
-		s_obs_k = 0.5f * OBS_GAIN / (s_obs_lambda * s_obs_lambda);
 		s_obs_xa = s_obs_xb = 0.0f;
 		s_obs_good = 0;
+		s_obs_gain = -1.0f;
+	}
+	if (g_params.obs_gain != s_obs_gain) {
+		s_obs_gain = g_params.obs_gain;
+		s_obs_k = 0.5f * s_obs_gain / (s_obs_lambda * s_obs_lambda);
 	}
 	float r = 0.5f * (g_params.rd + g_params.rq);
 	float l = 0.5f * (g_params.ld + g_params.lq);
@@ -310,8 +311,8 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 	}
 	float d = (float)(int32_t)diff * (1.0f / 4294967296.0f);
 	s_obs_err = d;
-	int flux_ok = fabsf(s_obs_ratio - 1.0f) < OBS_FLUX_TOL;
-	int enc_ok = fabsf(d) < OBS_ERR_MAX;
+	int flux_ok = fabsf(s_obs_ratio - 1.0f) < g_params.obs_flux_tol;
+	int enc_ok = fabsf(d) * 360.0f < g_params.obs_err_max;
 	if (flux_ok) {
 		if (s_obs_flux_bad) s_obs_flux_bad--;
 	}
@@ -332,16 +333,16 @@ static float obs_weight(int valid, uint32_t diff, float we) {
 		s_obs_good = (flux_ok && enc_ok) ? s_obs_good + 1 : 0; /* locking: strict */
 	}
 	float w = 0.0f;
-#if OBS_BLEND
-	if (s_obs_good >= OBS_LOCK_N) {
+	if (g_params.obs_blend && s_obs_good >= OBS_LOCK_N) {
 		float emf = s_obs_lambda * fabsf(we) * (2.0f * (float)M_PI / 4294967296.0f); /* V peak */
-		w = (emf - OBS_BLEND_LO_V) * (1.0f / (OBS_BLEND_HI_V - OBS_BLEND_LO_V));
+		float span = g_params.obs_hi_v - g_params.obs_lo_v;
+		if (span > 0.0f)
+			w = (emf - g_params.obs_lo_v) / span;
+		else
+			w = (emf >= g_params.obs_lo_v) ? 1.0f : 0.0f;
 		w = w < 0.0f ? 0.0f : w > 1.0f ? 1.0f
 									   : w;
 	}
-#else
-	(void)we;
-#endif
 	s_obs_w = w;
 	return w;
 }

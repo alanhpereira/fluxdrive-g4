@@ -3,9 +3,6 @@
 #include <stddef.h>
 #include <string.h>
 
-/* v2 = everything up to temp_max, then crc */
-_Static_assert(offsetof(motor_params_t, vel_kp) == PARAM_V2_SIZE - sizeof(uint32_t), "v2 prefix layout changed");
-
 /* Two 2 KB pages at the very end of the 128 KB flash (pages 62 and 63).
  * Reserve them in the linker script: set the FLASH length to 124K. */
 #define SLOT_ADDR(i) (FLASH_BASE + (uint32_t)(62 + (i)) * FLASH_PAGE_SIZE)
@@ -40,6 +37,13 @@ static const motor_params_t k_defaults = {
 	.vel_ki = 0.0f,
 	.pos_kp = 20.0f,
 	.vel_lim = 10.0f,
+	.obs_gain = 1000.0f,
+	.obs_lo_v = 0.7f,
+	.obs_hi_v = 1.4f,
+	.obs_flux_tol = 0.3f,
+	.obs_err_max = 30.0f,
+	.acc_lim = 60000.0f,
+	.obs_blend = 1,
 };
 
 static uint32_t crc32(const void* p, size_t n) {
@@ -56,16 +60,10 @@ static const motor_params_t* slotPtr(int i) {
 	return (const motor_params_t*)SLOT_ADDR(i);
 }
 
-/* accepts the current layout and v2 (a prefix of it); crc is always the last word */
+/* only the current layout is accepted: any other version or size loads the defaults */
 static int isValid(const motor_params_t* p) {
-	if (p->magic != PARAM_MAGIC) return 0;
-	uint32_t n;
-	if (p->version == PARAM_VERSION && p->size == sizeof(motor_params_t)) n = sizeof(motor_params_t);
-	else if (p->version == 2u && p->size == PARAM_V2_SIZE) n = PARAM_V2_SIZE;
-	else return 0;
-	uint32_t crc;
-	memcpy(&crc, (const uint8_t*)p + n - sizeof(uint32_t), sizeof crc);
-	return crc == crc32(p, n - sizeof(uint32_t));
+	if (p->magic != PARAM_MAGIC || p->version != PARAM_VERSION || p->size != sizeof(motor_params_t)) return 0;
+	return p->crc == crc32(p, sizeof(motor_params_t) - sizeof(uint32_t));
 }
 
 int params_load(void) {
@@ -87,11 +85,7 @@ int params_load(void) {
 		g_active = -1;
 		return 1;
 	}
-	const motor_params_t* src = slotPtr(g_active);
-	g_params = k_defaults; /* fields newer than the stored copy keep their defaults */
-	memcpy(&g_params, src, src->size - sizeof(uint32_t));
-	g_params.version = PARAM_VERSION;
-	g_params.size = sizeof(motor_params_t);
+	g_params = *slotPtr(g_active);
 	return 0;
 }
 
