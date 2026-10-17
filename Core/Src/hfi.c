@@ -94,7 +94,8 @@ static int ready(void) {
 	return (g_params.flags & PF_L_VALID) && g_params.hfi_sal != 0.0f && g_params.hfi_v > 0.0f;
 }
 
-static hfi_out_t pol_step(float i_a, float i_b, float* v_a, float* v_b) {
+/* polarity pulses: a few hundred cycles per start, so it stays out of CCM */
+static __attribute__((noinline)) hfi_out_t pol_step(float i_a, float i_b, float* v_a, float* v_b) {
 	float s, c;
 	sincos_q31(s_ph, &s, &c);
 	const float id_h = i_a * c + i_b * s;

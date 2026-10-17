@@ -155,7 +155,7 @@ static st_t ramp_d_to_current(float i_target, float* v_out) {
 
 /* time between the 75% and 25% crossings of a decaying current is tau * ln(3);
  * measuring a difference makes the fixed one-period delay of the loop cancel out */
-static float decay_tau(const float* x, int n, float i0, float fs) {
+static float decay_tau(const volatile float* x, int n, float i0, float fs) {
 	const float hi = 0.75f * i0, lo = 0.25f * i0;
 	float ta = -1.0f;
 	for (int k = 1; k < n; k++) {
@@ -204,7 +204,7 @@ static st_t cal_resistance(void) {
  * inductance at i_j: what the observer uses (eta = x - L i). Needs no step timing and no fit. Segments
  * between two positive samples are integrated as exponentials, so the few samples per time constant
  * (L/R is ~3 PWM periods here) do not bias it */
-static void print_flux_curve(const float* x, int n, float i0, float r, float v_off) {
+static void print_flux_curve(const volatile float* x, int n, float i0, float r, float v_off) {
 	const float h = 1.0f / CTRL_FS_HZ;
 	int z = n - 1;
 	float tz = (float)(n - 1);
@@ -270,10 +270,9 @@ static st_t cal_inductance(int use_q) {
 	while (g_rec_state != 3)
 		if (HAL_GetTick() - t0 > 500) return ST_REC_TIMEOUT;
 
-	static float buf[REC_N];
-	for (int k = 0; k < REC_N; k++) buf[k] = g_rec[k];
-	print_flux_curve(buf, REC_N, i0, g_params.rd, v - g_params.rd * i0); /* v_off: what R*i0 does not explain */
-	float tau = decay_tau(buf, REC_N, i0, CTRL_FS_HZ);
+	/* read g_rec in place: the ISR has stopped writing it (state 3) */
+	print_flux_curve(g_rec, REC_N, i0, g_params.rd, v - g_params.rd * i0); /* v_off: what R*i0 does not explain */
+	float tau = decay_tau(g_rec, REC_N, i0, CTRL_FS_HZ);
 	if (tau < 0.0f) return ST_LR_SLOW;
 	if (tau * CTRL_FS_HZ < 3.0f) return ST_LR_FAST;
 

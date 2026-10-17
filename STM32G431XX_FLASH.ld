@@ -55,7 +55,7 @@ ENTRY(Reset_Handler)
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x800;      /* required amount of heap  */
+_Min_Heap_Size = 0x0;        /* no malloc in the firmware (USB uses static buffers); was 2 KB */
 _Min_Stack_Size = 0x1000; /* required amount of stack */
 
 /* Specify the memory areas */
@@ -89,7 +89,7 @@ SECTIONS
     *(.text.HAL_ADCEx_InjectedConvCpltCallback) *(.text.ADC1_2_IRQHandler) *(.text.HAL_ADC_IRQHandler)
     *(.text.HAL_ADCEx_InjectedGetValue)
     *(.text.MT6835_Sample) *(.text.TIM1_UP_TIM16_IRQHandler)
-    *(.text.HAL_UART_Transmit_DMA) *(.text.HAL_DMA_Start_IT) *(.text.DMA_SetConfig) *(.text.HAL_GetTick)
+    *(.text.HAL_GetTick)
     *(.ccmram) *(.ccmram*)
     . = ALIGN(4);
     _eccmram = .;

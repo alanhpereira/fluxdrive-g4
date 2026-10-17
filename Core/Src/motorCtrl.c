@@ -178,7 +178,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
  * to ~0.8 of lambda at 8 A) and stays clear of the ~8 A where the encoder mount slips */
 
 /* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ. Returns 1 on the cycles it ran */
-static int outer_loops(ctrl_mode_t mode) {
+static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 	static loop_t prev = LOOP_CURRENT;
 	static int div;
 	static float vramp; /* slewed speed reference, turn/s */
@@ -389,6 +389,28 @@ static inline float since_current_sample_s(void) {
 	return (float)d * (1.0f / 170e6f);
 }
 
+/* telemetry frame, once every 10 cycles, sent over UART DMA. Kept out of CCM: its code is large and it runs rarely */
+static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, float iq, ctrl_mode_t mode) {
+	telemetry.seq = seq;
+	telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
+	telemetry.v[1] = g_vin;
+	telemetry.v[2] = g_hfi_err * 360.0f; /* HFI - encoder, deg electrical; NaN unless HFI tracks */
+	telemetry.v[3] = g_hfi_rpm;			  /* HFI PLL speed; NaN unless HFI tracks */
+	telemetry.v[4] = g_hfi_amp;			  /* HF current step along the injection axis, A; NaN with HFI off */
+	telemetry.v[5] = id;				  /* with HFI on: the fundamental, what the PIs see */
+	telemetry.v[6] = iq;
+	telemetry.v[7] = g_rpm;
+	telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
+	telemetry.v[9] = g_pos;
+	telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
+	telemetry.v[11] = s_obs_err * 360.0f; /* observer - base (encoder, HFI when sensorless), deg electrical; NaN without R, L, kv */
+	telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
+	telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
+	telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
+	telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
+	telemetry.sum = frame_sum(&telemetry);
+	HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
+}
 void currentLoop(void) {
 	static float age_cur; /* encoder sample -> current sample */
 	uint32_t c0 = DWT->CYCCNT;
@@ -533,27 +555,7 @@ void currentLoop(void) {
 	if (++cycles_since_last_frame >= 10 && !outer_ran) {
 		cycles_since_last_frame = 0;
 		seq++;
-		if (huart1.gState == HAL_UART_STATE_READY) { /* else main is sending a protocol reply: skip a frame */
-			telemetry.seq = seq;
-			telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
-			telemetry.v[1] = g_vin;
-			telemetry.v[2] = g_hfi_err * 360.0f; /* HFI - encoder, deg electrical; NaN unless HFI tracks */
-			telemetry.v[3] = g_hfi_rpm;			  /* HFI PLL speed; NaN unless HFI tracks */
-			telemetry.v[4] = g_hfi_amp;			  /* HF current step along the injection axis, A; NaN with HFI off */
-			telemetry.v[5] = id;				  /* with HFI on: the fundamental, what the PIs see */
-			telemetry.v[6] = iq;
-			telemetry.v[7] = g_rpm;
-			telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
-			telemetry.v[9] = g_pos;
-			telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
-			telemetry.v[11] = s_obs_err * 360.0f; /* observer - base (encoder, HFI when sensorless), deg electrical; NaN without R, L, kv */
-			telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
-			telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
-			telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
-			telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
-			telemetry.sum = frame_sum(&telemetry);
-			HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
-		}
+		if (huart1.gState == HAL_UART_STATE_READY) send_telemetry(ang, id, iq, mode); /* else main is sending a protocol reply: skip a frame */
 	}
 
 	uint32_t dc = DWT->CYCCNT - c0;
