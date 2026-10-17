@@ -5,7 +5,7 @@
  * Received bytes go to proto_rx_bytes(). The frame formats are the same on both */
 
 #include <stdint.h>
-
+#define PROTO_LINK_USB 0
 #ifndef PROTO_LINK_USB
 #define PROTO_LINK_USB 1
 #endif
