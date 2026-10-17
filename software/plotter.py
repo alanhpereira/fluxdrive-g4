@@ -191,7 +191,9 @@ class Main(QtWidgets.QMainWindow):
         self.conn_btn.clicked.connect(self.toggle_connection)
         f.addRow(self.conn_btn)
         sl.addWidget(g)
-        sl.addWidget(RunPanel(self.config))  # Connection and Run stay visible on every tab
+        sl.addWidget(RunPanel(self.config))  # Connection, Run, Status and Statistics stay visible on every tab
+        sl.addWidget(self.config.status_box)
+        sl.addWidget(self.config.stats_box)
 
         g = self.display_box = QtWidgets.QGroupBox("Display")
         f = QtWidgets.QFormLayout(g)

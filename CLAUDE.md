@@ -20,7 +20,7 @@ The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is
 - Flash: task "Flash STM", or `make -f STM32Make.make flash`. This uses ST-Link through OpenOCD (`openocd.cfg`).
 - Erase: `make -f STM32Make.make erase`. This also wipes the stored motor parameters.
 - Debug: the cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, with live watch enabled.
-- Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`. A left sidebar shared by both tabs holds Connection and the Run panel (setpoints, Home, STOP; Enter sends); Display and Plots show there only with the **Scope** tab. Tabs: **Scope** (telemetry plots) and **Config** (parameters, calibration, log, diagnostics). Numeric inputs use the C locale (`.` decimals) on purpose: with a `,` locale, typed `0.75` was read as 7. `python software/check_sync.py` checks the PC tables against the firmware sources.
+- Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`. A left sidebar shared by both tabs holds Connection, the Run panel (setpoints, Home, STOP; Enter sends), Status / faults and Statistics (loop time, encoder and link counters; polled at 4 Hz on either tab); Display and Plots show there only with the **Scope** tab. Tabs: **Scope** (telemetry plots) and **Config** (parameters, calibration, log). Numeric inputs use the C locale (`.` decimals) on purpose: with a `,` locale, typed `0.75` was read as 7. `python software/check_sync.py` checks the PC tables against the firmware sources.
 - New hand-written `Core/Src/*.c` files must be in `C_SOURCES` in `STM32Make.make`. The extension adds them when it regenerates the file; for command-line builds, add them by hand.
 
 There are no unit tests. Changes are verified on hardware through the plotter (Config tab and telemetry).
@@ -96,7 +96,7 @@ There is no text console: everything goes through binary frames, and the plotter
   - Prerequisites are enforced through the `PF_*` flags in `g_params.flags`. The usual order is encoder → R → Ld → autotune. Speed and position mode also need `vkp`/`vki`/`vlim` (and `pkp`) set.
   - Replies are sent by `proto_send()` from main, which starts the DMA with IRQs off once `gState` is READY. The telemetry ISR makes the same check, so each reply costs one telemetry frame (a `seq` gap).
   - Message types must stay below `MSG_EVENT` (0x7F): a reply is `type | 0x80` and must never equal the event type.
-- **Plotter:** the **Config** tab (`software/config_tab.py`) has the parameter grid with JSON export/import, the calibration wizard, the run panel and status/diagnostics. `software/protocol.py` holds the framing and the `Link`, and `software/objects.py` the labels, units and limits.
+- **Plotter:** the **Config** tab (`software/config_tab.py`) has the parameter grid with JSON export/import, the calibration wizard and the log; it also builds the sidebar's run panel and status/statistics boxes. `software/protocol.py` holds the framing and the `Link`, and `software/objects.py` the labels, units and limits.
 - **Keep in sync** (`python software/check_sync.py` checks the tables and enums):
   - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/plotter.py` and `telem_ok()`/`Splitter` in `software/protocol.py`.
   - `k_tab` in `objdict.c` ↔ `OBJECTS` in `software/objects.py`: same order, index, sub, type and flags (both sides hash them; the GUI warns and disables mismatched rows).

@@ -1,6 +1,6 @@
 """
-Config tab of the plotter: parameter grid, calibration wizard, run panel and status/diagnostics, all over
-the binary protocol (protocol.py, objects.py). docs/config-gui-handoff.md has the design.
+Config tab of the plotter: parameter grid, calibration wizard and log, plus the run panel and the
+status/statistics boxes that the plotter shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/config-gui-handoff.md has the design.
 """
 import decimal
 import json
@@ -88,8 +88,8 @@ class ConfigTab(QtWidgets.QWidget):
         rl = QtWidgets.QVBoxLayout(right)
         rl.addWidget(self._build_cal())
         rl.addWidget(self._build_log())
-        rl.addWidget(self._build_status())
         rl.addStretch(1)
+        self.status_box, self.stats_box = self._build_status()  # the plotter puts them in its sidebar
         scroll = QtWidgets.QScrollArea(widgetResizable=True)
         scroll.setWidget(right)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
@@ -233,20 +233,27 @@ class ConfigTab(QtWidgets.QWidget):
         return g
 
     def _build_status(self):
-        g = QtWidgets.QGroupBox("Status / diagnostics")
-        f = QtWidgets.QFormLayout(g)
+        """two sidebar boxes: state and faults, then the loop/encoder/link counters"""
         self.st_lbl = {}
-        for key, label in [("state", "State"), ("bridge", "Bridge"), ("drv", "Gate driver"), ("vin", "Bus voltage"),
-                           ("flash", "Flash"), ("loop", "currentLoop()"), ("enc", "Encoder"), ("link", "Link")]:
-            lb = QtWidgets.QLabel("-")
-            lb.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-            lb.setWordWrap(True)
-            f.addRow(label, lb)
-            self.st_lbl[key] = lb
+
+        def box(title, rows):
+            g = QtWidgets.QGroupBox(title)
+            f = QtWidgets.QFormLayout(g)
+            for key, label in rows:
+                lb = QtWidgets.QLabel("-")
+                lb.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+                lb.setWordWrap(True)
+                f.addRow(label, lb)
+                self.st_lbl[key] = lb
+            return g, f
+        status, _ = box("Status / faults", [("state", "State"), ("bridge", "Bridge"), ("drv", "Gate driver"),
+                                             ("vin", "Bus voltage"), ("flash", "Flash")])
+        stats, f = box("Statistics", [("loop", "Loop time"), ("enc", "Encoder"), ("link", "Link")])
+        self.st_lbl["loop"].setToolTip("currentLoop() time: the max must stay under ~19 µs")
         b = QtWidgets.QPushButton("Clear max / counters")
         b.clicked.connect(self.clear_counters)
         f.addRow(b)
-        return g
+        return status, stats
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -642,10 +649,10 @@ class ConfigTab(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ status polling
     def poll(self):
-        """4 Hz while this tab is shown: status every tick, diagnostics every 4th. Each reply takes one
-        telemetry slot (2500/s), so this costs well under 1 % of the frames"""
+        """4 Hz while the sidebar shows the status (every tab): status every tick, diagnostics every 4th.
+        Each reply takes one telemetry slot (2500/s), so this costs well under 1 % of the frames"""
         link = self.link
-        if not (link and self.proto_ok and self.isVisible()) or link.busy():
+        if not (link and self.proto_ok and self.status_box.isVisible()) or link.busy():
             self._show_link()
             return
         self.poll_n += 1
@@ -702,20 +709,24 @@ class ConfigTab(QtWidgets.QWidget):
             self.dirty_lbl.setText("<span style='color:%s'>● device RAM differs from flash: 'Save to flash' keeps it</span>" % ORANGE
                                    if dirty else "")
         if "loop_cyc" in s:
-            self.st_lbl["loop"].setText(f"{g('loop_cyc') / CPU_MHZ:.1f} µs, max {g('loop_cyc_max', 0) / CPU_MHZ:.1f} µs "
-                                        "(must stay under ~19 µs)")
+            mx = g("loop_cyc_max", 0) / CPU_MHZ
+            self.st_lbl["loop"].setText(f"{g('loop_cyc') / CPU_MHZ:.1f} µs, max "
+                                        + (f"<span style='color:{RED}'>{mx:.1f} µs</span>" if mx >= 19.0 else f"{mx:.1f} µs"))
         if "enc_samples" in s:
             es = g("enc_status", 0)
-            crc = "" if g("enc_crc_check", 1) else "  <span style='color:%s'>CRC check off</span>" % RED
-            self.st_lbl["enc"].setText(f"{g('enc_samples'):,} reads, {g('enc_crc')} CRC errors, {g('enc_late')} late, "
-                                       f"{g('enc_stalls')} stalls, status {bits(es, ENC_BITS)}{crc}")
+            crc = "" if g("enc_crc_check", 1) else "<br><span style='color:%s'>CRC check off</span>" % RED
+
+            def n(k):
+                return f"<span style='color:{RED}'>{g(k)}</span>" if g(k) else "0"
+            self.st_lbl["enc"].setText(f"{g('enc_samples'):,} reads<br>CRC {n('enc_crc')}, late {n('enc_late')}, "
+                                       f"stalls {n('enc_stalls')}<br>status {bits(es, ENC_BITS)}{crc}")
 
     def _show_link(self):
         link = self.link
         if not link:
             self.st_lbl["link"].setText("-")
             return
-        self.st_lbl["link"].setText(f"{link.timeouts} timeouts, {link.unmatched} unmatched replies, "
+        self.st_lbl["link"].setText(f"{link.timeouts} timeouts, {link.unmatched} unmatched<br>"
                                     f"device RX errors {self.st.get('proto_err', '?')}")
 
     def clear_counters(self):
