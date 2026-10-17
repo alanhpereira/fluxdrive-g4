@@ -1,5 +1,5 @@
 {
-    "cortex-debug.armToolchainPath": "C:/DEV/TOOLS/ARM-GNU-TOOLCHAIN-13.2.REL1-MINGW-W64-I686-ARM-NONE-EABI/BIN",
-    "cortex-debug.openocdPath": "C:\\DEV\\TOOLS\\OPENOCD-20231002-0.12.0\\BIN\\OPENOCD.EXE",
+    "cortex-debug.armToolchainPath": "C:\\dev\\tools\\arm-gnu-toolchain-13.2.Rel1-mingw-w64-i686-arm-none-eabi\\bin",
+    "cortex-debug.openocdPath": "C:\\dev\\tools\\OpenOCD-20231002-0.12.0\\bin\\openocd.EXE",
     "cortex-debug.variableUseNaturalFormat": false
 }
