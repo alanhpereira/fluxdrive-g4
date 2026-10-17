@@ -31,7 +31,7 @@
  * MT6835_GROUPS groups, sized to end just before the ADC samples the currents (CNT = ARR - 75 on the
  * way up, 19.6 us after the bottom); MT6835_Sample() in currentLoop() takes the last (freshest) group.
  * 6 groups = 24 bytes = 18.1 us at 10.6 MHz, ending ~1 us before the ADC: the last group is ~4 us old.
- * If the 'f' command reports "late", the read did not end in time: lower MT6835_GROUPS */
+ * If "late" grows (diagnostics 0x4002:5, Config tab), the read did not end in time: lower MT6835_GROUPS */
 #define MT6835_GROUPS 6
 #define MT6835_BUF_LEN (MT6835_GROUPS * 4)
 #define MT6835_BYTE_S (8.0f / 10.625e6f) /* one SPI byte at 170 MHz / 16 */

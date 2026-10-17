@@ -22,7 +22,9 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include <string.h>
+#include "link.h"
+#include "proto.h"
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,7 +96,8 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
-
+/* echoed back to the host: 2 Mbaud 8N1 (meaningless over USB, but GET must return something sane) */
+static uint8_t line_coding[7] = {0x80, 0x84, 0x1E, 0x00, 0x00, 0x00, 0x08};
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -155,6 +158,9 @@ static int8_t CDC_Init_FS(void)
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+#if PROTO_LINK_USB
+  link_usb_reset();
+#endif
   return (USBD_OK);
   /* USER CODE END 3 */
 }
@@ -166,6 +172,9 @@ static int8_t CDC_Init_FS(void)
 static int8_t CDC_DeInit_FS(void)
 {
   /* USER CODE BEGIN 4 */
+#if PROTO_LINK_USB
+  link_usb_reset();
+#endif
   return (USBD_OK);
   /* USER CODE END 4 */
 }
@@ -220,15 +229,18 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* 6      | bDataBits  |   1   | Number Data bits (5, 6, 7, 8 or 16).          */
   /*******************************************************************************/
     case CDC_SET_LINE_CODING:
-
+      if (length >= sizeof(line_coding)) memcpy(line_coding, pbuf, sizeof(line_coding));
     break;
 
     case CDC_GET_LINE_CODING:
-
+      memcpy(pbuf, line_coding, sizeof(line_coding));
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
-
+      /* no data stage: pbuf is the setup request, DTR is bit 0 of wValue. Telemetry flows while it is set */
+#if PROTO_LINK_USB
+      link_usb_open(((USBD_SetupReqTypedef*)pbuf)->wValue & 1U);
+#endif
     break;
 
     case CDC_SEND_BREAK:
@@ -261,6 +273,9 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+#if PROTO_LINK_USB
+  proto_rx_bytes(Buf, *Len);
+#endif
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
@@ -311,6 +326,9 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
+#if PROTO_LINK_USB
+  link_usb_tx_done();
+#endif
   /* USER CODE END 13 */
   return result;
 }

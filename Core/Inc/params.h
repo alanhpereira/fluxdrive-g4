@@ -11,9 +11,13 @@
 #define PF_L_VALID (1u << 3)
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
 
+/* angle source (ang_src): what commutation, speed and the observer's references come from */
+#define ANG_ENCODER 0u   /* encoder only; the observer and HFI run and log, nothing blends in */
+#define ANG_ENC_OBS 1u   /* encoder, with the observer blended in above obs_lo_v (obs_blend) */
+#define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo_v; no encoder in the loop, position mode refused */
+
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 3u		/* bump when the struct layout changes */
-#define PARAM_V2_SIZE 104u	/* v2 = v3 without the outer loop block; migrated on load */
+#define PARAM_VERSION 7u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -32,13 +36,12 @@ typedef struct {
 	uint32_t elec_offset; /* electrical angle offset, 2^32 = 360 deg */
 	uint8_t pole_pairs;
 	int8_t enc_dir; /* +1 or -1 */
-	uint8_t reserved0[2];
+	uint8_t ang_src; /* ANG_* */
+	uint8_t reserved0;
 
 	/* sensing */
-	float cur_scale;	/* A per count, sign included */
 	int16_t cur_off[3]; /* per-channel offset, counts */
 	uint8_t reserved1[2];
-	float vin_scale; /* V per count */
 
 	/* controller */
 	float kp_d, ki_d, kp_q, ki_q;
@@ -46,12 +49,33 @@ typedef struct {
 	/* limits */
 	float vbus_min, vbus_max; /* V */
 	float temp_max;			  /* deg C */
+	float vbus_clamp;		  /* V below vbus_max where the regen clamp starts cutting braking current; 0 = off */
+	float vbus_resume;		  /* V below vbus_max the bus must fall to before an OV coast resumes */
 
-	/* outer loops (v3+, keep appended after v2 fields: v2 copies are migrated as a prefix) */
+	/* outer loops */
 	float vel_kp;  /* A per turn/s */
 	float vel_ki;  /* A per turn */
 	float pos_kp;  /* turn/s per turn */
 	float vel_lim; /* turn/s, position mode speed limit and overspeed trip (x1.5) */
+
+	/* back-EMF observer and speed ramp */
+	float obs_gain;		/* rad/s, flux magnitude correction */
+	float obs_lo_v;		/* peak back-EMF where the observer starts to get weight, V */
+	float obs_hi_v;		/* ...and where it has all of it */
+	float obs_flux_tol; /* |flux| / lambda must stay within 1 +- tol */
+	float obs_err_max;	/* deg electrical: sustained observer - encoder difference above this drops it */
+	float acc_lim;		/* rpm/s, speed reference ramp in the speed/position loops; 0 = off */
+	uint8_t obs_blend;	/* 1: blend the observer into angle and speed, 0: run and log it only */
+
+	/* high-frequency injection (hfi.c) */
+	uint8_t hfi_mode; /* 0 off, 1 track and log while running in the encoder modes (sensorless always injects) */
+	uint8_t hfi_half; /* PWM periods per half wave of the injection, 2..HFI_HALF_MAX */
+	uint8_t reserved2;
+	float hfi_v;	 /* injection amplitude, V */
+	float hfi_bw;	 /* angle PLL bandwidth, Hz */
+	float hfi_id;	 /* d-axis bias current for HFI (saturation saliency), A */
+	float hfi_sal;	 /* saliency (Lq-Ld)/(Lq+Ld) at hfi_id, from the saliency map; 0 = not measured */
+	float hfi_pol_i; /* polarity check pulse current, A */
 
 	uint32_t crc; /* CRC32 of everything above; keep last */
 } motor_params_t;
@@ -66,5 +90,8 @@ int params_load(void);
 /* Writes g_params to the inactive slot. The bridge must be disabled (MOE off), because the CPU
  * stalls for ~20 ms during the page erase. */
 HAL_StatusTypeDef params_save(void);
+
+/* 1 if g_params differs from the newest copy in flash (or there is none): unsaved changes */
+int params_dirty(void);
 
 #endif

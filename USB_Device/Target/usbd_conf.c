@@ -95,7 +95,18 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef* pcdHandle)
     HAL_NVIC_SetPriority(USB_LP_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(USB_LP_IRQn);
   /* USER CODE BEGIN USB_MspInit 1 */
-
+    /* below the ADC/TIM1/UART IRQs (0): USB servicing must never delay currentLoop() */
+    HAL_NVIC_SetPriority(USB_LP_IRQn, 1, 0);
+    /* trim HSI48 to the host's 1 ms SOF: untrimmed it is outside the USB clock tolerance */
+    __HAL_RCC_CRS_CLK_ENABLE();
+    RCC_CRSInitTypeDef crs = {0};
+    crs.Prescaler = RCC_CRS_SYNC_DIV1;
+    crs.Source = RCC_CRS_SYNC_SOURCE_USB;
+    crs.Polarity = RCC_CRS_SYNC_POLARITY_RISING;
+    crs.ReloadValue = __HAL_RCC_CRS_RELOADVALUE_CALCULATE(48000000, 1000);
+    crs.ErrorLimitValue = RCC_CRS_ERRORLIMIT_DEFAULT;
+    crs.HSI48CalibrationValue = RCC_CRS_HSI48CALIBRATION_DEFAULT;
+    HAL_RCCEx_CRSConfig(&crs);
   /* USER CODE END USB_MspInit 1 */
   }
 }
