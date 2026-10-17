@@ -9,6 +9,8 @@ The USB CDC stack **stays**: configuration is planned to move from USART1 to USB
 
 Updated 2026-10-12 (branch `dev`), after steps 1, 3, 4 and 6 below.
 
+> **Update 2026-10-17, CANopen in (branch `Feat/CANOpen`, `docs/canopen-handoff.md`):** measured, not estimated. Release `-Os` 96.5 KB (23.5 KB free), debug 105.8 KB (14.2 KB free), with all CANopen sources at `-Os` in both builds through a pragma in `CO_driver_target.h`. CANopenNode (no LSS) plus the full CiA 402 layer (all six modes) and the FDCAN HAL added about 30 KB, the top of the estimate below. RAM: 19.9 of 22 KB used including the 4 KB stack reserve (about 2.1 KB free). CCM: release 9.2 KB, debug 9.4 KB. Pages 60–61 now hold the CANopen record (`co_store.c`). Tables below are the 2026-10-12 state.
+
 ## Where things stand
 
 | Build | Before | Now | Free in the 120 KB region |
@@ -33,7 +35,7 @@ Updated 2026-10-12 (branch `dev`), after steps 1, 3, 4 and 6 below.
 | Pages | Range | Use |
 |---|---|---|
 | 0–59 | 0x08000000–0x0801DFFF | Program (`FLASH` LENGTH = 120K in `STM32G431XX_FLASH.ld`) |
-| 60–61 | 0x0801E000–0x0801EFFF | Reserved for CANopen storage (LSS node-ID/bit rate, OD persistence) |
+| 60–61 | 0x0801E000–0x0801EFFF | CANopen record, A/B slots (`co_store.c`): node ID, bit rate, OD persistence |
 | 62–63 | 0x0801F000–0x0801FFFF | Motor parameters, A/B slots (`params.c`) |
 
 **CANopen budget (estimate, not measured):**
