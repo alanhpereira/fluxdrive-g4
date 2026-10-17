@@ -8,10 +8,18 @@
 
 The drive side is done and documented in `docs/canopen-handoff.md`: units, PDO map, statusword meanings, fault codes, known limits. Read it first. This document only covers the PC side.
 
-**Status, 2026-10-17:** not started. What exists:
-- **Bench scripts:** throwaway ones from the firmware bring-up, not in the repo. Their test cases and measured results are listed below as the seed for the test suite.
-- **Libraries:** `python-can` 4.6 and `canopen` 2.4, installed on the bench PC (Python 3.13).
-- **Plotter:** `software/plotter.py`, PyQt6 + pyqtgraph, with the USB/serial link.
+**Status, 2026-10-17:** all seven steps implemented; the decisions below were confirmed (third tab).
+- **Done and run on the bench:** `co_link.py`, `cotest.py` with the 17 seed tests (all passed in one run with `--usb COM6`), and the CANopen tab. The tab was driven by script on the bench (connect, NMT, SYNC, CSV stream, PV/halt, PP, HM, E-STOP, OD read-all, TPDO4 preset and revert, record to .npz, trace to .asc, two tests from the Tests list). Clicking through it by hand has not been done yet.
+- **Open:** after that run the motor started to stick-slip going negative in PV (0 rpm at the rated current, then breaking loose at −450 rpm). It looks mechanical or a commutation offset, not CAN. Check the bench, then rerun the motion tests.
+
+What the bench showed, beyond the plan:
+- **python-can 4.6 SLCAN on Windows** reads the port with one `read(1)` per byte, and flushes after every frame (pyserial's Win32 `flush()` sleeps 50 ms while the driver still holds TX bytes). In the GUI, replies came 50–300 ms late and SYNC had 50–100 ms gaps. `co_link._fast_slcan()` replaces both on the bus instance: replies 2–4 ms, SYNC 5.00 ms median.
+- **Lost frames are requests:** the trace showed a controlword write that never reached the drive (read-back = old value). `DriveNode.write(retry=False)` reads back and resends only when the old value is still there.
+- **GIL:** the GUI thread starved the SYNC thread (20 ms late every cycle). The busy-wait yields (`sleep(0)`), the tab sets `sys.setswitchinterval(0.0005)`, and the hidden Scope plot no longer redraws.
+- **Stale 0x607A in CSP (fixed in firmware):** the drive used to step toward a 607A left over from the last session at CSP start (300 rpm jumps). Now only a 607A written after the mode starts moves it. `goto_enabled()` still writes 607A = 6064 first, as a master should.
+- **CSP clicks (fixed in firmware):** the drive takes a new 607A on its 1 kHz tick, so targets arrived 4-6 ms apart for a 5 ms stream. Late ones stopped the reference and dropped the feed-forward (~1 ms dips of the full speed reference, 0.4 A current spikes). The ISR now moves at the master's rate whenever the frame arrives, rides through a late one for up to one period, and corrects half its offset per period; an unchanged target is a hold that ends exactly on it. Measured on the CSP sine: current spikes 26 -> 0, speed-reference dips 74 -> 0. The same change fixed 500 Hz feed-forward dips in PP.
+- **Heartbeat loss sends the drive to pre-operational** (`NMT_CONTROL` has no `ERR_TO_STOPPED`), so TPDOs stop; the tests time the fault from the EMCY (0.23 s with 0x1016 = 300 ms).
+- **PP "target reached"** can come on while 6064 passes through the 0.35° window during the slow `pkp` settling. The test checks demand 6062 on target and 6064 inside 6067 at the moment bit 10 sets, and notes the settled error (≤ 0.12°).
 
 ## Decisions (proposed; confirm before starting)
 | Topic | Proposal | Why / alternative |

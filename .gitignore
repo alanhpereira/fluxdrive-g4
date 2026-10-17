@@ -205,3 +205,6 @@ out/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# CANopen test runs (software/cotest.py)
+software/cotest_runs/

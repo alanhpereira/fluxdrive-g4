@@ -59,6 +59,7 @@ STATUS = [
     "following error (position error above 0x6065 for longer than 0x6066)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
+ST_NEED_VGAINS, ST_RUNNING, ST_CAN_ACTIVE, ST_CAN_LOST, ST_FOLLOWING_ERROR = 13, 34, 48, 49, 50
 SDO = {
     0x06020000: "object does not exist",
     0x06090011: "subindex does not exist",

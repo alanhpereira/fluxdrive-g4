@@ -78,7 +78,8 @@ enums = [enum_values(b) for b in re.findall(r"enum\s*\{(.*?)\}", h, flags=re.S)]
 st = next(e for e in enums if "ST_OK" in e)
 if st["ST_N"] != len(P.STATUS):
     errors.append(f"proto.h has {st['ST_N']} status codes, protocol.STATUS {len(P.STATUS)}")
-for name in ("ST_OK", "ST_ABORTED", "ST_BUSY"):
+for name in ("ST_OK", "ST_ABORTED", "ST_BUSY", "ST_NEED_VGAINS", "ST_RUNNING", "ST_CAN_ACTIVE", "ST_CAN_LOST",
+             "ST_FOLLOWING_ERROR"):
     if st[name] != getattr(P, name):
         errors.append(f"{name} = {st[name]} in proto.h, {getattr(P, name)} in protocol.py")
 for e in enums:
