@@ -27,7 +27,11 @@ volatile loop_t g_loop = LOOP_CURRENT;
 volatile pi_t g_pi_vel;
 volatile float g_vel_ref;
 volatile int64_t g_pos_ref_new;
+volatile float g_pos_ff_new;
+volatile int64_t g_pos_ff_q_new;
+volatile uint16_t g_pos_ff_n_new;
 volatile uint8_t g_pos_ref_req;
+volatile uint8_t g_pos_here_req;
 
 void pi_apply(void) {
 	const float ts = 1.0f / CTRL_FS_HZ;
@@ -657,6 +661,8 @@ static st_t run_pos(pos_q32_t t) {
 
 	/* hand over the reference and wait until currentLoop() has latched it, then switch */
 	g_pos_ref_new = t;
+	g_pos_ff_new = 0.0f;
+	g_pos_ff_n_new = 0;
 	g_pos_ref_req = 1;
 	uint32_t t0 = HAL_GetTick();
 	while (g_pos_ref_req)
@@ -1014,6 +1020,13 @@ st_t drive_enter(loop_t loop) {
 	if (loop == LOOP_VEL) {
 		g_vel_ref = g_vel; /* reference first, then the switch: bumpless from the present speed */
 		g_loop = LOOP_VEL;
+	}
+	else if (loop == LOOP_POS) {
+		g_pos_here_req = 1; /* the position reference becomes the present position, then the switch */
+		const uint32_t t0 = HAL_GetTick();
+		while (g_pos_here_req)
+			if (HAL_GetTick() - t0 > 10) return ST_LOOP_DEAD;
+		g_loop = LOOP_POS;
 	}
 	else
 		g_loop = LOOP_CURRENT; /* iq stays where it is: bumpless */

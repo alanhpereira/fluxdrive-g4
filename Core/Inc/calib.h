@@ -97,7 +97,7 @@ extern volatile uint8_t g_can_owner;   /* 1 while the CANopen master has the mot
 extern volatile uint8_t g_stop_reason; /* st_t of the last stop by the watchdogs, or ST_ABORTED for a local STOP.
 										* co402.c takes it (sets 0) */
 st_t drive_check(loop_t loop);		   /* could drive_enter() run now? Nothing is touched */
-st_t drive_enter(loop_t loop);		   /* CTRL_RUN in loop (LOOP_VEL or LOOP_CURRENT), bumpless from the present state */
+st_t drive_enter(loop_t loop);		   /* CTRL_RUN in loop, bumpless from the present state (speed, current or position) */
 void drive_coast(void);				   /* zero current; CTRL_OFF once slow (never the zero vector at speed) */
 int drive_trip_reset(void);			   /* clears a latched trip once the coast has ended: 1 if none is latched now */
 

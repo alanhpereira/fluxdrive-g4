@@ -56,6 +56,7 @@ STATUS = [
     "current-sense offsets implausible (rotor turning? sense stage?)",
     "the CANopen master has the motor (STOP takes it back)",
     "CANopen master lost (heartbeat timeout or NMT left operational)",
+    "following error (position error above 0x6065 for longer than 0x6066)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 SDO = {

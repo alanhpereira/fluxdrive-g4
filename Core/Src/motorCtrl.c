@@ -139,6 +139,9 @@ int SVPWM(float alpha, float beta) {
 static int64_t s_home;		/* counts, motor direction */
 static pos_q32_t s_pos;		/* from home, motor direction */
 static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
+static int64_t s_pos_ff_q;	/* CSP interpolation: added to s_pos_ref every cycle (Q32.32 turns per cycle) */
+static uint16_t s_pos_ff_n; /* ...for this many more cycles */
+static float s_pos_ff;		/* turn/s, the matching speed feed-forward while it lasts */
 static uint32_t s_pll_ph;	/* Q32 = one turn, motor direction */
 static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
@@ -157,9 +160,22 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 	}
 	if (g_pos_ref_req) {
 		s_pos_ref = g_pos_ref_new;
+		s_pos_ff = g_pos_ff_new;
+		s_pos_ff_n = g_pos_ff_n_new;
+		s_pos_ff_q = g_pos_ff_q_new;
 		g_pos_ref_req = 0;
 	}
+	if (s_pos_ff_n) { /* CSP: from the previous target to the new one over the interpolation period */
+		s_pos_ref += s_pos_ff_q;
+		if (--s_pos_ff_n == 0) s_pos_ff = 0.0f;
+	}
 	s_pos = (p - s_home) * 2048; /* counts -> Q32.32 */
+	if (g_pos_here_req) {
+		s_pos_ref = s_pos;
+		s_pos_ff_n = 0;
+		s_pos_ff = 0.0f;
+		g_pos_here_req = 0;
+	}
 	g_pos_cnt = (int32_t)(p - s_home); /* CANopen 0x6064: wraps at +-1024 turns */
 	g_pos = (float)(int32_t)(s_pos >> 32) + (float)(uint32_t)s_pos * (float)(1.0 / POS_Q32_ONE);
 
@@ -211,7 +227,7 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 			if (lp == LOOP_POS) {
 				/* exact integer difference; only the (small) error becomes a float */
 				float err = (float)(s_pos_ref - s_pos) * (float)(1.0 / POS_Q32_ONE);
-				vref = g_params.pos_kp * err;
+				vref = s_pos_ff + g_params.pos_kp * err;
 			}
 			if (vref > lim)
 				vref = lim;

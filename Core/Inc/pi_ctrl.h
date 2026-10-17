@@ -16,9 +16,16 @@ extern volatile float g_id_ref, g_iq_ref; /* A */
 extern volatile pi_t g_pi_vel;			  /* speed loop, output A, runs at OUTER_FS_HZ */
 extern volatile float g_vel_ref;		  /* turn/s, LOOP_VEL */
 /* LOOP_POS reference, turns from home. 64-bit writes are not atomic on the M4, so main hands it over:
- * write g_pos_ref_new, set g_pos_ref_req = 1, wait until currentLoop() clears it */
+ * write g_pos_ref_new, set g_pos_ref_req = 1, wait until currentLoop() clears it.
+ * With g_pos_ff_n_new > 0 (CANopen CSP) the reference then moves on by g_pos_ff_new (turn/s) for that many
+ * current-loop cycles (the interpolation from one target to the next), and the speed loop gets g_pos_ff_new as
+ * feed-forward meanwhile. 0 = a fixed reference (USB RUN_POS) */
 extern volatile int64_t g_pos_ref_new;
+extern volatile float g_pos_ff_new;
+extern volatile int64_t g_pos_ff_q_new; /* the same speed as Q32.32 turns per current-loop cycle (no conversion in the ISR) */
+extern volatile uint16_t g_pos_ff_n_new;
 extern volatile uint8_t g_pos_ref_req;
+extern volatile uint8_t g_pos_here_req; /* 1: the position reference becomes the present position (bumpless entry) */
 
 static inline void pi_reset(volatile pi_t* c) {
 	c->integ = 0.0f;

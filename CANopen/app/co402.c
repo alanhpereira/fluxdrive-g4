@@ -21,6 +21,7 @@
 #define SW_REACHED 0x0400u
 #define SW_LIMIT 0x0800u  /* internal limit active */
 #define SW_OMS12 0x1000u  /* cyclic modes: drive follows the command value */
+#define SW_OMS13 0x2000u  /* position modes: following error */
 
 volatile uint8_t g_co402_state = FSA_NOT_READY;
 volatile uint8_t g_co402_refused;
@@ -35,6 +36,14 @@ static volatile uint8_t s_warn;	   /* statusword warning: the last switch on / e
 static volatile float s_rv;		  /* speed reference of the ramp, turn/s */
 static volatile uint8_t s_ramp_zero; /* the ramp reached zero */
 static volatile uint8_t s_limited;	 /* the last reference was clamped */
+static volatile uint8_t s_ferr;		 /* following error for longer than 0x6066 */
+/* CSP: the tick's own */
+static int64_t s_act64;		  /* actual position, counts, unwrapped from the int32 g_pos_cnt */
+static int32_t s_cnt_prev;
+static int64_t s_tgt64;		  /* last target handed to the ISR, counts */
+static int32_t s_tgt_last32;  /* ...as the master sent it (0x607A) */
+static volatile uint8_t s_csp_init; /* main: start CSP at the present position */
+static uint16_t s_ferr_ms;
 /* main only */
 enum { AFTER_SO = 1, AFTER_RTSO, AFTER_SOD, AFTER_HOLD };
 static uint8_t s_after; /* where a stop ramp ends: switched on, ready, switch on disabled, or hold in quick stop */
@@ -59,6 +68,7 @@ static const struct {
 	{ST_HFI_POL_WEAK, 0x45, 0x7300},
 	{ST_ABORTED, 0x47, 0xFF01},	 /* manufacturer: stopped from the USB/serial link */
 	{ST_CAN_LOST, 0x48, 0x8130}, /* heartbeat / life guard error: master lost */
+	{ST_FOLLOWING_ERROR, 0x46, 0x8611},
 };
 #define FAULT_OTHER_BIT 0x49
 #define FAULT_OTHER_CODE 0x1000 /* generic error */
@@ -69,11 +79,11 @@ static CO_EM_t* em(void) {
 }
 
 static loop_t loop_of(int8_t mode) {
-	return mode == MODE_CST ? LOOP_CURRENT : LOOP_VEL;
+	return mode == MODE_CST ? LOOP_CURRENT : mode == MODE_CSP ? LOOP_POS : LOOP_VEL;
 }
 
 static int supported(int8_t mode) {
-	return mode == MODE_CSV || mode == MODE_CST;
+	return mode == MODE_CSP || mode == MODE_CSV || mode == MODE_CST;
 }
 
 /* the master lets go: no more references, the speed ramp back to acc_lim, USB may run again */
@@ -171,6 +181,10 @@ void co402_poll(void) {
 			fault(ST_ABORTED); /* a local STOP took the motor */
 		else if (g_mode != CTRL_RUN)
 			fault(ST_LOOP_DEAD);
+		else if (s_ferr) {
+			s_ferr = 0;
+			fault(ST_FOLLOWING_ERROR);
+		}
 		else if (lost) {
 			s_nmt_op = 0;
 			switch (OD_PERSIST_APP.x6007_abortConnectionOptionCode) { /* 0x6007 */
@@ -228,6 +242,8 @@ void co402_poll(void) {
 					s_mode = want;
 					s_rv = g_vel_ref;
 					s_ramp = 0;
+					s_csp_init = 1;
+					s_ferr = 0;
 					s_stream = 1;
 					s_nmt_op = co_app_nmt_state() == 5;
 					s_hb_prev = em() && CO_isError(em(), CO_EM_HEARTBEAT_CONSUMER);
@@ -268,6 +284,7 @@ void co402_poll(void) {
 					s_stream = 0; /* switch the loop bumplessly, then stream the new mode */
 					if (drive_enter(loop_of(want)) == ST_OK) {
 						s_rv = g_vel_ref;
+						s_csp_init = 1;
 						s_mode = want;
 					}
 					s_stream = 1;
@@ -281,8 +298,9 @@ void co402_poll(void) {
 			}
 			else if (eo && s_after == AFTER_HOLD) { /* transition 16: options 5..8 may go back to operation */
 				s_ramp = 0;
-				if (s_mode == MODE_CST) drive_enter(LOOP_CURRENT);
+				if (s_mode != MODE_CSV) drive_enter(loop_of(s_mode));
 				s_rv = g_vel_ref;
+				s_csp_init = 1;
 				st = FSA_OPERATION_ENABLED;
 			}
 			break;
@@ -333,6 +351,14 @@ static float clampf(float x, float lim, uint8_t* hit) {
 	return x;
 }
 
+/* 0x60C2: value x 10^index s, the period CSP interpolates each new target over */
+static float interp_period(void) {
+	float t = (float)OD_PERSIST_APP.x60C2_interpolationTimePeriod.interpolationTimePeriodValue;
+	for (int8_t i = OD_PERSIST_APP.x60C2_interpolationTimePeriod.interpolationTimeIndex; i < 0; i++) t *= 0.1f;
+	for (int8_t i = OD_PERSIST_APP.x60C2_interpolationTimePeriod.interpolationTimeIndex; i > 0; i--) t *= 10.0f;
+	return t < 0.0004f ? 0.001f : t > 0.1f ? 0.1f : t; /* 0 or out of range: 1 ms */
+}
+
 static const uint16_t k_sw_state[] = {
 	[FSA_NOT_READY] = 0x0000,
 	[FSA_SWITCH_ON_DISABLED] = 0x0040,
@@ -352,7 +378,10 @@ void co402_tick(void) {
 	const int halt = (cw & 0x0100) && st == FSA_OPERATION_ENABLED;
 
 	/* actual values */
-	OD_RAM.x6064_positionActualValue = g_pos_cnt;
+	const int32_t cnt = g_pos_cnt;
+	s_act64 += (int32_t)((uint32_t)cnt - (uint32_t)s_cnt_prev); /* int32 delta: unwraps past +-1024 turns */
+	s_cnt_prev = cnt;
+	OD_RAM.x6064_positionActualValue = cnt;
 	OD_RAM.x606C_velocityActualValue = (int32_t)(g_vel * INC_PER_TURN);
 	OD_RAM.x6077_torqueActualValue = OD_RAM.x6078_currentActualValue = sat16(g_iq_f * pm);
 	OD_RAM.x6074_torqueDemand = sat16(g_iq_ref * pm);
@@ -383,6 +412,35 @@ void co402_tick(void) {
 		g_vel_ref = s_rv = clampf(v, g_params.vel_lim, &lim);
 		follows = 1;
 	}
+	else if (run && s_mode == MODE_CSP && g_loop == LOOP_POS) {
+		if (s_csp_init) { /* the ISR holds the present position (drive_enter): start from there */
+			s_tgt64 = s_act64;
+			s_tgt_last32 = (int32_t)s_act64;
+			s_ferr_ms = 0;
+			s_csp_init = 0;
+		}
+		int32_t t = OD_RAM.x607A_targetPosition;
+		const int32_t lo = OD_PERSIST_APP.x607D_softwarePositionLimit[0], hi = OD_PERSIST_APP.x607D_softwarePositionLimit[1];
+		if (lo < hi && (t < lo || t > hi)) {
+			t = t < lo ? lo : hi;
+			lim = 1;
+		}
+		const int32_t dc = (int32_t)((uint32_t)t - (uint32_t)s_tgt_last32);
+		if (dc != 0 && !g_pos_ref_req) { /* a new target: interpolate to it over one period */
+			const float T = interp_period();
+			g_pos_ref_new = s_tgt64 * 2048; /* from the previous target (counts -> Q32.32) */
+			const uint16_t n = (uint16_t)(T * CTRL_FS_HZ + 0.5f);
+			const float ff = (float)dc * (1.0f / INC_PER_TURN) / T;
+			if (ff > g_params.vel_lim || ff < -g_params.vel_lim) lim = 1; /* the speed loop clamps it to vlim */
+			g_pos_ff_new = ff;
+			g_pos_ff_q_new = (int64_t)dc * 2048 / n; /* the reference reaches the target after n cycles (to 1/n count) */
+			g_pos_ff_n_new = n;
+			g_pos_ref_req = 1;
+			s_tgt64 += dc;
+			s_tgt_last32 = t;
+		}
+		follows = 1;
+	}
 	else if (run && s_mode == MODE_CST && g_loop == LOOP_CURRENT) {
 		float iq = halt ? 0.0f : (float)(OD_RAM.x6071_targetTorque + OD_RAM.x60B2_torqueOffset) * rated * 0.001f;
 		float imax = (float)OD_PERSIST_APP.x6072_maxTorque * rated * 0.001f;
@@ -392,6 +450,19 @@ void co402_tick(void) {
 		reached = halt;
 	}
 	s_limited = lim;
+
+	/* position demand and following error (CSP) */
+	const int csp = run && s_mode == MODE_CSP && g_loop == LOOP_POS;
+	const int64_t dem = csp ? s_tgt64 : s_act64;
+	const int64_t fe = dem - s_act64;
+	OD_RAM.x6062_positionDemandValue = (int32_t)dem;
+	OD_RAM.x60F4_followingErrorActualValue = fe > INT32_MAX ? INT32_MAX : fe < INT32_MIN ? INT32_MIN : (int32_t)fe;
+	const uint32_t win = OD_PERSIST_APP.x6065_followingErrorWindow;
+	const int over = csp && win != 0xFFFFFFFFu && (fe > (int64_t)win || fe < -(int64_t)win);
+	if (!over)
+		s_ferr_ms = 0;
+	else if (++s_ferr_ms > OD_PERSIST_APP.x6066_followingErrorTimeOut)
+		s_ferr = 1; /* main faults */
 	OD_RAM.x606B_velocityDemandValue = g_loop == LOOP_VEL && g_mode == CTRL_RUN ? (int32_t)(g_vel_ref * INC_PER_TURN) : 0;
 
 	/* statusword and mode display */
@@ -403,6 +474,7 @@ void co402_tick(void) {
 	if (reached) sw |= SW_REACHED;
 	if (lim) sw |= SW_LIMIT;
 	if (follows && st == FSA_OPERATION_ENABLED) sw |= SW_OMS12;
+	if (over) sw |= SW_OMS13;
 	const int8_t disp = (st == FSA_OPERATION_ENABLED || st == FSA_QUICK_STOP_ACTIVE) ? s_mode : OD_RAM.x6060_modesOfOperation;
 	if (sw != OD_RAM.x6041_statusword || disp != OD_RAM.x6061_modesOfOperationDisplay) {
 		OD_RAM.x6041_statusword = sw;
@@ -416,7 +488,7 @@ void co402_tick(void) {
 static ODR_t w6060(OD_stream_t* s, const void* buf, OD_size_t count, OD_size_t* n) {
 	if (count != 1) return ODR_TYPE_MISMATCH;
 	const int8_t m = *(const int8_t*)buf;
-	if (m != 0 && !supported(m)) return ODR_INVALID_VALUE;
+	if (m != 0 && !supported(m)) return ODR_INVALID_VALUE; /* refused: the mode stays */
 	return OD_writeOriginal(s, buf, count, n);
 }
 
@@ -491,5 +563,7 @@ void co402_init(void) {
 	OD_extension_init(OD_ENTRY_H6076, &s_ext_param[2]);
 	OD_extension_init(OD_ENTRY_H6080, &s_ext_param[3]);
 	OD_extension_init(OD_ENTRY_H6041, &s_ext_sw);
+	s_cnt_prev = g_pos_cnt; /* the unwrapped position starts where the encoder is (within +-1024 turns of home) */
+	s_act64 = s_cnt_prev;
 	g_co402_state = FSA_SWITCH_ON_DISABLED;
 }
