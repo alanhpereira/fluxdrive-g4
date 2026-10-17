@@ -6,6 +6,7 @@
 #include "boot.h"		/* boot_reboot() */
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
 #include "co_app.h"
+#include "co_store.h"
 #include "tim.h"
 #include "hfi.h"
 #include "mt6835.h"
@@ -914,11 +915,18 @@ static void run_watchdog(void) {
 	proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 }
 
-static HAL_StatusTypeDef save_params(void) {
-	disableBridge(); /* the CPU stalls ~20 ms during the flash erase */
-	HAL_StatusTypeDef st = params_save();
+/* the motor params (pages 62-63) and/or the CANopen comm record (pages 60-61, co_store.c). CO_RQ_* bits */
+static HAL_StatusTypeDef save_records(uint8_t what) {
+	disableBridge(); /* the CPU stalls ~20 ms during each flash erase */
+	HAL_StatusTypeDef st = HAL_OK;
+	if (what & CO_RQ_SAVE_APP) st = params_save();
+	if (st == HAL_OK && (what & (CO_RQ_SAVE_COMM | CO_RQ_RESTORE_COMM))) st = co_store_save((what & CO_RQ_RESTORE_COMM) != 0);
 	initBridge(); /* use whatever your normal power-up sequence is */
 	return st;
+}
+
+static HAL_StatusTypeDef save_params(void) {
+	return save_records(CO_RQ_SAVE_APP | CO_RQ_SAVE_COMM);
 }
 
 void reset_encoder(void) {
@@ -1073,4 +1081,6 @@ void cmd_poll(void) {
 	run_watchdog();
 	proto_poll(0); /* frames -> objdict / cmd_message() */
 	co_app_poll(); /* CANopen communication / node resets */
+	const uint8_t rq = co_store_take_request(); /* 0x1010 / 0x1011 over SDO, acknowledged already */
+	if (rq && g_mode == CTRL_OFF && !g_trip) save_records(rq); /* a trip: initBridge() would re-arm it */
 }

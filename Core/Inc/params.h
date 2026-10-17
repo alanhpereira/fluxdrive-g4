@@ -1,6 +1,7 @@
 #ifndef PARAMS_H
 #define PARAMS_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "stm32g4xx_hal.h"
 
@@ -93,5 +94,11 @@ HAL_StatusTypeDef params_save(void);
 
 /* 1 if g_params differs from the newest copy in flash (or there is none): unsaved changes */
 int params_dirty(void);
+
+/* shared with the CANopen comm record (co_store.c, pages 60-61) */
+uint32_t flash_crc32(const void* p, size_t n); /* CRC-32 (IEEE), as stored in the records */
+/* erases one 2 KB page and programs len bytes (a multiple of 8) from its start. Refused (HAL_BUSY) while
+ * MOE is set: the erase stalls the CPU ~20 ms */
+HAL_StatusTypeDef flash_write_page(uint32_t page, const void* data, uint32_t len);
 
 #endif

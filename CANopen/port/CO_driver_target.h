@@ -30,7 +30,7 @@ extern "C" {
 #define CO_CONFIG_PDO                                                                                                     \
 	(CO_CONFIG_RPDO_ENABLE | CO_CONFIG_TPDO_ENABLE | CO_CONFIG_RPDO_TIMERS_ENABLE | CO_CONFIG_TPDO_TIMERS_ENABLE |      \
 	 CO_CONFIG_PDO_SYNC_ENABLE | CO_CONFIG_PDO_OD_IO_ACCESS | CO_CONFIG_FLAG_OD_DYNAMIC)
-#define CO_CONFIG_STORAGE 0
+#define CO_CONFIG_STORAGE CO_CONFIG_STORAGE_ENABLE
 #define CO_CONFIG_LEDS 0
 #define CO_CONFIG_GFC 0
 #define CO_CONFIG_SRDO 0

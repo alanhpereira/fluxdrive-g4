@@ -16,6 +16,8 @@ MODES = {0: "off", 1: "calibration", 2: "run"}
 LOOPS = {0: "current", 1: "speed", 2: "position"}
 DRV_BITS = [(0x01, "VCC_UVLO"), (0x02, "THSD"), (0x04, "VDS_P"), (0x08, "RESET"), (0x80, "locked")]
 ENC_BITS = [(0x01, "OVERSPEED"), (0x02, "WEAK_FIELD"), (0x04, "UNDERVOLT")]
+CAN_BITS = [(0x0004, "BUS-OFF"), (0x0002, "TX passive"), (0x0001, "TX warning"), (0x0008, "TX overflow"),
+            (0x0080, "PDO late"), (0x0200, "RX passive"), (0x0100, "RX warning"), (0x0800, "RX overflow")]  # CO_CAN_ERR*
 CPU_MHZ = 170.0
 C_LOCALE = QtCore.QLocale.c()  # '.' decimals whatever the OS locale: with ',' locales "0.75" was read as 75 / 7
 
@@ -51,10 +53,12 @@ ARG_TIPS = {
 STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "trip", "trip_moe", "coasting", "vin", "busy",
                "dirty", "seq"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
-             "enc_crc_check", "proto_err", "ov_resumes", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src"]
+             "enc_crc_check", "proto_err", "ov_resumes", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src",
+             "can_id_act", "can_kbit_act", "can_nmt", "can_err", "can_rx", "can_tx", "can_lost"]
 TRIPS = {1: "bus overvoltage", 2: "overcurrent"}
 COFF_SRC = {0: "default", 1: "stored", 2: "measured at boot"}
-CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err", "ov_resumes"]
+CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err", "ov_resumes", "can_rx", "can_tx",
+              "can_lost"]
 
 
 def bits(v, table):
@@ -260,11 +264,16 @@ class ConfigTab(QtWidgets.QWidget):
         status, _ = box("Status / faults", [("state", "State"), ("bridge", "Bridge"), ("trip", "Trip"),
                                              ("drv", "Gate driver"), ("vin", "Bus voltage"), ("flash", "Flash")])
         stats, f = box("Statistics", [("loop", "Loop time"), ("enc", "Encoder"), ("coff", "Current offsets"),
-                                      ("link", "Link")])
+                                      ("link", "Link"), ("can", "CAN")])
         self.st_lbl["loop"].setToolTip("currentLoop() time: the max must stay under ~19 µs")
         b = QtWidgets.QPushButton("Clear max / counters")
         b.clicked.connect(self.clear_counters)
         f.addRow(b)
+        self.btn_can_apply = QtWidgets.QPushButton("Apply CAN settings")
+        self.btn_can_apply.setToolTip("CANopen communication reset with the node ID and bit rate now in the device\n"
+                                      "(write them first; 'Save to flash' keeps them over a reboot). Only while stopped")
+        self.btn_can_apply.clicked.connect(self.can_apply)
+        f.addRow(self.btn_can_apply)
         return status, stats
 
     # ------------------------------------------------------------------ helpers
@@ -277,7 +286,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     def set_enabled(self, on):
         for wdg in (self.btn_read, self.btn_write, self.btn_revert, self.btn_save, self.btn_export, self.btn_import,
-                    self.btn_reboot, self.btn_dfu,
+                    self.btn_reboot, self.btn_dfu, self.btn_can_apply,
                     self.tree, *self.step_btn.values()):
             wdg.setEnabled(on)
         for rp in self.run_panels:
@@ -719,6 +728,7 @@ class ConfigTab(QtWidgets.QWidget):
         self._show_status()
 
     def _show_status(self):
+        self._show_can()
         s = self.st
         g = s.get
         if "mode" in s:
@@ -769,6 +779,22 @@ class ConfigTab(QtWidgets.QWidget):
             self.st_lbl["enc"].setText(f"{g('enc_samples'):,} reads<br>CRC {n('enc_crc')}, late {n('enc_late')}, "
                                        f"stalls {n('enc_stalls')}<br>status {bits(es, ENC_BITS)}{crc}")
 
+    def _show_can(self):
+        s, g = self.st, self.st.get
+        if "can_nmt" not in s:
+            return
+        nmt = g("can_nmt")
+        color = GREEN if nmt == 5 else ORANGE if nmt == 127 else RED
+        err = g("can_err", 0)
+        pend = ""
+        if "can_id" in self.dev and (self.dev["can_id"], self.dev.get("can_kbit")) != (g("can_id_act"), g("can_kbit_act")):
+            pend = f"<br><span style='color:{ORANGE}'>pending: node {self.dev['can_id']} @ {self.dev.get('can_kbit')} kbit/s (Apply)</span>"
+        self.st_lbl["can"].setText(
+            f"node {g('can_id_act')} @ {g('can_kbit_act')} kbit/s, <span style='color:{color}'>"
+            f"{O.NMT_STATES.get(nmt, nmt)}</span><br>RX {g('can_rx', 0):,}, TX {g('can_tx', 0):,}, overruns "
+            + (f"<span style='color:{RED}'>{g('can_lost')}</span>" if g("can_lost") else "0")
+            + (f"<br><span style='color:{RED if err & 0x0006 else ORANGE}'>{bits(err, CAN_BITS)}</span>" if err else "") + pend)
+
     def _show_link(self):
         link = self.link
         if not link:
@@ -776,6 +802,16 @@ class ConfigTab(QtWidgets.QWidget):
             return
         self.st_lbl["link"].setText(f"{link.timeouts} timeouts, {link.unmatched} unmatched<br>"
                                     f"device RX errors {self.st.get('proto_err', '?')}")
+
+    def can_apply(self):
+        o = O.BY_KEY["can_apply"]
+
+        def done(res):
+            if res.ok:
+                self.log("CAN communication reset requested: node ID / bit rate in use from now on", GREEN)
+            else:
+                self.log(f"CAN apply refused: {P.status_text(res.status)}", RED)
+        self._req(P.WRITE, P.p_write(o.index, o.sub, o.type, 1), done)
 
     def clear_counters(self):
         for k in CLEAR_KEYS:

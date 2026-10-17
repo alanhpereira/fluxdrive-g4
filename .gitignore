@@ -202,3 +202,6 @@ out/
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/kicad,c++,c,eclipse,visualstudiocode
+# Python bytecode
+__pycache__/
+*.pyc

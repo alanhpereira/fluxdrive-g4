@@ -2,6 +2,8 @@
 
 #include "CANopen.h"
 #include "OD.h"
+#include "co_store.h"
+#include "storage/CO_storage.h"
 #include "boot.h"		/* boot_reboot() */
 #include "bridgeCtrl.h" /* disableBridge() */
 #include "calib.h"		/* g_mode */
@@ -23,6 +25,29 @@ volatile uint16_t g_can_kbit_act;
 static CO_t* s_co;
 static volatile uint8_t s_run;		/* the tick processes the stack */
 static volatile uint8_t s_reset_req; /* CO_RESET_COMM / CO_RESET_APP from the tick or 0x4040:5, done in main */
+
+/* 0x1010 store / 0x1011 restore: sub 2 = communication (OD_PERSIST_COMM, comm record), sub 3 = application (the
+ * motor params), sub 1 = both. They run in the tick, which must not erase flash: leave a request for main */
+static CO_storage_t s_storage;
+static CO_storage_entry_t s_store_entries[] = {
+	{.addr = &OD_PERSIST_COMM, .len = sizeof(OD_PERSIST_COMM), .subIndexOD = 2, .attr = CO_storage_cmd | CO_storage_restore},
+	{.addr = &g_params, .len = sizeof(g_params), .subIndexOD = 3, .attr = CO_storage_cmd},
+};
+
+static ODR_t store_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
+	(void)m;
+	if (g_mode != CTRL_OFF) return ODR_DATA_DEV_STATE; /* the flash erase would stall the running control loop */
+	co_store_request(e->subIndexOD == 3 ? CO_RQ_SAVE_APP : CO_RQ_SAVE_COMM);
+	return ODR_OK;
+}
+
+static ODR_t restore_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
+	(void)m;
+	(void)e; /* only sub 2 has CO_storage_restore */
+	if (g_mode != CTRL_OFF) return ODR_DATA_DEV_STATE;
+	co_store_request(CO_RQ_RESTORE_COMM);
+	return ODR_OK;
+}
 
 /* serial number: the 96-bit unique device id folded with FNV-1a */
 static uint32_t uid_serial(void) {
@@ -49,6 +74,7 @@ static void comm_reset(void) {
 	if (id < 1 || id > 127) id = 1; /* the stored values are range-checked already; belt and braces */
 	if (!co_can_prescaler(kbit)) kbit = 1000;
 
+	co_store_apply_od(); /* CiA 301: a communication reset reloads the stored communication parameters */
 	OD_PERSIST_COMM.x1018_identity.revisionNumber = ((uint32_t)PROTO_VERSION << 16) | PARAM_VERSION;
 	OD_PERSIST_COMM.x1018_identity.serialNumber = uid_serial();
 
@@ -56,6 +82,9 @@ static void comm_reset(void) {
 	CO_CANsetConfigurationMode(&hfdcan1);
 	CO_CANmodule_disable(s_co->CANmodule);
 	if (CO_CANinit(s_co, &hfdcan1, kbit) != CO_ERROR_NO) return;
+	if (CO_storage_init(&s_storage, s_co->CANmodule, OD_ENTRY_H1010_storeParameters, OD_ENTRY_H1011_restoreDefaultParameters, store_cb,
+						restore_cb, s_store_entries, (uint8_t)(sizeof s_store_entries / sizeof s_store_entries[0])) == CO_ERROR_NO)
+		s_storage.enabled = true;
 	uint32_t errInfo = 0;
 	if (CO_CANopenInit(s_co, NULL, NULL, OD, NULL, NMT_CONTROL, FIRST_HB_MS, SDO_SRV_TIMEOUT_MS, 0, false, id, &errInfo) != CO_ERROR_NO) return;
 	if (CO_CANopenInitPDO(s_co, s_co->em, OD, id, &errInfo) != CO_ERROR_NO) return;
@@ -66,6 +95,7 @@ static void comm_reset(void) {
 }
 
 void co_app_init(void) {
+	co_store_load(); /* node ID and bit rate */
 	comm_reset();
 
 	/* 1 kHz tick: TIM7 (basic timer, not in the .ioc) at 170 MHz / 170 / 1000 */

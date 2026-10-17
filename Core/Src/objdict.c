@@ -5,6 +5,8 @@
 #include "bridgeCtrl.h" /* readBridgeStatus() */
 #include "main.h"		/* DRV_RDY pin */
 #include "calib.h"
+#include "co_app.h"   /* 0x4040/0x4041 */
+#include "co_store.h" /* co_store_dirty() */
 #include "hfi.h" /* HFI_HALF_MAX */
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "mt6835.h"
@@ -22,6 +24,11 @@ static struct {
 	uint32_t flags, seq;
 	float vin;
 } s_st;
+
+static struct {
+	uint8_t nmt, apply;
+	uint16_t err;
+} s_can;
 
 #define F(x) ((void*)&(x))
 #define NOLIM 0.0f, 0.0f
@@ -116,6 +123,18 @@ static const obj_t k_tab[] = {
 	{0x4031, 5, T_F32, OF_STORED, F(g_params.hfi_id), 0.0f, 50.0f},
 	{0x4031, 6, T_F32, OF_STORED, F(g_params.hfi_sal), -1.0f, 1.0f},
 	{0x4031, 7, T_F32, OF_STORED, F(g_params.hfi_pol_i), 0.0f, 50.0f},
+	/* 0x4040 CAN settings: comm record (co_store.c), saved by MSG_SAVE; used from the next communication reset */
+	{0x4040, 1, T_U8, OF_STORED, F(g_can_node_id), 1.0f, 127.0f},
+	{0x4040, 2, T_U16, OF_STORED, F(g_can_kbit), 20.0f, 1000.0f}, /* 20, 50, 125, 250, 500, 1000 */
+	{0x4040, 3, T_U8, OF_RO, F(g_can_node_id_act), NOLIM},
+	{0x4040, 4, T_U16, OF_RO, F(g_can_kbit_act), NOLIM},
+	{0x4040, 5, T_U8, OF_NOTRUN, F(s_can.apply), 1.0f, 1.0f}, /* write 1: communication reset with 0x4040:1/2 */
+	/* 0x4041 CAN status (refreshed on read) */
+	{0x4041, 1, T_U8, OF_RO, F(s_can.nmt), NOLIM}, /* 0 initializing, 4 stopped, 5 operational, 127 pre-operational */
+	{0x4041, 2, T_U16, OF_RO, F(s_can.err), NOLIM}, /* CO_CAN_ERR* bits */
+	{0x4041, 3, T_U32, 0, F(g_can_rx), 0.0f, 0.0f},
+	{0x4041, 4, T_U32, 0, F(g_can_tx), 0.0f, 0.0f},
+	{0x4041, 5, T_U32, 0, F(g_can_rx_lost), 0.0f, 0.0f},
 };
 #define N_OBJ ((int)(sizeof k_tab / sizeof k_tab[0]))
 
@@ -169,7 +188,7 @@ static void status_refresh(uint8_t sub) {
 	s_st.nfault = (GPIOE->IDR & GPIO_PIN_15) ? 1 : 0; /* 1 = high = no fault */
 	s_st.vin = g_vin;
 	s_st.busy = g_busy;
-	s_st.dirty = (uint8_t)params_dirty();
+	s_st.dirty = (uint8_t)(params_dirty() || co_store_dirty());
 	s_st.seq = g_params.seq;
 	s_st.brk = (TIM1->SR & (TIM_SR_BIF | TIM_SR_B2IF)) ? 1 : 0; /* TIM1 break latched */
 	s_st.ready = (DRV_RDY_GPIO_Port->IDR & DRV_RDY_Pin) ? 1 : 0;
@@ -184,6 +203,10 @@ uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
 	const obj_t* o = find(index, sub, &err);
 	if (!o) return err;
 	if (index == 0x4001) status_refresh(sub);
+	if (index == 0x4041) {
+		s_can.nmt = co_app_nmt_state();
+		s_can.err = co_app_can_state();
+	}
 	*len = k_size[o->type];
 	memcpy(out, (const void*)o->p, *len);
 	return 0;
@@ -231,6 +254,11 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 	}
 	if (!(x >= o->min && x <= o->max)) return SDO_RANGE; /* also NaN */
 	if (o->p == &g_params.enc_dir && x == 0.0f) return SDO_RANGE;
+	if (o->p == &g_can_kbit && !co_can_prescaler((uint16_t)x)) return SDO_RANGE;
+	if (o->p == &s_can.apply) { /* a command, not a value */
+		co_app_request_reset();
+		return 0;
+	}
 
 	memcpy(o->p, v, len); /* aligned 1/2/4-byte stores: atomic for the ISR */
 	if (o->flags & OF_PI) pi_apply();

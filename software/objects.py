@@ -53,12 +53,16 @@ class Obj:
             return f"above {self.fmt(self.hi)} {self.unit}".strip()
         if self.key == "dir" and v == 0:
             return "must be +1 or -1"
+        if self.key == "can_kbit" and v not in CAN_KBIT:
+            return "must be one of " + ", ".join(map(str, CAN_KBIT))
         return None
 
 
 G_INFO, G_STATUS, G_DIAG = "Device info", "Status", "Diagnostics"
-G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI = ("Motor", "Current loop", "Speed / position", "Limits",
-                                                         "Current sensing", "Observer", "HF injection")
+G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI, G_CAN = ("Motor", "Current loop", "Speed / position", "Limits",
+                                                                "Current sensing", "Observer", "HF injection", "CAN")
+CAN_KBIT = (20, 50, 125, 250, 500, 1000)
+NMT_STATES = {0: "initializing", 4: "stopped", 5: "operational", 127: "pre-operational"}
 BW_MAX = 25000.0 / 20
 
 OBJECTS = [
@@ -185,11 +189,27 @@ OBJECTS = [
         "(Lq-Ld)/(Lq+Ld) at hid, stored by the saliency map; 0 = not measured", 2),
     Obj(0x4031, 7, T_F32, STORED, "hpi", "Polarity pulse current", "A", lo=0, hi=50, group=G_HFI, decimals=2,
         help="aim of the +d/-d pulses; needs to be high enough to saturate the d axis"),
+    # 0x4040 CAN settings (comm record in flash pages 60-61), used from the next communication reset
+    Obj(0x4040, 1, T_U8, STORED, "can_id", "Node ID", lo=1, hi=127, group=G_CAN,
+        help="CANopen node ID. Takes effect at the next communication reset: 'Apply CAN settings', NMT reset, or reboot"),
+    Obj(0x4040, 2, T_U16, STORED, "can_kbit", "Bit rate", "kbit/s", lo=20, hi=1000, group=G_CAN,
+        help="20, 50, 125, 250, 500 or 1000. Takes effect at the next communication reset"),
+    Obj(0x4040, 3, T_U8, RO, "can_id_act", "Node ID in use", group=G_DIAG),
+    Obj(0x4040, 4, T_U16, RO, "can_kbit_act", "Bit rate in use", "kbit/s", group=G_DIAG),
+    Obj(0x4040, 5, T_U8, NOTRUN, "can_apply", "Apply CAN settings", lo=1, hi=1, group=G_DIAG,
+        help="write 1: CANopen communication reset with the node ID and bit rate above"),
+    # 0x4041 CAN status
+    Obj(0x4041, 1, T_U8, RO, "can_nmt", "NMT state", group=G_DIAG),
+    Obj(0x4041, 2, T_U16, RO, "can_err", "CAN error state", group=G_DIAG),
+    Obj(0x4041, 3, T_U32, 0, "can_rx", "CAN frames received", lo=0, hi=0, group=G_DIAG),
+    Obj(0x4041, 4, T_U32, 0, "can_tx", "CAN frames sent", lo=0, hi=0, group=G_DIAG),
+    Obj(0x4041, 5, T_U32, 0, "can_lost", "CAN RX overruns", lo=0, hi=0, group=G_DIAG,
+        help="frames lost because the RX FIFO was full"),
 ]
 
 BY_KEY = {o.key: o for o in OBJECTS}
 BY_ADDR = {(o.index, o.sub): o for o in OBJECTS}
-PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI]
+PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI, G_CAN]
 
 # PF_* in params.h
 PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID = 1, 2, 4, 8, 16
