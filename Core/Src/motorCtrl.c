@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "i2c.h"
-#include "usart.h"
+#include "link.h"
 #include "cordicMgr.h"
 #include "hfi.h"
 #include "mt6835.h"
@@ -51,6 +51,7 @@ volatile float g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
 volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
+volatile uint32_t g_tlm_drop;				   /* telemetry frames that found the link queue full */
 volatile uint16_t g_sl_lost_n;				  /* sensorless: consecutive cycles HFI was not tracking, see SL_LOST_N */
 
 volatile uint8_t control_enabled = 0;
@@ -389,7 +390,7 @@ static inline float since_current_sample_s(void) {
 	return (float)d * (1.0f / 170e6f);
 }
 
-/* telemetry frame, once every 10 cycles, sent over UART DMA. Kept out of CCM: its code is large and it runs rarely */
+/* telemetry frame, once every 10 cycles, queued on the link (USB CDC or UART DMA). Kept out of CCM: its code is large and it runs rarely */
 static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, float iq, ctrl_mode_t mode) {
 	telemetry.seq = seq;
 	telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
@@ -409,7 +410,7 @@ static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, flo
 	telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
 	telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
 	telemetry.sum = frame_sum(&telemetry);
-	HAL_UART_Transmit_DMA(&huart1, (uint8_t*)&telemetry, sizeof(telemetry));
+	if (!link_tx(&telemetry, sizeof(telemetry))) g_tlm_drop++;
 }
 void currentLoop(void) {
 	static float age_cur; /* encoder sample -> current sample */
@@ -555,7 +556,7 @@ void currentLoop(void) {
 	if (++cycles_since_last_frame >= 10 && !outer_ran) {
 		cycles_since_last_frame = 0;
 		seq++;
-		if (huart1.gState == HAL_UART_STATE_READY) send_telemetry(ang, id, iq, mode); /* else main is sending a protocol reply: skip a frame */
+		if (link_tx_ready()) send_telemetry(ang, id, iq, mode); /* UART: main may be sending a reply, skip a frame. USB: no host */
 	}
 
 	uint32_t dc = DWT->CYCCNT - c0;

@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h> /* memcpy */
 
+#include "boot.h"		/* boot_reboot() */
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
 #include "tim.h"
 #include "hfi.h"
@@ -934,6 +935,16 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 		case MSG_STOP:
 			finish(); /* ramps down and switches off */
 			break;
+		case MSG_REBOOT:
+			if (len != 1 || p[0] > 1) e = ST_BAD_ARG;
+			else if (g_mode != CTRL_OFF) e = ST_RUNNING; /* a reset cuts the bridge under a running motor */
+			proto_reply_st(type, tok, e);
+			s_tok = 0;
+			if (e == ST_OK) {
+				disableBridge();
+				boot_reboot(p[0]);
+			}
+			return;
 		default:
 			e = ST_BAD_TYPE;
 			break;

@@ -129,8 +129,15 @@ class ConfigTab(QtWidgets.QWidget):
         self.btn_export.clicked.connect(self.export_json)
         self.btn_import = QtWidgets.QPushButton("Import JSON…")
         self.btn_import.clicked.connect(self.import_json)
-        grid = QtWidgets.QGridLayout()  # two rows: one row of six sets a wide minimum window width
-        for i, b in enumerate((self.btn_read, self.btn_write, self.btn_revert, self.btn_save, self.btn_export, self.btn_import)):
+        self.btn_reboot = QtWidgets.QPushButton("Reboot")
+        self.btn_reboot.setToolTip("Reset the MCU (refused while the motor runs)")
+        self.btn_reboot.clicked.connect(lambda: self.reboot(False))
+        self.btn_dfu = QtWidgets.QPushButton("Reboot to DFU")
+        self.btn_dfu.setToolTip("Reset into the ST bootloader: flash over USB with STM32CubeProgrammer")
+        self.btn_dfu.clicked.connect(lambda: self.reboot(True))
+        grid = QtWidgets.QGridLayout()  # rows of three: one row of six sets a wide minimum window width
+        for i, b in enumerate((self.btn_read, self.btn_write, self.btn_revert, self.btn_save, self.btn_export, self.btn_import,
+                               self.btn_reboot, self.btn_dfu)):
             grid.addWidget(b, i // 3, i % 3)
         v.addLayout(grid)
         self.dirty_lbl = QtWidgets.QLabel("")
@@ -265,6 +272,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     def set_enabled(self, on):
         for wdg in (self.btn_read, self.btn_write, self.btn_revert, self.btn_save, self.btn_export, self.btn_import,
+                    self.btn_reboot, self.btn_dfu,
                     self.tree, *self.step_btn.values()):
             wdg.setEnabled(on)
         for rp in self.run_panels:
@@ -482,6 +490,25 @@ class ConfigTab(QtWidgets.QWidget):
         def cb(res):
             self.log("saved to flash" if res.ok else "save FAILED: " + P.status_text(res.status), GREEN if res.ok else RED)
         self._req(P.SAVE, b"", cb)
+
+    def reboot(self, dfu):
+        what = "Reboot to DFU" if dfu else "Reboot"
+        text = ("Reset into the ST bootloader (USB DFU)?\n\nThe driver leaves this port; flash it with STM32CubeProgrammer "
+                "(USB). A power cycle or a reset returns to the firmware." if dfu else
+                "Reset the driver?\n\nRAM edits not saved to flash are lost.")
+        r = QtWidgets.QMessageBox.question(self, what, text + "\n(Refused while the motor runs.)",
+                                           QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+        if r != QtWidgets.QMessageBox.StandardButton.Ok:
+            return
+
+        def cb(res):
+            if not res.ok:
+                self.log(f"{what}: " + P.status_text(res.status), RED)
+                return
+            self.log("rebooting into the bootloader: port closed" if dfu else "rebooting: port closed, reconnect when it is back",
+                     GREEN)
+            QtCore.QTimer.singleShot(0, self.main.disconnect)  # the device is about to drop off the bus
+        self._req(P.REBOOT, P.p_reboot(dfu), cb)
 
     def export_json(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export parameters", time.strftime("params_%Y%m%d_%H%M%S.json"),

@@ -56,6 +56,7 @@ static const obj_t k_tab[] = {
 	{0x4002, 7, T_U8, OF_RO, F(hMT6835.status), NOLIM},
 	{0x4002, 8, T_U8, OF_RO, F(hMT6835.crc_check), NOLIM},
 	{0x4002, 9, T_U32, 0, F(g_proto_err), 0.0f, 0.0f},
+	{0x4002, 10, T_U32, 0, F(g_tlm_drop), 0.0f, 0.0f},
 	/* 0x4010 motor */
 	{0x4010, 1, T_F32, OF_STORED, F(g_params.kv), 0.0f, 1.0e5f},
 	{0x4010, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.pole_pairs), 1.0f, 64.0f},

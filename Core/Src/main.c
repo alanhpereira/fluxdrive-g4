@@ -33,6 +33,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "boot.h"
 #include "mt6835.h"
 #include "motorCtrl.h"
 #include "calib.h"
@@ -78,6 +79,7 @@ void SystemClock_Config(void);
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
+	boot_check(); /* MSG_REBOOT to DFU: jump to the ST bootloader before anything is set up */
 	/* ISR path into CCM SRAM (.ccmram in the linker script), before anything can call into it */
 	{
 		extern uint32_t _sccmram, _eccmram, _siccmram;

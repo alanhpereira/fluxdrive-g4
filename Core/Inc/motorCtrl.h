@@ -11,4 +11,5 @@ void currentLoop();
 int SVPWM(float alpha, float beta);
 
 extern volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time in CPU cycles (170 per us) */
+extern volatile uint32_t g_tlm_drop;				  /* telemetry frames dropped on a full link queue */
 #endif

@@ -30,7 +30,7 @@
 - **Flash (release `-Os`):** 62 116 B before → 66 456 B with both interfaces → **56 268 B** after phase 3 (−5.8 KB net, better than the −4 to −5 KB estimate). No tiny text console was kept (open decision below: answered "no").
 
 **Shaped for what comes later:**
-- **Transport:** USART1 now. Configuration is planned to move to **USB CDC**, with the same frames over a different pipe.
+- **Transport:** **USB CDC** (phase 4), with the same frames as on USART1, which remains a build-time fallback.
 - **Addressing:** everything goes through **index:subindex objects**, like a CANopen object dictionary. That keeps it compatible with `docs/can-epos4-handoff.md`: the same table can later back the CANopen OD.
 
 ## Why: what the text console costs today
@@ -163,8 +163,10 @@ The CAN work will add EPOS4-compatible objects (maxon's 0x2000/0x3000 ranges, in
 3. **Remove the text console.**
    - Delete `say`/`fmt_v`/`parse_*`/help/`kTab`/`print_*`, the `begin()`/`finish()` telemetry pause, and `CommandLine`/quick buttons in the plotter (or keep a raw hex console for debugging).
    - Measure flash (`python software/flash_report.py`); expect −4 to −5 KB net. Update CLAUDE.md's serial-protocol section.
-4. **USB CDC transport** (when the USB config work starts).
-   - Same frames over CDC: `CDC_Receive_FS` feeds the same parser; replies via `CDC_Transmit_FS`.
+4. **USB CDC transport** (implemented 2026-10-17, not yet run on hardware; `Core/Src/link.c`).
+   - Same frames over CDC: `CDC_Receive_FS` feeds the same parser through `proto_rx_bytes()`. Telemetry and replies share a 2 KB TX ring, drained only from the USB IRQ (pended by the producers, chained from TX complete). Data flows while the host holds DTR. USART1 stays as the `PROTO_LINK_USB 0` fallback.
+   - CRS trims HSI48 to the USB SOF (`usbd_conf.c`); the plotter picks the 0483:5740 port by itself.
+   - **Verify:** enumeration, telemetry without `seq` gaps, every Config tab action, loop time max unchanged with USB traffic, port close/reopen and cable replug while running, and the UART build.
    - **Drop `USB_LP_IRQn` priority below the ADC** (it is 0 in the .ioc today, like everything else), so USB traffic can't delay `currentLoop()`. This breaks the "all IRQs at priority 0" assumption in CLAUDE.md, so make the data shared between the USB callback and main safe.
    - Telemetry can stay on USART1 or move to USB: USB FS bulk does ~1 MB/s, enough for all channels at full rate.
 

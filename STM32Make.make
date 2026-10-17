@@ -76,6 +76,7 @@ endif
 # C sources
 C_SOURCES =  \
 Core/Src/adc.c \
+Core/Src/boot.c \
 Core/Src/bridgeCtrl.c \
 Core/Src/calib.c \
 Core/Src/cordic.c \
@@ -87,6 +88,7 @@ Core/Src/fdcan.c \
 Core/Src/gpio.c \
 Core/Src/hfi.c \
 Core/Src/i2c.c \
+Core/Src/link.c \
 Core/Src/main.c \
 Core/Src/motorCtrl.c \
 Core/Src/mt6835.c \

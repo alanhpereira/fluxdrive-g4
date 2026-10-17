@@ -91,6 +91,8 @@ OBJECTS = [
     Obj(0x4002, 7, T_U8, RO, "enc_status", "Encoder status", group=G_DIAG, help="1 overspeed, 2 weak field, 4 undervoltage"),
     Obj(0x4002, 8, T_U8, RO, "enc_crc_check", "Encoder CRC check on", group=G_DIAG),
     Obj(0x4002, 9, T_U32, 0, "proto_err", "Protocol RX errors", lo=0, hi=0, group=G_DIAG),
+    Obj(0x4002, 10, T_U32, 0, "tlm_drop", "Telemetry drops", lo=0, hi=0, group=G_DIAG,
+        help="frames that found the link queue full (USB host not reading fast enough)"),
     # 0x4010 motor
     Obj(0x4010, 1, T_F32, STORED, "kv", "kv", "rpm/V", lo=0, hi=1e5, group=G_MOTOR, decimals=1,
         help="back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it"),

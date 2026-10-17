@@ -25,6 +25,7 @@
 #define MSG_RUN_POS 0x42 /* turns i64 Q32.32 -> status u32 */
 #define MSG_STOP 0x43	 /* -> status u32 (ramped stop; aborts a calibration) */
 #define MSG_HOME 0x44	 /* -> status u32 */
+#define MSG_REBOOT 0x50 /* mode u8: 0 reset, 1 ST bootloader (USB DFU) -> status u32, then the device drops off the bus */
 #define MSG_REPLY 0x80	 /* or-ed into the request type */
 #define MSG_EVENT 0x7F	 /* no REPLY bit, so it never equals a reply type. Device -> host: code u16, n u8, n x f32; tok = the request that caused it, or 0 */
 
@@ -126,14 +127,15 @@ enum {
 	EV_HFI_START,	 /* sensorless start (tok 0) or sensorless polarity test: contrast, flipped (0/1), HFI - encoder (deg elec) */
 };
 
-void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() */
+void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() and MX_USB_Device_Init() */
+void proto_rx_bytes(const uint8_t* p, uint32_t n); /* from the link's RX IRQ */
 
 /* Runs the RX parser over everything received. busy = 0: full dispatch. busy = 1 (from inside a blocking
  * command): READ is served, ABORT/STOP request an abort, everything else gets ST_BUSY. Returns 1 if an
  * abort was requested */
 int proto_poll(int busy);
 
-/* blocking until the UART is free (telemetry finishes within ~0.4 ms), then DMA. Drops after 20 ms */
+/* queues the frame on the link (link.h), retrying while it is busy or full. Drops after 20 ms */
 void proto_send(uint8_t type, uint8_t tok, const void* payload, uint8_t len);
 void proto_reply_st(uint8_t type, uint8_t tok, uint32_t st);
 void proto_event(uint8_t tok, uint16_t code, int n, const float* v);

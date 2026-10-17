@@ -4,37 +4,32 @@
 
 #include "objdict.h"
 #include "params.h"
-#include "usart.h"
+#include "link.h"
+#include "main.h" /* HAL_GetTick */
 
 volatile uint32_t g_proto_err;
 
-/* ------------------------------------------------------------------ UART RX (single bytes, IRQ) */
-/* 256 with uint8_t indices: the wrap is free. Whole frames arrive at 2 Mbaud (a byte every 5 us) */
+/* ------------------------------------------------------------------ RX ring
+ * Filled by the link (USB IRQ or UART IRQ), emptied by proto_poll() in main.
+ * 256 with uint8_t indices: the wrap is free. Bytes that do not fit are dropped */
 #define RXQ 256
 static volatile uint8_t rxq[RXQ];
 static volatile uint8_t rxh, rxt;
-static uint8_t rxb;
 
 void proto_init(void) {
 	objdict_init();
-	/* the 8-byte RX FIFO rides out currentLoop(), which runs at the same IRQ priority as the UART */
-	HAL_UARTEx_EnableFifoMode(&huart1);
-	HAL_UART_Receive_IT(&huart1, &rxb, 1);
+	link_init();
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef* h) {
-	if (h == &huart1) {
-		uint8_t n = (uint8_t)(rxh + 1);
-		if (n != rxt) {
-			rxq[rxh] = rxb;
-			rxh = n;
-		}
-		HAL_UART_Receive_IT(&huart1, &rxb, 1);
+void proto_rx_bytes(const uint8_t* p, uint32_t n) {
+	uint8_t h = rxh;
+	while (n--) {
+		const uint8_t nx = (uint8_t)(h + 1);
+		if (nx == rxt) break;
+		rxq[h] = *p++;
+		h = nx;
 	}
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef* h) {
-	if (h == &huart1) HAL_UART_Receive_IT(&huart1, &rxb, 1); /* overrun/noise must not kill RX */
+	rxh = h;
 }
 
 static int rx_pop(uint8_t* c) {
@@ -59,34 +54,21 @@ static uint16_t crc16(const uint8_t* p, int n) {
 	return c;
 }
 
-static uint8_t txb[2 + 3 + PROTO_MAX_LEN + 2];
-
 void proto_send(uint8_t type, uint8_t tok, const void* payload, uint8_t len) {
 	if (len > PROTO_MAX_LEN) return;
+	uint8_t b[2 + 3 + PROTO_MAX_LEN + 2];
+	b[0] = SYNC0;
+	b[1] = SYNC1;
+	b[2] = type;
+	b[3] = tok;
+	b[4] = len;
+	memcpy(b + 5, payload, len);
+	const uint16_t c = crc16(b + 2, 3 + len);
+	b[5 + len] = (uint8_t)c;
+	b[6 + len] = (uint8_t)(c >> 8);
 	const uint32_t t0 = HAL_GetTick();
-	/* READY once means our previous frame has left txb; only the ISR's telemetry can start in between */
-	while (huart1.gState != HAL_UART_STATE_READY)
+	while (!link_tx(b, (uint16_t)(7 + len))) /* UART busy with telemetry, or USB queue full */
 		if (HAL_GetTick() - t0 > 20) return;
-	txb[0] = SYNC0;
-	txb[1] = SYNC1;
-	txb[2] = type;
-	txb[3] = tok;
-	txb[4] = len;
-	memcpy(txb + 5, payload, len);
-	const uint16_t c = crc16(txb + 2, 3 + len);
-	txb[5 + len] = (uint8_t)c;
-	txb[6 + len] = (uint8_t)(c >> 8);
-	/* check and start with IRQs off: the telemetry ISR does the same check, so we never collide */
-	for (;;) {
-		__disable_irq();
-		if (huart1.gState == HAL_UART_STATE_READY) {
-			HAL_UART_Transmit_DMA(&huart1, txb, (uint16_t)(7 + len));
-			__enable_irq();
-			return;
-		}
-		__enable_irq();
-		if (HAL_GetTick() - t0 > 20) return;
-	}
 }
 
 void proto_reply_st(uint8_t type, uint8_t tok, uint32_t st) {
@@ -210,6 +192,7 @@ static void handle(int busy, int* abort) {
 		case MSG_RUN_VEL:
 		case MSG_RUN_POS:
 		case MSG_HOME:
+		case MSG_REBOOT:
 			break;
 		default:
 			proto_reply_st(type, tok, ST_BAD_TYPE);

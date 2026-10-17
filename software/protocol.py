@@ -19,6 +19,8 @@ PROTO_VERSION = 3
 PING, READ, WRITE, LIST = 0x01, 0x10, 0x11, 0x12
 SAVE, CAL, ABORT = 0x20, 0x30, 0x31
 RUN_CUR, RUN_VEL, RUN_POS, STOP, HOME = 0x40, 0x41, 0x42, 0x43, 0x44
+REBOOT = 0x50  # mode u8: REBOOT_RESET or REBOOT_DFU
+REBOOT_RESET, REBOOT_DFU = 0, 1
 REPLY, EVENT = 0x80, 0x7F  # EVENT has no REPLY bit: it must never equal (request | REPLY)
 
 # CAL which
@@ -274,7 +276,8 @@ class Result:
 # per type: reply timeout (s) and whether a timeout may be retried (no side effects / idempotent)
 TIMING = {PING: (0.3, True), READ: (0.3, True), WRITE: (0.3, True), LIST: (0.3, True), SAVE: (1.5, False),
           CAL: (0.5, False), ABORT: (0.5, True), RUN_CUR: (0.5, False), RUN_VEL: (0.5, False),
-          RUN_POS: (0.5, False), STOP: (5.0, True), HOME: (5.0, False)}
+          RUN_POS: (0.5, False), STOP: (5.0, True), HOME: (5.0, False),
+          REBOOT: (0.5, False)}
 
 
 class Link(threading.Thread):
@@ -404,6 +407,10 @@ def p_list(first):
 
 def p_cal(which, arg=0.0):
     return struct.pack("<Bf", which, arg)
+
+
+def p_reboot(dfu=False):
+    return bytes([REBOOT_DFU if dfu else REBOOT_RESET])
 
 
 def p_run_cur(id_, iq):
