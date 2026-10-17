@@ -81,6 +81,10 @@ includeDirectories:
   - Src/**
   - Core/Src/**
   - Core/Lib/**
+  - CANopen/CANopenNode
+  - CANopen/app
+  - CANopen/od
+  - CANopen/port
 
 
 # Files that should be included in the compilation.
@@ -92,6 +96,7 @@ sourceFiles:
   - Src/**
   - Core/Src/**
   - Core/Lib/**
+  - CANopen/**
 
 
 # When no makefile is present it will show a warning pop-up.

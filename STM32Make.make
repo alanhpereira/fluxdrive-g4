@@ -75,6 +75,20 @@ endif
 ######################################
 # C sources
 C_SOURCES =  \
+CANopen/CANopenNode/301/CO_Emergency.c \
+CANopen/CANopenNode/301/CO_HBconsumer.c \
+CANopen/CANopenNode/301/CO_NMT_Heartbeat.c \
+CANopen/CANopenNode/301/CO_ODinterface.c \
+CANopen/CANopenNode/301/CO_PDO.c \
+CANopen/CANopenNode/301/CO_SDOserver.c \
+CANopen/CANopenNode/301/CO_SYNC.c \
+CANopen/CANopenNode/301/CO_fifo.c \
+CANopen/CANopenNode/301/crc16-ccitt.c \
+CANopen/CANopenNode/CANopen.c \
+CANopen/CANopenNode/storage/CO_storage.c \
+CANopen/app/co_app.c \
+CANopen/od/OD.c \
+CANopen/port/CO_driver_stm32g4.c \
 Core/Src/adc.c \
 Core/Src/boot.c \
 Core/Src/bridgeCtrl.c \
@@ -243,6 +257,10 @@ AS_INCLUDES = \
 
 # C includes
 C_INCLUDES =  \
+-ICANopen/CANopenNode \
+-ICANopen/app \
+-ICANopen/od \
+-ICANopen/port \
 -ICore/Inc \
 -IDrivers/CMSIS/Device/ST/STM32G4xx/Include \
 -IDrivers/CMSIS/Include \

@@ -5,6 +5,7 @@
 
 #include "boot.h"		/* boot_reboot() */
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
+#include "co_app.h"
 #include "tim.h"
 #include "hfi.h"
 #include "mt6835.h"
@@ -1071,4 +1072,5 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 void cmd_poll(void) {
 	run_watchdog();
 	proto_poll(0); /* frames -> objdict / cmd_message() */
+	co_app_poll(); /* CANopen communication / node resets */
 }
