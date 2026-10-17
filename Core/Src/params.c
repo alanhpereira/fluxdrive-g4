@@ -105,7 +105,15 @@ int params_dirty(void) {
 	return memcmp((const uint8_t*)&g_params + a, (const uint8_t*)slotPtr(g_active) + a, b - a) != 0;
 }
 
+static void get_mem(uint32_t off, uint8_t* dst, void* ctx) {
+	memcpy(dst, (const uint8_t*)ctx + off, 8);
+}
+
 HAL_StatusTypeDef flash_write_page(uint32_t page, const void* data, uint32_t len) {
+	return flash_write_page_from(page, len, get_mem, (void*)data);
+}
+
+HAL_StatusTypeDef flash_write_page_from(uint32_t page, uint32_t len, void (*get)(uint32_t off, uint8_t* dst8, void* ctx), void* ctx) {
 	if (TIM1->BDTR & TIM_BDTR_MOE) return HAL_BUSY; /* the erase stalls the CPU ~20 ms: never with the bridge live */
 	if (len % 8u || len > FLASH_PAGE_SIZE) return HAL_ERROR;
 	HAL_StatusTypeDef st = HAL_FLASH_Unlock();
@@ -123,8 +131,10 @@ HAL_StatusTypeDef flash_write_page(uint32_t page, const void* data, uint32_t len
 
 	const uint32_t addr = FLASH_BASE + page * FLASH_PAGE_SIZE;
 	for (uint32_t off = 0; st == HAL_OK && off < len; off += 8) {
+		uint8_t b[8];
 		uint64_t w;
-		memcpy(&w, (const uint8_t*)data + off, 8);
+		get(off, b, ctx);
+		memcpy(&w, b, 8);
 		st = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, addr + off, w);
 	}
 	HAL_FLASH_Lock();

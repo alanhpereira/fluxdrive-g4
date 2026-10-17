@@ -8,6 +8,7 @@
 #include "bridgeCtrl.h" /* disableBridge() */
 #include "calib.h"		/* g_mode */
 #include "fdcan.h"
+#include "objdict.h" /* od_read_fast(), od_write(): the native objects */
 #include "params.h" /* PARAM_VERSION */
 #include "proto.h"	/* PROTO_VERSION */
 
@@ -26,11 +27,15 @@ static CO_t* s_co;
 static volatile uint8_t s_run;		/* the tick processes the stack */
 static volatile uint8_t s_reset_req; /* CO_RESET_COMM / CO_RESET_APP from the tick or 0x4040:5, done in main */
 
-/* 0x1010 store / 0x1011 restore: sub 2 = communication (OD_PERSIST_COMM, comm record), sub 3 = application (the
- * motor params), sub 1 = both. They run in the tick, which must not erase flash: leave a request for main */
+/* 0x1010 store / 0x1011 restore: sub 2 = communication (OD_PERSIST_COMM), sub 3 = application (the CiA 402
+ * settings, OD_PERSIST_APP, and for store also the motor params), sub 1 = all. Restore never touches the motor
+ * calibration. They run in the tick, which must not erase flash: leave a request for main */
 static CO_storage_t s_storage;
 static CO_storage_entry_t s_store_entries[] = {
 	{.addr = &OD_PERSIST_COMM, .len = sizeof(OD_PERSIST_COMM), .subIndexOD = 2, .attr = CO_storage_cmd | CO_storage_restore},
+#ifdef OD_ATTR_PERSIST_APP
+	{.addr = &OD_PERSIST_APP, .len = sizeof(OD_PERSIST_APP), .subIndexOD = 3, .attr = CO_storage_cmd | CO_storage_restore},
+#endif
 	{.addr = &g_params, .len = sizeof(g_params), .subIndexOD = 3, .attr = CO_storage_cmd},
 };
 
@@ -43,10 +48,54 @@ static ODR_t store_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
 
 static ODR_t restore_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
 	(void)m;
-	(void)e; /* only sub 2 has CO_storage_restore */
 	if (g_mode != CTRL_OFF) return ODR_DATA_DEV_STATE;
-	co_store_request(CO_RQ_RESTORE_COMM);
+	co_store_request(e->addr == (void*)&OD_PERSIST_COMM ? CO_RQ_RESTORE_COMM : CO_RQ_RESTORE_APP);
 	return ODR_OK;
+}
+
+/* ------------------------------------------------------------------ native objects 0x4000-0x40FF over SDO
+ * The OD holds them (exported from driverTCC.xdd) so masters and the EDS see them, but the values live in the
+ * firmware's own variables: reads and writes go through objdict.c, with the same range checks and side effects
+ * (pi_apply(), OF_NOTRUN...) as the USB/serial protocol. Sub-index 0 stays the OD's own */
+static ODR_t sdo_to_odr(uint32_t ab) {
+	switch (ab) {
+		case SDO_NO_OBJECT: return ODR_IDX_NOT_EXIST;
+		case SDO_NO_SUB: return ODR_SUB_NOT_EXIST;
+		case SDO_READ_ONLY: return ODR_READONLY;
+		case SDO_BAD_LEN: return ODR_TYPE_MISMATCH;
+		case SDO_RANGE: return ODR_INVALID_VALUE;
+		case SDO_STATE: return ODR_DATA_DEV_STATE;
+		default: return ODR_GENERAL;
+	}
+}
+
+static ODR_t native_read(OD_stream_t* st, void* buf, OD_size_t count, OD_size_t* n) {
+	if (st->subIndex == 0) return OD_readOriginal(st, buf, count, n);
+	uint8_t v[8], len = 0;
+	const uint32_t ab = od_read_fast(st->index, st->subIndex, v, &len);
+	if (ab) return sdo_to_odr(ab);
+	if (count < len) return ODR_DEV_INCOMPAT; /* all native values are 1..4 bytes: never segmented */
+	memcpy(buf, v, len);
+	*n = len;
+	return ODR_OK;
+}
+
+static ODR_t native_write(OD_stream_t* st, const void* buf, OD_size_t count, OD_size_t* n) {
+	if (st->subIndex == 0) return ODR_READONLY;
+	if (count > 8) return ODR_DATA_LONG;
+	const uint32_t ab = od_write(st->index, st->subIndex, buf, (uint8_t)count);
+	if (ab) return sdo_to_odr(ab);
+	*n = count;
+	return ODR_OK;
+}
+
+static OD_extension_t s_native_ext = {.object = NULL, .read = native_read, .write = native_write};
+
+static void native_init(void) {
+	for (uint16_t i = 0; i < OD->size; i++) {
+		OD_entry_t* e = &OD->list[i];
+		if (e->index >= 0x4000 && e->index <= 0x40FF) OD_extension_init(e, &s_native_ext);
+	}
 }
 
 /* serial number: the 96-bit unique device id folded with FNV-1a */
@@ -95,6 +144,7 @@ static void comm_reset(void) {
 }
 
 void co_app_init(void) {
+	native_init();
 	co_store_load(); /* node ID and bit rate */
 	comm_reset();
 

@@ -920,7 +920,7 @@ static HAL_StatusTypeDef save_records(uint8_t what) {
 	disableBridge(); /* the CPU stalls ~20 ms during each flash erase */
 	HAL_StatusTypeDef st = HAL_OK;
 	if (what & CO_RQ_SAVE_APP) st = params_save();
-	if (st == HAL_OK && (what & (CO_RQ_SAVE_COMM | CO_RQ_RESTORE_COMM))) st = co_store_save((what & CO_RQ_RESTORE_COMM) != 0);
+	if (st == HAL_OK) st = co_store_save(what); /* any request: the record holds the CAN settings and both OD parts */
 	initBridge(); /* use whatever your normal power-up sequence is */
 	return st;
 }

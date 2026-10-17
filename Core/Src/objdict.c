@@ -180,7 +180,7 @@ static const obj_t* find(uint16_t index, uint8_t sub, uint32_t* err) {
 	return NULL;
 }
 
-static void status_refresh(uint8_t sub) {
+static void status_refresh(uint8_t sub, int slow_ok) {
 	s_st.mode = (uint8_t)g_mode;
 	s_st.loop = (uint8_t)g_loop;
 	s_st.flags = g_params.flags;
@@ -192,17 +192,17 @@ static void status_refresh(uint8_t sub) {
 	s_st.seq = g_params.seq;
 	s_st.brk = (TIM1->SR & (TIM_SR_BIF | TIM_SR_B2IF)) ? 1 : 0; /* TIM1 break latched */
 	s_st.ready = (DRV_RDY_GPIO_Port->IDR & DRV_RDY_Pin) ? 1 : 0;
-	if (sub == 6) { /* I2C, ~100 us: only when asked */
+	if (sub == 6 && slow_ok) { /* I2C, ~100 us: only when asked, and never from the CANopen tick */
 		uint8_t b = 0;
 		s_st.drv = readBridgeStatus(&b) == HAL_OK ? b : 0x100;
 	}
 }
 
-uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+static uint32_t read_obj(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len, int slow_ok) {
 	uint32_t err;
 	const obj_t* o = find(index, sub, &err);
 	if (!o) return err;
-	if (index == 0x4001) status_refresh(sub);
+	if (index == 0x4001) status_refresh(sub, slow_ok);
 	if (index == 0x4041) {
 		s_can.nmt = co_app_nmt_state();
 		s_can.err = co_app_can_state();
@@ -210,6 +210,14 @@ uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
 	*len = k_size[o->type];
 	memcpy(out, (const void*)o->p, *len);
 	return 0;
+}
+
+uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+	return read_obj(index, sub, out, len, 1);
+}
+
+uint32_t od_read_fast(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+	return read_obj(index, sub, out, len, 0);
 }
 
 uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {

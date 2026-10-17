@@ -100,5 +100,7 @@ uint32_t flash_crc32(const void* p, size_t n); /* CRC-32 (IEEE), as stored in th
 /* erases one 2 KB page and programs len bytes (a multiple of 8) from its start. Refused (HAL_BUSY) while
  * MOE is set: the erase stalls the CPU ~20 ms */
 HAL_StatusTypeDef flash_write_page(uint32_t page, const void* data, uint32_t len);
+/* same, with the data from get(off, 8 bytes out, ctx) for off = 0, 8, 16...: no RAM copy of the whole page */
+HAL_StatusTypeDef flash_write_page_from(uint32_t page, uint32_t len, void (*get)(uint32_t off, uint8_t* dst8, void* ctx), void* ctx);
 
 #endif

@@ -36,6 +36,8 @@ uint32_t objdict_build_id(void);
 
 /* value written to out (type-sized, little-endian); returns 0 or an SDO abort code, *len = bytes */
 uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len);
+/* same, but never blocks (0x4001:6, the gate-driver status over I2C, returns the last value): for the CANopen tick */
+uint32_t od_read_fast(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len);
 uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len);
 /* up to max entries from first, 5 bytes each (index, sub, type, flags); returns the count */
 int od_list(uint16_t first, uint8_t* out, int max);
