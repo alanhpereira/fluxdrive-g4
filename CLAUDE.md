@@ -54,7 +54,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 | `link.c/h` | The byte pipe. USB (default): a 2 KB TX ring filled by the ISR (telemetry) and main (replies); producers pend `USB_LP_IRQn`, and only the USB IRQ calls into the USB stack. Data flows only while the host holds DTR (pyserial does on open); otherwise it is discarded. UART fallback: byte-IRQ RX with the 8-byte FIFO, DMA TX. |
 | `proto.c/h` | RX ring (256 bytes, fed by the link through `proto_rx_bytes()`), the binary frame parser/sender, and the message/status/event enums. Bytes outside frames are dropped. `proto_poll(busy)` is re-entrant: blocking commands call it from `chk()` with `busy = 1`. |
 | `objdict.c/h` | Object table (index:subindex → variable, type, flags, min/max) behind READ/WRITE/LIST, the table hash and the build id. |
-| `params.c/h` | `motor_params_t g_params`, stored in flash. Two A/B slots with seq number + CRC32. Versioned (v5); a copy with any other version is ignored and the defaults load. |
+| `params.c/h` | `motor_params_t g_params`, stored in flash. Two A/B slots with seq number + CRC32. Versioned (v7); a copy with any other version is ignored and the defaults load. |
 | `pi_ctrl.h` | Inline PI with conditional-integration anti-windup. `pi_current_step()` shares the voltage circle between d and q, with d taking priority. |
 | `cordicMgr.h` | Hardware CORDIC sin/cos (`sincos_q31`, Q32 angle in, floats out). |
 | `hfi.c/h` | High-frequency injection: square wave on the estimated d axis (half wave `hfi_half` ≥ 2 periods), demodulation from consecutive samples, angle PLL, polarity pulses, and the PI current filter. `hfi_step()` is called from `currentLoop()` in `CTRL_RUN`; the HFI calibrations in `calib.c` drive it through `g_hfi_cmd`. |
@@ -76,6 +76,18 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
   - `LOOP_CURRENT`: set by the command.
   - `LOOP_VEL`: speed PI.
   - `LOOP_POS`: position P → speed PI. Switching in is bumpless.
+- Trips (`trip_check()` in `motorCtrl.c`, `g_trip` in `calib.h`): overvoltage (`g_vin` > `vbus_max` for 1 ms; default 60 V, 0 = off) and overcurrent (|id| or |iq| > `max_current` for 3 cycles).
+  - In `CTRL_RUN` the ISR coasts at zero current: id = iq = 0 refs, outer loops held. That means no torque, no regen into the bus, and no short-brake, and the currents stay measured.
+  - Outside `CTRL_RUN`, or if the current goes on rising in the coast (> 1.5 × imax, or still > imax after 5 ms), it calls `bridge_trip_off()`: MOE = 0 and `g_trip_moe`. `checkAndClearBridgeFault()` does not re-arm MOE while `g_trip_moe` is set.
+  - The ISR never writes `g_mode`. `trip_watchdog()` in `calib.c` sends `EV_STOPPED` (`ST_VBUS_HIGH`/`ST_OVERCURRENT`) and sets `CTRL_OFF` once |speed| < `COAST_END_TURNS` (30 rpm).
+  - An overvoltage coast (CTRL_RUN, bridge still on) resumes by itself once the bus has been below `vbus_max − vbus_resume` (param `vresume`, default 2 V) for 10 ms.
+    - The ISR restores the saved id ref, and the iq ref too in current mode. The speed/position loops pick up bumplessly from the present speed.
+    - `EV_RESUMED` is sent, and 0x4002:11 counts the resumes. Overcurrent never resumes.
+  - Regen clamp (before the OV trip): in `CTRL_RUN`, braking current (iq against `s_vel`) is scaled from full at `vbus_max − vbus_clamp` (param `vclamp`, default 3 V, 0 = off) down to zero at `vbus_max`. Motoring current is never limited.
+    - While the clamp acts, the speed ramp holds its deceleration and the speed integrator is capped at the allowed braking current, so it can't wind up.
+    - A supply that sits inside that band also reduces braking.
+  - While a trip is latched every command except STOP/REBOOT gets `ST_TRIPPED`. STOP resets it once the coast has ended.
+  - With MOE off, the body diodes only conduct if something external drives the shaft above the bus voltage (there is no field weakening).
 - Main hands values to the ISR through these rules:
   - Write the reference first, then switch the mode/loop.
   - The 64-bit position ref goes through `g_pos_ref_new` + the `g_pos_ref_req` handshake, because 64-bit writes are not atomic on the M4.
@@ -86,15 +98,15 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 - The encoder gives 21 bits per turn: `angle << 11` is a mechanical Q32 angle.
 - Position is `pos_q32_t`, an int64 Q32.32 in turns. `g_pos` (float) is for display only.
 - Speed is in turn/s internally. Commands and telemetry use rpm.
-- `params` are in SI units (Ω, H, A, V). The observer/ramp settings (`oblend`, `olo`, `ohi`, `ogain`, `oftol`, `oerr`, `acc`; fields `obs_*`, `acc_lim`, added in v4) and the HFI settings (`hmode`, `hhalf`, `hv`, `hbw`, `hid`, `hsal`, `hpi`; fields `hfi_*`, added in v5) are params too. `angsrc` (field `ang_src`, object 0x4011, added in v6) picks the angle source: 0 encoder only, 1 encoder with the observer blended in (`oblend`), 2 sensorless (HFI, then the observer above `olo`; no encoder in the loop, position mode refused, the encoder is only logged). `hmode` is 0/1 only (track and log in the encoder modes); sensorless always injects. `ki` is stored as continuous-time; `pi_apply()` turns it into `ki_ts`. Call `pi_apply()` after any gain change.
+- `params` are in SI units (Ω, H, A, V). The observer/ramp settings (`oblend`, `olo`, `ohi`, `ogain`, `oftol`, `oerr`, `acc`; fields `obs_*`, `acc_lim`, added in v4) and the HFI settings (`hmode`, `hhalf`, `hv`, `hbw`, `hid`, `hsal`, `hpi`; fields `hfi_*`, added in v5) are params too. `angsrc` (field `ang_src`, object 0x4011, added in v6) and the regen clamp band / OV resume margin (`vclamp`, `vresume`; fields `vbus_clamp`, `vbus_resume`, 0x4022:4–5, added in v7) picks the angle source: 0 encoder only, 1 encoder with the observer blended in (`oblend`), 2 sensorless (HFI, then the observer above `olo`; no encoder in the loop, position mode refused, the encoder is only logged). `hmode` is 0/1 only (track and log in the encoder modes); sensorless always injects. `ki` is stored as continuous-time; `pi_apply()` turns it into `ki_ts`. Call `pi_apply()` after any gain change.
 
 ### Serial protocol (USB CDC, or USART1)
 There is no text console: everything goes through binary frames, and the plotter is the user interface.
 - **MCU → PC telemetry:** a 72-byte binary `Frame`: `A5 5A`, `seq u16`, 16 floats, then a `sum u32` computed with rotate-left-1-and-add from seed `0x5A5AA5A5`.
 - **Config protocol (both directions):** `A5 5C | type | tok | len | payload | crc16` (CCITT-FALSE, LE), defined in `proto.h`; design in `docs/config-gui-handoff.md`. Bytes outside frames are ignored.
-  - PING/READ/WRITE/LIST go to the object table (`objdict.c`, native objects at 0x4000–0x4031, errors as CANopen SDO abort codes). A WRITE takes effect in RAM; SAVE writes flash.
+  - PING/READ/WRITE/LIST go to the object table (`objdict.c`, native objects at 0x4000–0x4031, types up to `T_I16` = 8, errors as CANopen SDO abort codes). A WRITE takes effect in RAM; SAVE writes flash.
   - SAVE, CAL, RUN_CUR/VEL/POS, STOP, HOME, ABORT and REBOOT reply with an `st_t` status. REBOOT (mode 0 reset, 1 DFU) is refused while `g_mode` is not `CTRL_OFF`; after the reply the device drops off the bus. CAL replies with an ACK first, then sends `EV_*` events (`EV(code, floats…)` in `calib.c`, tagged with the request's `s_tok`) and ends with `EV_DONE`. The watchdog sends `EV_STOPPED` with tok 0.
-  - The calibrations (`CAL_*`): encoder dir/pole pairs/offset (averaged over one turn each way), R, Ld, Lq (hold the shaft), PI autotune from R, L and `bw`, kv (the motor spins), encoder zero reset, the HFI saliency map (argument = d bias, 0 = several biases and store `hsal`) and the HFI lock + polarity test. For Ld/Lq, the argument is a test current: 0 stores the result, and any other value measures that point only, without storing.
+  - The calibrations (`CAL_*`): encoder dir/pole pairs/offset (averaged over one turn each way), R, Ld, Lq (hold the shaft), PI autotune from R, L and `bw`, kv (the motor spins), encoder zero reset, the HFI saliency map (argument = d bias, 0 = several biases and store `hsal`), the HFI lock + polarity test, and the current-sense offsets (`CAL_CUR_OFF`, rotor still: stores `cur_off`, sets `PF_CUR_CAL_VALID`). For Ld/Lq, the argument is a test current: 0 stores the result, and any other value measures that point only, without storing.
   - Prerequisites are enforced through the `PF_*` flags in `g_params.flags`. The usual order is encoder → R → Ld → autotune. Speed and position mode also need `vkp`/`vki`/`vlim` (and `pkp`) set.
   - Replies are sent by `proto_send()` from main, which starts the DMA with IRQs off once `gState` is READY. The telemetry ISR makes the same check, so each reply costs one telemetry frame (a `seq` gap).
   - Message types must stay below `MSG_EVENT` (0x7F): a reply is `type | 0x80` and must never equal the event type.
@@ -112,8 +124,17 @@ There is no text console: everything goes through binary frames, and the plotter
 
 ## Gotchas
 - Keep the TIM1 update interrupt (`TIM1_UP_TIM16_IRQn`) **disabled in the .ioc**. `mt6835.c` enables it at runtime and owns `TIM1_UP_TIM16_IRQHandler`. If CubeMX generates a second handler, the link fails. The SPI1 DMA channels are reprogrammed by register on every read; leave them in NORMAL mode in the .ioc.
-- Current and voltage scaling come from the hard-coded constants and offsets in `curSnsCtrl.c` (`CS_SHUNT`, `CS_GAIN`, `cur_offset[]`). The stored `cur_off`, `vbus_max` and `temp_max` params are **not used** by the control path yet. `cur_scale` and `vin_scale` were removed in `PARAM_VERSION` 6.
+- Current and voltage scaling come from the hard-coded constants in `curSnsCtrl.h` (`CS_SHUNT`, `CS_GAIN`, `VIN_RL/RH`). `cur_scale` and `vin_scale` were removed in `PARAM_VERSION` 6. The stored `temp_max` is **not used** yet.
+- Current offsets: `cur_off[i]` = ADC zero − 2048 in counts.
+  - `cs_boot_offsets()` (end of `initMotor()`) measures them at every boot over 64 ms.
+  - It keeps the result only if the spread is small and it lies within 25 counts of the fallback (`g_params.cur_off` once `PF_CUR_CAL_VALID` is set, else `CS_OFF_DEFAULT`). A rotor turning at boot therefore falls back.
+  - The offsets in use and their source are objects 0x4023:4–7.
 - `SVPWM()` writes nothing for `FAULT_CLEAR_MIN_TIME` ms after a fault is cleared.
-- Leaving `CTRL_RUN` while the motor spins applies a zero vector, which short-brakes it. `run_stop()` and `kv_coast()` exist to slow down first. Keep that behavior.
+- `CTRL_OFF` applies the zero vector, and so does re-arming MOE. On a spinning motor that is a short-brake: about λ/L of current, far above `imax`. It made STOP from current mode trip on overcurrent. The rule now is **no zero vector above `COAST_END_TURNS` (30 rpm)**:
+  - Stops go through `coast_or_off()` in `calib.c`. Above that speed it stays in `CTRL_RUN` at id = iq = 0 (`g_coasting`, 0x4001:15), and `run_watchdog()` switches off once the motor is slow. STOP replies at once, and a run command takes over a coasting motor.
+  - `run_stop()` still brakes under the speed loop first in speed/position mode.
+  - A lost HFI angle switches the bridge off instead.
+  - `checkAndClearBridgeFault()` re-arms only below that speed (encoder), or after `SL_REARM_MS` (sensorless, which cannot see the speed with the bridge off), returning `BRIDGE_ERR_SPIN` until then. Before MOE has been on once since boot, it re-arms at once.
+  - Keep `kv_coast()` and this rule.
 - **No text in the firmware.** Values go out as raw floats in events/replies, and the PC formats them. Don't call `printf`/`snprintf`/`sprintf`, `strtof`/`strtod`/`atof`, `strtok` (via `assert`) or `assert`: each links back several KB of stdio, bignum or float-printing code (together ~15–19 KB). Check with `arm-none-eabi-nm` for `_vfprintf_r`, `_printf_float`, `_strtod_r`. Avoid `double` too: float varargs are promoted to `double`, which is why `EV()` builds a `const float[]`. Check with `arm-none-eabi-objdump -d` for calls to `__aeabi_f2d`. `-fno-math-errno` makes `sqrtf` compile to a single `vsqrt` instruction.
 - `motorCtrl.c`, `curSnsCtrl.c` and the burst/DMA half of `mt6835.c` carry `#pragma GCC optimize("O2")`, so the ISR path is `-O2` in both the `-Og` debug build and the `-Os` release build. In the debug build, locals in `currentLoop()` may show as optimized out. Put new ISR-path code in those files (or under the same pragma).

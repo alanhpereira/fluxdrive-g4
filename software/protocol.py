@@ -13,7 +13,7 @@ import threading
 
 SYNC_MSG = b"\xA5\x5C"
 MAX_LEN = 64
-PROTO_VERSION = 3
+PROTO_VERSION = 4
 
 # message types (the reply is type | REPLY)
 PING, READ, WRITE, LIST = 0x01, 0x10, 0x11, 0x12
@@ -24,10 +24,10 @@ REBOOT_RESET, REBOOT_DFU = 0, 1
 REPLY, EVENT = 0x80, 0x7F  # EVENT has no REPLY bit: it must never equal (request | REPLY)
 
 # CAL which
-CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO, CAL_HFI_MAP, CAL_HFI_POL = range(1, 10)
+CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO, CAL_HFI_MAP, CAL_HFI_POL, CAL_CUR_OFF = range(1, 11)
 CAL_NAMES = {CAL_ENC: "encoder", CAL_R: "resistance", CAL_LD: "inductance d", CAL_LQ: "inductance q",
              CAL_TUNE: "PI autotune", CAL_KV: "kv", CAL_ZERO: "encoder zero reset", CAL_HFI_MAP: "HFI saliency map",
-             CAL_HFI_POL: "HFI polarity"}
+             CAL_HFI_POL: "HFI polarity", CAL_CUR_OFF: "current-sense offsets"}
 
 # command status (st_t), then CANopen SDO abort codes for object access
 STATUS = [
@@ -51,6 +51,9 @@ STATUS = [
     "polarity contrast below 5 % (raise hpi)",
     "run the PI autotune (t) first", "set kv first (k, or from the datasheet)",
     "position mode needs the encoder (angle source 0 or 1)",
+    "bus voltage above vmax",
+    "tripped: press STOP to reset (once the motor has coasted down)",
+    "current-sense offsets implausible (rotor turning? sense stage?)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 SDO = {
@@ -79,10 +82,10 @@ def _fmt_l(v):
     return f"{axis} = {v[1] * 1e6:.1f} uH   (tau {v[2] * 1e6:.1f} us, I0 {v[3]:.3f} A){tail}"
 
 
-EV_DONE, EV_STOPPED, EV_RPM_LIMITED, EV_CUR_LIMITED = 1, 2, 3, 4
+EV_DONE, EV_STOPPED, EV_RPM_LIMITED, EV_CUR_LIMITED, EV_RESUMED = 1, 2, 3, 4, 5
 EV_ALIGN, EV_SWEEP, EV_OFFSET_AVG, EV_HOLD_SHAFT, EV_UNLOAD_SHAFT, EV_EEPROM_WAIT, EV_BW_CLAMPED = range(0x10, 0x17)
 EV_R, EV_LCURVE, EV_LCURVE_PT, EV_L, EV_PP_BAD, EV_ENC, EV_TUNE, EV_KV, EV_HFI_PT, EV_HFI_FIT, EV_HFI_POL, \
-    EV_HFI_START = range(0x20, 0x2C)
+    EV_HFI_START, EV_CUR_OFF = range(0x20, 0x2D)
 
 
 def hfi_fit(a0, a2, b2):
@@ -110,6 +113,7 @@ EVENTS = {
     EV_STOPPED: lambda v: f"STOPPED: {status_text(int(v[0]))} (id {v[1]:.2f} A, iq {v[2]:.2f} A)",
     EV_RPM_LIMITED: lambda v: f"limited to vlim {v[0]:.0f} rpm",
     EV_CUR_LIMITED: lambda v: f"limited to rated {v[0]:.2f} A",
+    EV_RESUMED: lambda v: f"bus back down to {v[0]:.1f} V: resumed after the overvoltage coast ({v[1]:.0f} so far)",
     EV_ALIGN: lambda v: "aligning...",
     EV_SWEEP: lambda v: f"sweeping {v[0]:.0f} electrical revolutions...",
     EV_OFFSET_AVG: lambda v: "averaging the offset over one turn each way...",
@@ -132,6 +136,8 @@ EVENTS = {
     EV_HFI_POL: _fmt_hfi_pol,
     EV_HFI_START: lambda v: (f"polarity contrast {v[0] * 100:+.1f} % "
                              f"({'flipped' if v[1] else 'kept'}), HFI - encoder {v[2]:+.1f} deg"),
+    EV_CUR_OFF: lambda v: (f"current-sense offsets {v[0]:+.0f} {v[1]:+.0f} {v[2]:+.0f} counts from 2048 "
+                           f"(spread {v[3]:.0f} {v[4]:.0f} {v[5]:.0f})" + ("  [stored]" if v[6] else "  NOT stored")),
 }
 
 
@@ -247,8 +253,8 @@ class Splitter:
 
 
 # value packing by object type (objdict.h)
-T_U8, T_I8, T_U16, T_U32, T_I32, T_F32, T_I64 = range(1, 8)
-FMT = {T_U8: "<B", T_I8: "<b", T_U16: "<H", T_U32: "<I", T_I32: "<i", T_F32: "<f", T_I64: "<q"}
+T_U8, T_I8, T_U16, T_U32, T_I32, T_F32, T_I64, T_I16 = range(1, 9)
+FMT = {T_U8: "<B", T_I8: "<b", T_U16: "<H", T_U32: "<I", T_I32: "<i", T_F32: "<f", T_I64: "<q", T_I16: "<h"}
 
 
 def pack_value(t, v):

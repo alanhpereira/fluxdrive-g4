@@ -46,6 +46,9 @@ static const obj_t k_tab[] = {
 	{0x4001, 10, T_U32, OF_RO, F(s_st.seq), NOLIM},
 	{0x4001, 11, T_U8, OF_RO, F(s_st.brk), NOLIM},
 	{0x4001, 12, T_U8, OF_RO, F(s_st.ready), NOLIM},
+	{0x4001, 13, T_U8, OF_RO, F(g_trip), NOLIM},
+	{0x4001, 14, T_U8, OF_RO, F(g_trip_moe), NOLIM},
+	{0x4001, 15, T_U8, OF_RO, F(g_coasting), NOLIM},
 	/* 0x4002 diagnostics */
 	{0x4002, 1, T_U32, OF_RO, F(g_loop_cyc), NOLIM},
 	{0x4002, 2, T_U32, 0, F(g_loop_cyc_max), 0.0f, 0.0f},
@@ -57,6 +60,7 @@ static const obj_t k_tab[] = {
 	{0x4002, 8, T_U8, OF_RO, F(hMT6835.crc_check), NOLIM},
 	{0x4002, 9, T_U32, 0, F(g_proto_err), 0.0f, 0.0f},
 	{0x4002, 10, T_U32, 0, F(g_tlm_drop), 0.0f, 0.0f},
+	{0x4002, 11, T_U32, 0, F(g_ov_resumes), 0.0f, 0.0f},
 	/* 0x4010 motor */
 	{0x4010, 1, T_F32, OF_STORED, F(g_params.kv), 0.0f, 1.0e5f},
 	{0x4010, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.pole_pairs), 1.0f, 64.0f},
@@ -87,6 +91,16 @@ static const obj_t k_tab[] = {
 	{0x4022, 1, T_F32, OF_STORED, F(g_params.vbus_min), 0.0f, 100.0f},
 	{0x4022, 2, T_F32, OF_STORED, F(g_params.vbus_max), 0.0f, 100.0f},
 	{0x4022, 3, T_F32, OF_STORED, F(g_params.temp_max), -40.0f, 200.0f},
+	{0x4022, 4, T_F32, OF_STORED, F(g_params.vbus_clamp), 0.0f, 20.0f},
+	{0x4022, 5, T_F32, OF_STORED, F(g_params.vbus_resume), 0.0f, 20.0f},
+	/* 0x4023 current sensing: stored offsets (CAL_CUR_OFF), then the ones in use (boot measurement or fallback) */
+	{0x4023, 1, T_I16, OF_STORED | OF_NOTRUN, F(g_params.cur_off[0]), -300.0f, 300.0f},
+	{0x4023, 2, T_I16, OF_STORED | OF_NOTRUN, F(g_params.cur_off[1]), -300.0f, 300.0f},
+	{0x4023, 3, T_I16, OF_STORED | OF_NOTRUN, F(g_params.cur_off[2]), -300.0f, 300.0f},
+	{0x4023, 4, T_I16, OF_RO, F(g_cs_off[0]), NOLIM},
+	{0x4023, 5, T_I16, OF_RO, F(g_cs_off[1]), NOLIM},
+	{0x4023, 6, T_I16, OF_RO, F(g_cs_off[2]), NOLIM},
+	{0x4023, 7, T_U8, OF_RO, F(g_cs_off_src), NOLIM},
 	/* 0x4030 observer */
 	{0x4030, 1, T_U8, OF_STORED, F(g_params.obs_blend), 0.0f, 1.0f},
 	{0x4030, 2, T_F32, OF_STORED, F(g_params.obs_gain), 0.0f, 1.0e6f},
@@ -105,7 +119,7 @@ static const obj_t k_tab[] = {
 };
 #define N_OBJ ((int)(sizeof k_tab / sizeof k_tab[0]))
 
-static const uint8_t k_size[] = {0, 1, 1, 2, 4, 4, 4, 8}; /* by type */
+static const uint8_t k_size[] = {0, 1, 1, 2, 4, 4, 4, 8, 2}; /* by type */
 
 /* FNV-1a, 32 bit */
 static uint32_t fnv(uint32_t h, uint8_t b) {
@@ -193,6 +207,9 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 			break;
 		case T_U16:
 			x = (float)(uint16_t)(v[0] | v[1] << 8);
+			break;
+		case T_I16:
+			x = (float)(int16_t)(v[0] | v[1] << 8);
 			break;
 		case T_U32: {
 			uint32_t u;

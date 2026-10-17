@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-#define PROTO_VERSION 3u
+#define PROTO_VERSION 4u
 #define PROTO_MAX_LEN 64u
 
 /* message types, host -> device; the reply is (type | MSG_REPLY) with the same tok */
@@ -40,6 +40,7 @@ enum {
 	CAL_ZERO,	 /* 'z', reset the encoder zero */
 	CAL_HFI_MAP, /* HFI saliency map, arg = id bias A, 0 = 0/0.25/0.5 x rated and hfi_id, stores hfi_sal */
 	CAL_HFI_POL, /* HFI lock from a random angle + polarity check, compared with the encoder */
+	CAL_CUR_OFF, /* current-sense zero offsets, rotor still; stores cur_off */
 	CAL_N
 };
 
@@ -90,6 +91,9 @@ typedef enum {
 	ST_NEED_TUNE,	 /* run the PI autotune ('t') first */
 	ST_NEED_KV,		 /* set kv first ('k', or from the datasheet) */
 	ST_NEED_ENC_POS, /* position mode needs the encoder (ang_src 0 or 1) */
+	ST_VBUS_HIGH,	 /* bus voltage above vbus_max */
+	ST_TRIPPED,		 /* a trip is latched: STOP resets it once the motor has coasted down */
+	ST_CUR_OFF_BAD,	 /* current-sense offsets implausible (rotor turning? sense stage?) */
 	ST_N
 } st_t;
 
@@ -106,6 +110,7 @@ enum {
 	EV_STOPPED,		 /* status, id, iq: the run watchdog switched off */
 	EV_RPM_LIMITED,	 /* rpm: speed setpoint limited to vlim */
 	EV_CUR_LIMITED,	 /* rated A: current setpoint limited */
+	EV_RESUMED,		 /* bus V, resumes so far: an overvoltage coast ended by itself, the run carries on */
 	EV_ALIGN = 0x10, /* - */
 	EV_SWEEP,		 /* electrical revolutions */
 	EV_OFFSET_AVG,	 /* - */
@@ -125,6 +130,7 @@ enum {
 	EV_HFI_FIT,		 /* bias (A), a0, a2, b2 (1/H: 1/L = a0 + a2 cos 2phi + b2 sin 2phi), saliency, stored (0/1) */
 	EV_HFI_POL,		 /* error before (deg elec, HFI - encoder), error after, flipped (0/1), contrast */
 	EV_HFI_START,	 /* sensorless start (tok 0) or sensorless polarity test: contrast, flipped (0/1), HFI - encoder (deg elec) */
+	EV_CUR_OFF,		 /* offset a, b, c (counts from 2048), spread a, b, c (counts), stored (0/1) */
 };
 
 void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() and MX_USB_Device_Init() */

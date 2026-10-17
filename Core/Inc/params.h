@@ -17,7 +17,7 @@
 #define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo_v; no encoder in the loop, position mode refused */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 6u /* bump when the struct layout changes: older copies are rejected, defaults load */
+#define PARAM_VERSION 7u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -49,6 +49,8 @@ typedef struct {
 	/* limits */
 	float vbus_min, vbus_max; /* V */
 	float temp_max;			  /* deg C */
+	float vbus_clamp;		  /* V below vbus_max where the regen clamp starts cutting braking current; 0 = off */
+	float vbus_resume;		  /* V below vbus_max the bus must fall to before an OV coast resumes */
 
 	/* outer loops */
 	float vel_kp;  /* A per turn/s */

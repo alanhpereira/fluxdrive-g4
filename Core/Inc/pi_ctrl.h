@@ -46,13 +46,14 @@ static inline float pi_run(volatile pi_t* c, float err, float lim) {
 	return u;
 }
 
-/* d and q current loops sharing a voltage circle of radius vmax; d gets priority, q gets what is left */
-static inline void pi_current_step(float id, float iq, float vmax, float* vd, float* vq) {
+/* d and q current loops sharing a voltage circle of radius vmax; d gets priority, q gets what is left.
+ * iq_ref: g_iq_ref after the regen clamp */
+static inline void pi_current_step(float id, float iq, float iq_ref, float vmax, float* vd, float* vq) {
 	float d = pi_run(&g_pi_d, g_id_ref - id, vmax);
 	float r2 = vmax * vmax - d * d;
 	float vq_max = r2 > 0.0f ? sqrtf(r2) : 0.0f;
 	*vd = d;
-	*vq = pi_run(&g_pi_q, g_iq_ref - iq, vq_max);
+	*vq = pi_run(&g_pi_q, iq_ref - iq, vq_max);
 }
 
 #endif

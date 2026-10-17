@@ -41,7 +41,7 @@ def enum_values(body):
 
 # ---------------------------------------------------------------- object table
 c = src("Core/Src/objdict.c")
-types = {"T_U8": 1, "T_I8": 2, "T_U16": 3, "T_U32": 4, "T_I32": 5, "T_F32": 6, "T_I64": 7}
+types = {"T_U8": 1, "T_I8": 2, "T_U16": 3, "T_U32": 4, "T_I32": 5, "T_F32": 6, "T_I64": 7, "T_I16": 8}
 flags = {"OF_RO": O.RO, "OF_STORED": O.STORED, "OF_PI": O.PI, "OF_NOTRUN": O.NOTRUN, "0": 0}
 fw = []
 for idx, sub, t, fl in re.findall(r"\{\s*(0x[0-9A-Fa-f]+),\s*(\d+),\s*(T_\w+),\s*([\w |]+?),\s*F\(", c):

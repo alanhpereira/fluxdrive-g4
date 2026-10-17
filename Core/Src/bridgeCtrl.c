@@ -4,11 +4,16 @@
 #include "dac.h"
 #include "i2c.h"
 
+#include <math.h>
+
+#include "calib.h" /* g_vel, COAST_END_TURNS, SL_REARM_MS */
+
 static uint8_t fault_reg;
 int32_t g_pwm_res;
 int32_t g_max_duty_cycle;
 int32_t g_half_duty_cycle;
 uint32_t g_lastFaultCleared;
+volatile uint8_t g_trip_moe;
 
 void disableBridge() {
 	htim1.Instance->CCR1 = 0;
@@ -93,13 +98,33 @@ HAL_StatusTypeDef readBridgeStatus(uint8_t* status) {
 /* Returns 0 if the bridge is running, 1 if a fault was just cleared, negative while still faulted
  * (BRIDGE_ERR_* or -(status fault bits)). The I2C traffic only happens while faulted, and at most
  * every FAULT_RETRY_MS, so calling this from every loop is cheap. */
+/* re-arming loads zero duty (and SVPWM() waits FAULT_CLEAR_MIN_TIME): the zero vector, which short-brakes a
+ * spinning motor. Encoder modes: only below COAST_END_TURNS. Sensorless cannot see the speed with the bridge
+ * off: wait SL_REARM_MS. Until MOE has been on once (latched power-up faults) it does not wait */
+static uint8_t s_was_on; /* MOE has been on since boot */
+
+static int rearm_safe(uint32_t off_ms) {
+	if (!s_was_on) return 1;
+	if (g_params.ang_src == ANG_SENSORLESS) return off_ms >= SL_REARM_MS;
+	return fabsf(g_vel) < COAST_END_TURNS;
+}
+
 int32_t checkAndClearBridgeFault() {
-	static uint32_t last_try;
-	static uint8_t i2c_fails;
+	static uint32_t last_try, off_since;
+	static uint8_t i2c_fails, was_off;
 
 	int moe_off = (TIM1->BDTR & TIM_BDTR_MOE) == 0;
 	int brk_set = (TIM1->SR & (TIM_SR_BIF | TIM_SR_B2IF)) != 0;
-	if (!moe_off && !brk_set) return 0;
+	if (!moe_off && !brk_set) {
+		was_off = 0;
+		s_was_on = 1;
+		return 0;
+	}
+	if (!was_off) {
+		was_off = 1;
+		off_since = HAL_GetTick();
+	}
+	if (g_trip_moe) return BRIDGE_ERR_TRIP; /* re-arming would short-brake the coasting motor */
 
 	uint32_t now = HAL_GetTick();
 	if (now - last_try < FAULT_RETRY_MS) return BRIDGE_ERR_WAIT;
@@ -125,6 +150,7 @@ int32_t checkAndClearBridgeFault() {
 	}
 
 	if (!(GPIOE->IDR & GPIO_PIN_15)) return BRIDGE_ERR_NFAULT; /* nFAULT still low: break input active */
+	if (!rearm_safe(now - off_since)) return BRIDGE_ERR_SPIN;
 
 	setDuty(0, 0, 0);
 	TIM1->EGR = TIM_EGR_UG; // load zero duty now (also resets the counter)

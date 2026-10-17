@@ -13,7 +13,8 @@ enum { T_U8 = 1,
 	   T_U32,
 	   T_I32,
 	   T_F32,
-	   T_I64 };
+	   T_I64,
+	   T_I16 };
 
 #define OF_RO 0x01	   /* read only */
 #define OF_STORED 0x02 /* lives in g_params, saved by MSG_SAVE */

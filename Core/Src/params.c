@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "curSnsCtrl.h" /* CS_OFF_DEFAULT */
+
 /* Two 2 KB pages at the very end of the 128 KB flash (pages 62 and 63).
  * Reserve them in the linker script: set the FLASH length to 124K. */
 #define SLOT_ADDR(i) (FLASH_BASE + (uint32_t)(62 + (i)) * FLASH_PAGE_SIZE)
@@ -24,14 +26,16 @@ static const motor_params_t k_defaults = {
 	.pole_pairs = 7,
 	.enc_dir = 1,
 	.ang_src = ANG_ENC_OBS,
-	.cur_off = {0, 0, 0},
+	.cur_off = CS_OFF_DEFAULT, /* replaced by CAL_CUR_OFF (and measured at every boot) */
 	.kp_d = 0.0f,
 	.ki_d = 0.0f,
 	.kp_q = 0.0f,
 	.ki_q = 0.0f,
 	.vbus_min = 8.0f,
-	.vbus_max = 30.0f,
+	.vbus_max = 60.0f, /* ISR trip; the board is rated ~75 V */
 	.temp_max = 80.0f,
+	.vbus_clamp = 3.0f,
+	.vbus_resume = 2.0f,
 	.vel_kp = 0.0f, /* tune before speed/position mode */
 	.vel_ki = 0.0f,
 	.pos_kp = 20.0f,

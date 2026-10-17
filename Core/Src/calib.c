@@ -49,8 +49,27 @@ void cmd_init(void) {
 #define EV(code, ...) proto_event(s_tok, code, sizeof((const float[]){__VA_ARGS__}) / sizeof(float), (const float[]){__VA_ARGS__})
 #define EV0(code) proto_event(s_tok, code, 0, NULL)
 
-/* speed/position mode: brake to (almost) zero speed under the speed loop first, so switching off
- * does not short-brake a spinning motor. Then ramp the current references to zero and switch off */
+/* set while CTRL_RUN only holds zero current until the motor is slow enough for CTRL_OFF (run_watchdog()) */
+volatile uint8_t g_coasting;
+
+/* from CTRL_RUN: CTRL_OFF puts the zero vector on the motor, which short-brakes it (about lambda / L of
+ * current at speed, far above imax). So switch off only below COAST_END_TURNS; faster, keep the current loop
+ * at id = iq = 0 and let run_watchdog() switch off once the motor has slowed down. A run command takes over */
+static void coast_or_off(void) {
+	g_loop = LOOP_CURRENT;
+	g_id_ref = 0.0f;
+	g_iq_ref = 0.0f;
+	if (g_mode == CTRL_RUN && !(fabsf(g_vel) < COAST_END_TURNS)) {
+		g_coasting = 1;
+		return;
+	}
+	g_coasting = 0;
+	g_mode = CTRL_OFF;
+}
+
+/* speed/position mode: brake to (almost) zero speed under the speed loop first (the regen clamp keeps the
+ * bus in check, the ISR trip the current). Then ramp the current references to zero and switch off, or coast
+ * if the motor is still turning: current mode, or the braking took too long */
 static void run_stop(void) {
 	if (g_loop != LOOP_CURRENT) {
 		g_vel_ref = 0.0f;
@@ -58,7 +77,7 @@ static void run_stop(void) {
 		uint32_t t0 = HAL_GetTick();
 		while (fabsf(g_vel) > 0.2f && HAL_GetTick() - t0 < 3000) {
 			HAL_Delay(1);
-			if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) break;
+			if (g_trip) return; /* the ISR coasts at zero current, trip_watchdog() ends it */
 		}
 		g_loop = LOOP_CURRENT; /* currentLoop() leaves g_iq_ref at its last value */
 	}
@@ -67,14 +86,21 @@ static void run_stop(void) {
 		g_iq_ref *= 0.8f;
 		HAL_Delay(5);
 	}
-	g_mode = CTRL_OFF;
-	g_id_ref = 0.0f;
-	g_iq_ref = 0.0f;
+	if (g_trip) return;
+	coast_or_off();
 }
 
 static void finish(void) {
 	g_hfi_cmd = HFI_OFF;
-	if (g_mode == CTRL_RUN) run_stop();
+	if (g_trip && g_mode == CTRL_RUN) { /* coasting at zero current: no braking here, run_watchdog() ends it */
+		g_vd_cmd = 0;
+		g_vq_cmd = 0;
+		return;
+	}
+	if (g_mode == CTRL_RUN) {
+		run_stop(); /* CTRL_OFF, or coasting in CTRL_RUN */
+		return;
+	}
 	for (int i = 0; i < 20; i++) { /* ramp voltage down instead of stepping it */
 		g_vd_cmd *= 0.8f;
 		g_vq_cmd *= 0.8f;
@@ -101,14 +127,16 @@ static st_t sl_lost(void) {
  * STOP abort, anything else gets ST_BUSY */
 static st_t chk(void) {
 	if (proto_poll(1)) return ST_ABORTED;
+	if (g_trip) return g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT; /* the ISR trip (overcurrent too) */
 	if (checkAndClearBridgeFault() != 0) return ST_BRIDGE_FAULT;
 	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
-	if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
+	if (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) return ST_VBUS_HIGH;
 	if (sl_lost() != ST_OK) return ST_HFI_LOST;
 	return ST_OK;
 }
 
 static st_t precheck(void) {
+	if (g_trip) return ST_TRIPPED;
 	if (!(TIM1->BDTR & TIM_BDTR_MOE)) return ST_BRIDGE_OFF;
 	if (g_params.rated_current <= 0.0f || g_params.max_current <= 0.0f) return ST_NEED_RATED;
 	return chk();
@@ -554,6 +582,7 @@ static st_t cal_kv(void) {
 static st_t cal_enter(void) {
 	st_t e = precheck();
 	if (e) return e;
+	g_coasting = 0; /* a coasting motor is picked up as it is: the current loop never stopped */
 	if (g_mode != CTRL_RUN) {
 		g_mode = CTRL_OFF; /* currentLoop() holds the integrators at zero */
 		HAL_Delay(1);
@@ -803,9 +832,49 @@ static st_t cal_hfi_pol(void) {
 	return ST_OK;
 }
 
-/* called from cmd_poll() while running: stop on fault, low bus or overcurrent */
+/* the ISR trips (g_trip), in any mode: report once, then end the zero-current coast once the motor is slow
+ * (or at once when the bridge is off). Returns 1 while a trip is latched */
+static int trip_watchdog(void) {
+	static uint8_t reported;
+	static uint32_t resumes_seen;
+	const uint32_t r = g_ov_resumes;
+	if (r != resumes_seen) { /* the ISR ended an OV coast by itself (lower: the counter was cleared) */
+		if (r > resumes_seen) {
+			const float v[2] = {g_vin, (float)r};
+			proto_event(0, EV_RESUMED, 2, v);
+		}
+		resumes_seen = r;
+	}
+	if (!g_trip) {
+		reported = 0;
+		return 0;
+	}
+	if (!reported) {
+		reported = 1;
+		const float v[3] = {(float)(g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT), g_id, g_iq};
+		proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
+	}
+	if (g_mode == CTRL_RUN && !g_trip_moe && !(fabsf(g_vel) < COAST_END_TURNS)) return 1; /* still coasting */
+	g_coasting = 0;
+	if (g_mode != CTRL_OFF) {
+		g_mode = CTRL_OFF;
+		g_hfi_cmd = HFI_OFF;
+		g_loop = LOOP_CURRENT;
+		g_id_ref = 0.0f;
+		g_iq_ref = 0.0f;
+	}
+	return 1;
+}
+
+/* called from cmd_poll(): the trips, then while running: stop on fault, low bus, overspeed or lost HFI, and
+ * end a coast (g_coasting) once the motor is slow. A stop never short-brakes: it coasts at zero current
+ * (coast_or_off()), or switches the bridge off when the angle is gone or the bridge already is */
 static void run_watchdog(void) {
-	if (g_mode != CTRL_RUN) return;
+	if (trip_watchdog()) return;
+	if (g_mode != CTRL_RUN) {
+		g_coasting = 0;
+		return;
+	}
 	st_t e = ST_OK;
 	if (g_hfi_start_done) { /* report the sensorless start (its polarity pulses); refuse to run on a coin toss */
 		g_hfi_start_done = 0;
@@ -815,18 +884,31 @@ static void run_watchdog(void) {
 	}
 	if (e) /* the start verdict above */
 		;
-	else if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) e = ST_OVERCURRENT;
 	else if (!(TIM1->BDTR & TIM_BDTR_MOE) || checkAndClearBridgeFault() != 0) e = ST_BRIDGE_FAULT;
 	else if (g_vin < g_params.vbus_min) e = ST_VBUS_LOW;
 	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
 	else if (sl_lost() != ST_OK) e = ST_HFI_LOST; /* sensorless: HFI stopped tracking */
-	if (!e) return;
+	if (g_coasting && (e == ST_VBUS_LOW || e == ST_OVERSPEED)) e = ST_OK; /* the coast already is the reaction */
+	if (!e) {
+		if (g_coasting && fabsf(g_vel) < COAST_END_TURNS) {
+			g_coasting = 0;
+			g_mode = CTRL_OFF;
+		}
+		return;
+	}
 
-	g_mode = CTRL_OFF; /* immediately, no ramp: the loop is not in control any more */
+	/* immediately, no ramp: the outer loops are not in control any more */
 	g_hfi_cmd = HFI_OFF;
-	g_loop = LOOP_CURRENT;
-	g_id_ref = 0.0f;
-	g_iq_ref = 0.0f;
+	if (e == ST_HFI_LOST) TIM1->BDTR &= ~TIM_BDTR_MOE; /* no angle for the current loop: bridge off, it coasts */
+	if (TIM1->BDTR & TIM_BDTR_MOE)
+		coast_or_off();
+	else { /* off already: checkAndClearBridgeFault() re-arms it once the zero vector is harmless */
+		g_loop = LOOP_CURRENT;
+		g_id_ref = 0.0f;
+		g_iq_ref = 0.0f;
+		g_coasting = 0;
+		g_mode = CTRL_OFF;
+	}
 	const float v[3] = {(float)e, g_id, g_iq};
 	proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 }
@@ -856,6 +938,22 @@ static st_t cal_zero(void) {
 	return ST_OK;
 }
 
+/* zero offsets of the three current-sense channels, at zero volts with the rotor still; stored on success */
+static st_t cal_cur_off(void) {
+	st_t e = precheck();
+	if (e) return e;
+	int16_t m[3], sp[3];
+	const int ok = cs_measure_offsets(m, sp);
+	if (ok) {
+		memcpy(g_params.cur_off, m, sizeof m);
+		g_params.flags |= PF_CUR_CAL_VALID;
+		cs_set_offsets(m);
+		g_cs_off_src = CS_OFF_SRC_STORED;
+	}
+	EV(EV_CUR_OFF, m[0], m[1], m[2], sp[0], sp[1], sp[2], ok);
+	return ok ? ST_OK : ST_CUR_OFF_BAD;
+}
+
 static void home(void) {
 	if (g_mode == CTRL_RUN) run_stop(); /* a moving zero would kick the position loop */
 	g_home_req = 1;						/* currentLoop() takes the present position as 0 */
@@ -872,6 +970,7 @@ static st_t (*const k_cal[CAL_N])(void) = {
 	[CAL_ZERO] = cal_zero,
 	[CAL_HFI_MAP] = cal_hfi_map,
 	[CAL_HFI_POL] = cal_hfi_pol,
+	[CAL_CUR_OFF] = cal_cur_off,
 };
 
 /* ACK first, then the routine blocks here (chk() keeps serving READ/ABORT/STOP), EV_DONE at the end */
@@ -897,6 +996,11 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 	pos_q32_t t;
 	st_t e = ST_OK;
 	s_tok = tok; /* EV() reports to this request */
+	if (g_trip && type != MSG_STOP && type != MSG_REBOOT) { /* SAVE would re-arm the bridge (initBridge()) */
+		proto_reply_st(type, tok, ST_TRIPPED);
+		s_tok = 0;
+		return;
+	}
 	switch (type) {
 		case MSG_CAL:
 			cal_message(p, len);
@@ -933,6 +1037,15 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 			finish();
 			break;
 		case MSG_STOP:
+			if (g_trip) { /* reset the trip, once the coast has ended; the bridge re-arms if it was switched off */
+				if (g_mode != CTRL_OFF)
+					e = ST_TRIPPED;
+				else {
+					g_trip_moe = 0;
+					g_trip = TRIP_NONE;
+				}
+				break;
+			}
 			finish(); /* ramps down and switches off */
 			break;
 		case MSG_REBOOT:

@@ -3,7 +3,7 @@ PC copy of the object table in Core/Src/objdict.c. Keep the same entries in the 
 index, sub, type and flags: both sides hash them (table_hash()) and the GUI warns when they differ.
 Everything else here (labels, units, display scale, limits, help) is presentation and only lives here.
 """
-from protocol import T_U8, T_I8, T_U16, T_U32, T_I32, T_F32
+from protocol import T_U8, T_I8, T_U16, T_U32, T_I32, T_F32, T_I16
 
 RO, STORED, PI, NOTRUN = 0x01, 0x02, 0x04, 0x08
 
@@ -57,8 +57,8 @@ class Obj:
 
 
 G_INFO, G_STATUS, G_DIAG = "Device info", "Status", "Diagnostics"
-G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI = ("Motor", "Current loop", "Speed / position", "Limits", "Observer",
-                                                "HF injection")
+G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI = ("Motor", "Current loop", "Speed / position", "Limits",
+                                                         "Current sensing", "Observer", "HF injection")
 BW_MAX = 25000.0 / 20
 
 OBJECTS = [
@@ -80,6 +80,11 @@ OBJECTS = [
     Obj(0x4001, 10, T_U32, RO, "seq", "Flash save count", group=G_STATUS),
     Obj(0x4001, 11, T_U8, RO, "brk", "TIM1 break latched", group=G_STATUS),
     Obj(0x4001, 12, T_U8, RO, "ready", "Gate driver READY", group=G_STATUS),
+    Obj(0x4001, 13, T_U8, RO, "trip", "Trip", group=G_STATUS,
+        help="0 none, 1 bus overvoltage, 2 overcurrent; STOP resets it once the motor has coasted down"),
+    Obj(0x4001, 14, T_U8, RO, "trip_moe", "Trip switched the bridge off", group=G_STATUS),
+    Obj(0x4001, 15, T_U8, RO, "coasting", "Coasting to a stop", group=G_STATUS,
+        help="a stop holds zero current until the motor is below 30 rpm, then switches off (never short-brakes)"),
     # 0x4002 diagnostics (write 0 clears)
     Obj(0x4002, 1, T_U32, RO, "loop_cyc", "currentLoop() time", "cycles", group=G_DIAG),
     Obj(0x4002, 2, T_U32, 0, "loop_cyc_max", "currentLoop() max", "cycles", lo=0, hi=0, group=G_DIAG),
@@ -93,6 +98,8 @@ OBJECTS = [
     Obj(0x4002, 9, T_U32, 0, "proto_err", "Protocol RX errors", lo=0, hi=0, group=G_DIAG),
     Obj(0x4002, 10, T_U32, 0, "tlm_drop", "Telemetry drops", lo=0, hi=0, group=G_DIAG,
         help="frames that found the link queue full (USB host not reading fast enough)"),
+    Obj(0x4002, 11, T_U32, 0, "ov_resumes", "Overvoltage resumes", lo=0, hi=0, group=G_DIAG,
+        help="overvoltage coasts that ended by themselves once the bus came back down"),
     # 0x4010 motor
     Obj(0x4010, 1, T_F32, STORED, "kv", "kv", "rpm/V", lo=0, hi=1e5, group=G_MOTOR, decimals=1,
         help="back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it"),
@@ -107,7 +114,7 @@ OBJECTS = [
     Obj(0x4010, 9, T_F32, STORED, "rated", "Rated current", "A", lo=0, hi=50, group=G_MOTOR, decimals=2,
         help="calibration currents are fractions of it; current commands are limited to it"),
     Obj(0x4010, 10, T_F32, STORED, "imax", "Max current", "A", lo=0, hi=50, group=G_MOTOR, decimals=2,
-        help="hard trip: the watchdog stops above it"),
+        help="trip after 120 µs above it: zero-current coast; bridge off if the current keeps rising (1.5x, or 5 ms)"),
     Obj(0x4010, 11, T_U32, STORED | NOTRUN, "flags", "Calibration flags", lo=0, hi=255, group=G_MOTOR,
         help="1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned. Restored by JSON import"),
     # 0x4011 angle source
@@ -133,8 +140,25 @@ OBJECTS = [
     # 0x4022 limits
     Obj(0x4022, 1, T_F32, STORED, "vmin", "Bus min", "V", lo=0, hi=100, group=G_LIM, decimals=1,
         help="calibration and run stop below it"),
-    Obj(0x4022, 2, T_F32, STORED, "vmax", "Bus max", "V", lo=0, hi=100, group=G_LIM, decimals=1, help="not used yet"),
+    Obj(0x4022, 2, T_F32, STORED, "vmax", "Bus max", "V", lo=0, hi=100, group=G_LIM, decimals=1,
+        help="trip after 1 ms above it: zero-current coast (no regen, no braking), resumes once the bus is "
+             "below vmax - vresume; outside a run STOP resets. 0 = off"),
     Obj(0x4022, 3, T_F32, STORED, "tmax", "Max temperature", "°C", lo=-40, hi=200, group=G_LIM, decimals=0, help="not used yet"),
+    Obj(0x4022, 4, T_F32, STORED, "vclamp", "Regen clamp band", "V", lo=0, hi=20, group=G_LIM, decimals=1,
+        help="braking current falls linearly to zero from vmax - vclamp to vmax, so decelerations stay within "
+             "what the bus can take; motoring is never limited. 0 = off"),
+    Obj(0x4022, 5, T_F32, STORED, "vresume", "Overvoltage resume margin", "V", lo=0, hi=20, group=G_LIM, decimals=1,
+        help="after an overvoltage trip the run resumes once the bus has been below vmax - vresume for 10 ms"),
+    # 0x4023 current sensing
+    Obj(0x4023, 1, T_I16, STORED | NOTRUN, "coff_a", "Current offset A", "counts", lo=-300, hi=300, group=G_SENSE,
+        help="ADC zero - 2048, stored by the current-offset calibration ('c'); the fallback when the boot "
+             "measurement is not trusted"),
+    Obj(0x4023, 2, T_I16, STORED | NOTRUN, "coff_b", "Current offset B", "counts", lo=-300, hi=300, group=G_SENSE),
+    Obj(0x4023, 3, T_I16, STORED | NOTRUN, "coff_c", "Current offset C", "counts", lo=-300, hi=300, group=G_SENSE),
+    Obj(0x4023, 4, T_I16, RO, "coff_a_use", "Offset A in use", "counts", group=G_DIAG),
+    Obj(0x4023, 5, T_I16, RO, "coff_b_use", "Offset B in use", "counts", group=G_DIAG),
+    Obj(0x4023, 6, T_I16, RO, "coff_c_use", "Offset C in use", "counts", group=G_DIAG),
+    Obj(0x4023, 7, T_U8, RO, "coff_src", "Offsets from", group=G_DIAG, help="0 default, 1 stored, 2 measured at boot"),
     # 0x4030 observer
     Obj(0x4030, 1, T_U8, STORED, "oblend", "Blend observer", lo=0, hi=1, group=G_OBS,
         help="1: blend into angle and speed above olo; 0: run and log it only"),
@@ -165,7 +189,7 @@ OBJECTS = [
 
 BY_KEY = {o.key: o for o in OBJECTS}
 BY_ADDR = {(o.index, o.sub): o for o in OBJECTS}
-PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_OBS, G_HFI]
+PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI]
 
 # PF_* in params.h
 PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID = 1, 2, 4, 8, 16

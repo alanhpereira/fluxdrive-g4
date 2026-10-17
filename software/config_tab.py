@@ -21,6 +21,7 @@ C_LOCALE = QtCore.QLocale.c()  # '.' decimals whatever the OS locale: with ',' l
 
 # calibration steps: (key, CAL which, label, done flag (None: optional), takes a test current, safety prompt)
 STEPS = [
+    ("c", P.CAL_CUR_OFF, "Current-sense offsets (rotor still)", O.PF_CUR_CAL_VALID, False, None),
     ("e", P.CAL_ENC, "Encoder: dir, pole pairs, offset", O.PF_ELEC_OFFSET_VALID, False,
      "The rotor turns slowly under a forced field (about 20 electrical turns, then one mechanical turn each way).\n"
      "The shaft must be free to turn."),
@@ -47,10 +48,13 @@ ARG_TIPS = {
          "an explicit current maps that bias only and stores nothing",
 }
 
-STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "vin", "busy", "dirty", "seq"]
+STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "trip", "trip_moe", "coasting", "vin", "busy",
+               "dirty", "seq"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
-             "enc_crc_check", "proto_err"]
-CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err"]
+             "enc_crc_check", "proto_err", "ov_resumes", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src"]
+TRIPS = {1: "bus overvoltage", 2: "overcurrent"}
+COFF_SRC = {0: "default", 1: "stored", 2: "measured at boot"}
+CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err", "ov_resumes"]
 
 
 def bits(v, table):
@@ -253,9 +257,10 @@ class ConfigTab(QtWidgets.QWidget):
                 f.addRow(label, lb)
                 self.st_lbl[key] = lb
             return g, f
-        status, _ = box("Status / faults", [("state", "State"), ("bridge", "Bridge"), ("drv", "Gate driver"),
-                                             ("vin", "Bus voltage"), ("flash", "Flash")])
-        stats, f = box("Statistics", [("loop", "Loop time"), ("enc", "Encoder"), ("link", "Link")])
+        status, _ = box("Status / faults", [("state", "State"), ("bridge", "Bridge"), ("trip", "Trip"),
+                                             ("drv", "Gate driver"), ("vin", "Bus voltage"), ("flash", "Flash")])
+        stats, f = box("Statistics", [("loop", "Loop time"), ("enc", "Encoder"), ("coff", "Current offsets"),
+                                      ("link", "Link")])
         self.st_lbl["loop"].setToolTip("currentLoop() time: the max must stay under ~19 µs")
         b = QtWidgets.QPushButton("Clear max / counters")
         b.clicked.connect(self.clear_counters)
@@ -663,6 +668,10 @@ class ConfigTab(QtWidgets.QWidget):
             self.log(text, RED)
             self.set_banner(f"<span style='color:{RED}; font-weight:bold'>{text}</span>")
             return
+        if code == P.EV_RESUMED:
+            self.log(text, ORANGE)
+            self.set_banner(f"<span style='color:{ORANGE}; font-weight:bold'>{text}</span>")
+            return
         if code in (P.EV_HOLD_SHAFT, P.EV_UNLOAD_SHAFT, P.EV_EEPROM_WAIT) and vals:
             label = {P.EV_HOLD_SHAFT: "HOLD THE SHAFT: q test starts in", P.EV_UNLOAD_SHAFT: "motor spins in",
                      P.EV_EEPROM_WAIT: "encoder EEPROM write, wait"}[code]
@@ -716,7 +725,8 @@ class ConfigTab(QtWidgets.QWidget):
             busy = g("busy", 0)
             btxt = f"  — calibrating ({P.CAL_NAMES.get(busy, busy)})" if busy else ""
             self.st_lbl["state"].setText(f"{MODES.get(g('mode'), g('mode'))}"
-                                         + (f", {LOOPS.get(g('loop'), g('loop'))} loop" if g("mode") == 2 else "") + btxt)
+                                         + ((", coasting to a stop" if g("coasting") else f", {LOOPS.get(g('loop'), g('loop'))} loop")
+                                            if g("mode") == 2 else "") + btxt)
         if "moe" in s:
             moe = g("moe")
             warn = [t for k, bad, t in (("nfault", 0, "nFAULT low"), ("brk", 1, "break latched"), ("ready", 0, "READY low"))
@@ -724,6 +734,17 @@ class ConfigTab(QtWidgets.QWidget):
             self.st_lbl["bridge"].setText(
                 ("<span style='color:%s'>enabled</span>" % GREEN if moe else "<span style='color:%s'>DISABLED</span>" % RED)
                 + "".join("  <span style='color:%s'>%s</span>" % (RED, t) for t in warn))
+        if "trip" in s:
+            t = g("trip")
+            self.st_lbl["trip"].setText(
+                ("none" if not t else "<span style='color:%s'>%s%s</span>"
+                 % (RED, TRIPS.get(t, t), ", bridge switched off — STOP resets" if g("trip_moe") else
+                    (", coasting at zero current, resumes when the bus drops" if t == 1 else
+                     ", coasting at zero current — STOP resets at standstill") if g("mode") == 2 else " — STOP resets"))
+                + (f"<br>{g('ov_resumes')} overvoltage resumes" if g("ov_resumes") else ""))
+        if all(k in s for k in ("coff_a_use", "coff_b_use", "coff_c_use", "coff_src")):
+            self.st_lbl["coff"].setText(f"{g('coff_a_use'):+d} {g('coff_b_use'):+d} {g('coff_c_use'):+d} counts "
+                                        f"({COFF_SRC.get(g('coff_src'), g('coff_src'))})")
         if "drv" in s:
             d = g("drv")
             self.st_lbl["drv"].setText("<span style='color:%s'>I2C error</span>" % RED if d & 0x100 else f"0x{d:02X}  {bits(d, DRV_BITS)}")

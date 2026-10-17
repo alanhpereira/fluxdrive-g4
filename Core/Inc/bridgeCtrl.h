@@ -34,6 +34,16 @@ static inline void setSamplePoint(uint32_t p) {
 #define BRIDGE_ERR_NFAULT (-16) /* status clean but nFAULT still low */
 #define BRIDGE_ERR_I2C (-32)	/* driver did not answer */
 #define BRIDGE_ERR_WAIT (-64)	/* still faulted, next attempt after FAULT_RETRY_MS */
+#define BRIDGE_ERR_TRIP (-128)	/* switched off by a trip (g_trip_moe): not re-armed until STOP resets it */
+#define BRIDGE_ERR_SPIN (-256)	/* ready, but the motor may still turn too fast for the zero vector (rearm_safe()) */
+
+/* last resort of the trips in currentLoop(): outputs to their idle (off) state, the motor coasts.
+ * checkAndClearBridgeFault() leaves MOE off while g_trip_moe is set */
+extern volatile uint8_t g_trip_moe;
+static inline void bridge_trip_off(void) {
+	TIM1->BDTR &= ~TIM_BDTR_MOE;
+	g_trip_moe = 1;
+}
 
 int32_t checkAndClearBridgeFault();
 HAL_StatusTypeDef readBridgeStatus(uint8_t* status);

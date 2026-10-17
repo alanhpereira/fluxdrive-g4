@@ -85,6 +85,7 @@ HAL_StatusTypeDef initMotor() {
 	telemetry.sync[0] = 0xA5;
 	telemetry.sync[1] = 0x5A;
 	control_enabled = 1;
+	cs_boot_offsets(); /* CTRL_OFF: zero volts (or the bridge still off), no current on a still rotor */
 
 	return HAL_OK;
 }
@@ -178,6 +179,9 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
  * 60000 rpm/s is ~3 A plus friction. That keeps the observer's load-dependent flux error small (it drops
  * to ~0.8 of lambda at 8 A) and stays clear of the ~8 A where the encoder mount slips */
 
+/* regen clamp (calib.h): share of the braking current the bus can take now, 1 = all of it. From currentLoop() */
+static float s_regen_k = 1.0f;
+
 /* in CTRL_RUN with g_loop != LOOP_CURRENT: writes g_iq_ref at OUTER_FS_HZ. Returns 1 on the cycles it ran */
 static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 	static loop_t prev = LOOP_CURRENT;
@@ -211,7 +215,9 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 			else if (vref < -lim)
 				vref = -lim;
 			const float dv = g_params.acc_lim * (1.0f / 60.0f) * (float)OUTER_DIV / CTRL_FS_HZ;
-			if (!(dv > 0.0f))
+			if (s_regen_k < 1.0f && (vref - vramp) * vramp < 0.0f)
+				; /* regen clamp: hold the deceleration ramp, the motor slows as fast as the bus allows */
+			else if (!(dv > 0.0f))
 				vramp = vref;
 			else if (vref > vramp + dv)
 				vramp += dv;
@@ -221,6 +227,9 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 				vramp = vref;
 			s_vel_ref_eff = vramp;
 			g_iq_ref = pi_run(&g_pi_vel, vramp - s_vel, g_params.rated_current);
+			/* regen clamp: no braking integrator beyond what the current loop is allowed to deliver */
+			const float bmax = s_regen_k * g_params.rated_current;
+			if (g_pi_vel.integ * s_vel < 0.0f && fabsf(g_pi_vel.integ) > bmax) g_pi_vel.integ = copysignf(bmax, g_pi_vel.integ);
 		}
 	}
 	prev = lp;
@@ -390,6 +399,54 @@ static inline float since_current_sample_s(void) {
 	return (float)d * (1.0f / 170e6f);
 }
 
+/* ------------------------------------------------------------------ trips (calib.h) */
+volatile uint8_t g_trip;
+volatile uint32_t g_ov_resumes;
+
+/* detects overvoltage/overcurrent and decides what the trip does. Returns 1 while the motor coasts at zero
+ * current (CTRL_RUN). Outside CTRL_RUN a trip switches the bridge off straight away: CTRL_OFF/CTRL_CAL would put
+ * the zero vector (short-brake) or an open-loop voltage on it. An OV coast resumes by itself once the bus is
+ * back down (vbus_resume, OV_RESUME_N). The ISR never writes g_mode */
+static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
+	static uint8_t ov_n, oc_n;
+	static uint8_t lost_n, res_n;
+	static float id_save, iq_save; /* references when the trip hit, for the resume */
+	const float imax = g_params.max_current;
+	const float ia = fabsf(id) > fabsf(iq) ? fabsf(id) : fabsf(iq);
+	const int oc = imax > 0.0f && ia > imax;
+	if (g_trip == TRIP_NONE) {
+		ov_n = (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) ? (ov_n < 255 ? ov_n + 1 : ov_n) : 0;
+		oc_n = oc ? (oc_n < 255 ? oc_n + 1 : oc_n) : 0;
+		uint8_t t = ov_n >= OV_TRIP_N ? TRIP_OV : oc_n >= OC_TRIP_N ? TRIP_OC : TRIP_NONE;
+		if (t == TRIP_NONE) return 0;
+		g_trip = t;
+		ov_n = oc_n = lost_n = res_n = 0;
+		id_save = g_id_ref;
+		iq_save = g_iq_ref;
+		if (mode != CTRL_RUN) {
+			bridge_trip_off();
+			return 0;
+		}
+	}
+	if (mode != CTRL_RUN || g_trip_moe) return 0; /* bridge off, or the watchdog ended the coast */
+	lost_n = oc ? (lost_n < 255 ? lost_n + 1 : lost_n) : 0;
+	if ((imax > 0.0f && ia > OC_HARD * imax) || lost_n >= OC_LOST_N) { /* zero current did not take: the loop lost control */
+		bridge_trip_off();
+		return 0;
+	}
+	if (g_trip == TRIP_OV) {
+		res_n = (g_vin < g_params.vbus_max - g_params.vbus_resume) ? (res_n < 255 ? res_n + 1 : res_n) : 0;
+		if (res_n >= OV_RESUME_N) { /* bus back down: carry on. The speed/position loops pick up bumplessly */
+			g_id_ref = id_save;
+			if (g_loop == LOOP_CURRENT) g_iq_ref = iq_save; /* the outer loops start from the present (zero) current */
+			g_trip = TRIP_NONE;
+			g_ov_resumes++;
+			return 0;
+		}
+	}
+	return 1;
+}
+
 /* telemetry frame, once every 10 cycles, queued on the link (USB CDC or UART DMA). Kept out of CCM: its code is large and it runs rarely */
 static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, float iq, ctrl_mode_t mode) {
 	telemetry.seq = seq;
@@ -483,8 +540,17 @@ void currentLoop(void) {
 	g_id = id; /* unfiltered: the overcurrent checks see the injection ripple too */
 	g_iq = iq;
 
-	/* high-frequency injection: voltage to add, and the PIs get the fundamental only */
+	/* trips (g_trip): coast at zero current in CTRL_RUN, bridge off otherwise or when that fails */
 	ctrl_mode_t mode = g_mode;
+	const int coast = trip_check(id, iq, mode);
+	if (coast) {
+		g_id_ref = 0.0f;
+		g_iq_ref = 0.0f;
+	}
+	else if (g_trip)
+		mode = CTRL_OFF; /* the bridge is off, or the coast has ended */
+
+	/* high-frequency injection: voltage to add, and the PIs get the fundamental only */
 	float inj_a, inj_b;
 	hfi_out_t hf = hfi_step(mode == CTRL_RUN, sl, hfi_pause, s_vel, i_alpha, i_beta, theta_m, th_enc, &inj_a, &inj_b);
 	if (hf == HFI_INJECT) hfi_filter(&id, &iq);
@@ -500,11 +566,20 @@ void currentLoop(void) {
 	/* voltage command in volts */
 	float vin = g_vin > 1.0f ? g_vin : 1.0f;
 	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
-	const int outer_ran = outer_loops(hold ? CTRL_OFF : mode); /* held: bumpless from the present state after */
+	/* regen clamp: braking current shrinks to zero across the vbus_clamp band below vbus_max (0 = off) */
+	float rk = 1.0f;
+	if (g_params.vbus_max > 0.0f && g_params.vbus_clamp > 0.0f) {
+		rk = (g_params.vbus_max - g_vin) / g_params.vbus_clamp;
+		rk = rk > 1.0f ? 1.0f : rk < 0.0f ? 0.0f : rk;
+	}
+	s_regen_k = rk;
+	const int outer_ran = outer_loops((hold || coast) ? CTRL_OFF : mode); /* held: bumpless from the present state after */
 	if (mode == CTRL_RUN) {
 		if (!hold) {
 			float vmax = 0.9f * vin / SQRT3 - (hf == HFI_INJECT ? g_params.hfi_v : 0.0f);
-			pi_current_step(id, iq, vmax > 0.0f ? vmax : 0.0f, &v_d, &v_q);
+			float iq_ref = g_iq_ref;
+			if (iq_ref * s_vel < 0.0f) iq_ref *= rk; /* braking: only what the bus can take */
+			pi_current_step(id, iq, iq_ref, vmax > 0.0f ? vmax : 0.0f, &v_d, &v_q);
 		}
 	}
 	else {
