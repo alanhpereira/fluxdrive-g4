@@ -143,6 +143,9 @@ static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
 static int64_t s_pos_ff_q;	/* CSP interpolation: added to s_pos_ref every cycle (Q32.32 turns per cycle) */
 static uint16_t s_pos_ff_n; /* ...for this many more cycles */
 static float s_pos_ff;		/* turn/s, the matching speed feed-forward while it lasts */
+static pos_q32_t s_pos_tgt; /* where the segment in progress ends */
+static uint16_t s_pos_ff_hold; /* after a segment: cycles left to carry on at its rate, waiting for the next one */
+static uint8_t s_pos_snap;	   /* the segment ends exactly on s_pos_tgt (a hold) */
 static uint32_t s_pll_ph;	/* Q32 = one turn, motor direction */
 static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
@@ -160,20 +163,56 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		g_home_req = 0;
 	}
 	if (g_pos_ref_req) {
-		s_pos_ref = g_pos_ref_new;
-		s_pos_ff = g_pos_ff_new;
 		s_pos_ff_n = g_pos_ff_n_new;
-		s_pos_ff_q = g_pos_ff_q_new;
+		if (s_pos_ff_n == 0) { /* a fixed reference (USB RUN_POS) */
+			s_pos_ref = g_pos_ref_new;
+			s_pos_ff = 0.0f;
+			s_pos_ff_hold = 0;
+		}
+		else {
+			/* CSP / PP segment ending at g_pos_ref_new. The reference moves at the master's rate (its step / period),
+			   whenever the frame arrived, plus half of its offset from the master's path per period. Reaching each
+			   target in exactly one period instead turned the arrival jitter (PC timing, the 1 ms tick) into speed
+			   steps: a 6.5 ms gap then a 3.5 ms one gave 60 % then 125 % of the speed, measured. A hold (step 0)
+			   goes exactly onto the target */
+			s_pos_tgt = g_pos_ref_new;
+			const int32_t n = s_pos_ff_n;
+			const int64_t qb = g_pos_ff_q_new;					/* the master's rate, Q32.32 turns per cycle */
+			const int64_t e = s_pos_ref - (s_pos_tgt - qb * n); /* the reference's offset from the master's path */
+			if (e > -INT32_MAX && e < INT32_MAX && qb > -INT32_MAX && qb < INT32_MAX) { /* 32-bit maths, no library calls */
+				const int32_t q = (int32_t)qb - (qb ? (int32_t)e / (2 * n) : (int32_t)e / n);
+				s_pos_ff_q = q;
+				s_pos_ff = (float)q * ((float)CTRL_FS_HZ / 4294967296.0f); /* the rate it really moves at */
+				s_pos_snap = (qb == 0);
+			}
+			else { /* half a turn or more off: start on the master's path */
+				s_pos_ref = s_pos_tgt - qb * n;
+				s_pos_ff_q = qb;
+				s_pos_ff = g_pos_ff_new;
+				s_pos_snap = 1;
+			}
+			s_pos_ff_hold = n;
+		}
 		g_pos_ref_req = 0;
 	}
-	if (s_pos_ff_n) { /* CSP: from the previous target to the new one over the interpolation period */
+	if (s_pos_ff_n) {
+		if (--s_pos_ff_n || !s_pos_snap)
+			s_pos_ref += s_pos_ff_q;
+		else
+			s_pos_ref = s_pos_tgt; /* a hold ends exactly on the target */
+	}
+	else if (s_pos_ff_hold) {
+		/* the next segment is late (a CSP frame arriving after the period, or on the far side of the 1 ms tick):
+		   carry on at the same rate with the feed-forward for up to one more period, then hold. Stopping here
+		   and dropping the feed-forward was measured as ~1 ms speed-reference dips of the full speed: clicks */
 		s_pos_ref += s_pos_ff_q;
-		if (--s_pos_ff_n == 0) s_pos_ff = 0.0f;
+		if (--s_pos_ff_hold == 0) s_pos_ff = 0.0f;
 	}
 	s_pos = (p - s_home) * 2048; /* counts -> Q32.32 */
 	if (g_pos_here_req) {
 		s_pos_ref = s_pos;
 		s_pos_ff_n = 0;
+		s_pos_ff_hold = 0;
 		s_pos_ff = 0.0f;
 		g_pos_here_req = 0;
 	}

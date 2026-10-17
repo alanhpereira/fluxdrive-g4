@@ -17,9 +17,11 @@ extern volatile pi_t g_pi_vel;			  /* speed loop, output A, runs at OUTER_FS_HZ 
 extern volatile float g_vel_ref;		  /* turn/s, LOOP_VEL */
 /* LOOP_POS reference, turns from home. 64-bit writes are not atomic on the M4, so main hands it over:
  * write g_pos_ref_new, set g_pos_ref_req = 1, wait until currentLoop() clears it.
- * With g_pos_ff_n_new > 0 (CANopen CSP) the reference then moves on by g_pos_ff_new (turn/s) for that many
- * current-loop cycles (the interpolation from one target to the next), and the speed loop gets g_pos_ff_new as
- * feed-forward meanwhile. 0 = a fixed reference (USB RUN_POS) */
+ * g_pos_ff_n_new = 0: g_pos_ref_new is a fixed reference (USB RUN_POS). > 0 (CANopen CSP / PP): a segment that
+ * ends at g_pos_ref_new after that many current-loop cycles at the rate g_pos_ff_q_new (Q32.32 turns per cycle;
+ * g_pos_ff_new in turn/s), plus a correction of half the reference's offset from that path per segment; a rate of
+ * 0 (hold) ends exactly on the target. The speed loop gets the rate as feed-forward, and the reference carries on
+ * at it for up to one more segment if the next one is late (motion_update()) */
 extern volatile int64_t g_pos_ref_new;
 extern volatile float g_pos_ff_new;
 extern volatile int64_t g_pos_ff_q_new; /* the same speed as Q32.32 turns per current-loop cycle (no conversion in the ISR) */

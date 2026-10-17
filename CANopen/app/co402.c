@@ -42,6 +42,7 @@ static int64_t s_act64;		  /* actual position, counts, unwrapped from the int32 
 static int32_t s_cnt_prev;
 static int64_t s_tgt64;		  /* last target handed to the ISR, counts */
 static int32_t s_tgt_last32;  /* ...as the master sent it (0x607A) */
+static volatile uint8_t s_tgt_rx; /* 0x607A was written (RPDO or SDO) since the last tick, unchanged values too */
 static volatile uint8_t s_mode_init; /* main: the mode (re)starts, from the present position and speed */
 static uint16_t s_ferr_ms;
 /* PV, HM, PP: the tick's own */
@@ -376,17 +377,19 @@ static float interp_period(void) {
 	return t < 0.0004f ? 0.001f : t > 0.1f ? 0.1f : t; /* 0 or out of range: 1 ms */
 }
 
-/* position modes: the ISR moves its reference from the last demand (s_tgt64) by dc counts over T, exactly, with
- * the matching speed feed-forward. Returns 0 while the ISR has not taken the last one yet (try again next tick) */
+/* position modes: a segment for the ISR, ending at the demand s_tgt64 + dc after T. The ISR goes there from where
+ * its reference is, so a segment that comes early or late stays continuous, and carries on at the same rate for up
+ * to one more period while the next one is late (motion_update()). dc = 0 is "hold here": PP posts it every tick at
+ * rest, CSP for every target received, so neither coasts past its end. Returns 0 while the ISR has not taken the
+ * last one yet (try again next tick) */
 static int pos_step(int32_t dc, float T, uint8_t* lim) {
-	if (dc == 0) return 1;
 	if (g_pos_ref_req) return 0;
-	g_pos_ref_new = s_tgt64 * 2048; /* counts -> Q32.32 */
+	g_pos_ref_new = (s_tgt64 + dc) * 2048; /* the segment's end, counts -> Q32.32 */
 	const uint16_t n = (uint16_t)(T * CTRL_FS_HZ + 0.5f);
 	const float ff = (float)dc * (1.0f / INC_PER_TURN) / T;
 	if (fabsf(ff) > g_params.vel_lim * 1.001f) *lim = 1; /* the speed loop clamps it to vlim */
 	g_pos_ff_new = ff;
-	g_pos_ff_q_new = (int64_t)dc * 2048 / n; /* the reference reaches the demand after n cycles (to 1/n count) */
+	g_pos_ff_q_new = (int64_t)dc * 2048 / n; /* per cycle; the ISR recomputes it from where its reference is */
 	g_pos_ff_n_new = n;
 	g_pos_ref_req = 1;
 	s_tgt64 += dc;
@@ -468,6 +471,7 @@ void co402_tick(void) {
 	if (run && s_mode_init) { /* the mode (re)starts: the ISR holds the present position (drive_enter) */
 		s_tgt64 = s_pp_pos = s_pp_tgt = s_act64;
 		s_tgt_last32 = (int32_t)s_act64;
+		s_tgt_rx = 0; /* only a target written from now on moves it: not one left over in 607A */
 		s_pp_frac = s_pp_v = 0.0f;
 		s_pp_busy = s_pp_pend = s_pp_ack = 0;
 		s_ferr_ms = s_win_ms = s_thr_ms = 0;
@@ -534,7 +538,12 @@ void co402_tick(void) {
 				lim = 1;
 			}
 			const int32_t dc = (int32_t)((uint32_t)t - (uint32_t)s_tgt_last32);
-			if (dc != 0 && pos_step(dc, interp_period(), &lim)) s_tgt_last32 = t; /* a new target: over one period */
+			/* every target received is a segment over one period, an unchanged one too (hold). None this tick: the
+			   ISR carries on at the last rate, a late frame or the 1 ms tick grid must not stop the reference */
+			if (s_tgt_rx && pos_step(dc, interp_period(), &lim)) {
+				s_tgt_last32 = t;
+				s_tgt_rx = 0;
+			}
 			b12 = 1;
 		}
 		else {
@@ -712,6 +721,14 @@ static OD_extension_t s_ext_param[4] = {
 };
 static OD_extension_t s_ext_sw = {.read = OD_readOriginal, .write = OD_writeOriginal}; /* TPDO request flags */
 
+/* 0x607A: flag every write, an unchanged target too (CSP: the master is still there, hold) */
+static ODR_t w607A(OD_stream_t* st, const void* buf, OD_size_t count, OD_size_t* n) {
+	const ODR_t r = OD_writeOriginal(st, buf, count, n);
+	if (r == ODR_OK) s_tgt_rx = 1;
+	return r;
+}
+static OD_extension_t s_ext_607A = {.read = OD_readOriginal, .write = w607A};
+
 void co402_init(void) {
 	OD_extension_init(OD_ENTRY_H6060, &s_ext_6060);
 	OD_extension_init(OD_ENTRY_H6098, &s_ext_6098);
@@ -720,6 +737,7 @@ void co402_init(void) {
 	OD_extension_init(OD_ENTRY_H6076, &s_ext_param[2]);
 	OD_extension_init(OD_ENTRY_H6080, &s_ext_param[3]);
 	OD_extension_init(OD_ENTRY_H6041, &s_ext_sw);
+	OD_extension_init(OD_ENTRY_H607A, &s_ext_607A);
 	s_cnt_prev = g_pos_cnt; /* the unwrapped position starts where the encoder is (within +-1024 turns of home) */
 	s_act64 = s_cnt_prev;
 	g_co402_state = FSA_SWITCH_ON_DISABLED;
