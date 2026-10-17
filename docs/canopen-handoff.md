@@ -181,6 +181,11 @@ The Statistics box in the sidebar shows the CAN row.
   - **SLCAN drops a reply now and then.** It drops about one SDO reply in a few hundred; the drive's own counters show nothing lost and a 2–3 ms response time. Use a 1 s SDO timeout and retry. For 1 kHz cyclic tests on Linux, a gs_usb/candleLight adapter as `can0` times better.
   - **EMCYs at connect:** with the adapter port closed, nothing acknowledges the drive's frames. Opening the port gives EMCYs 0x8120 (error passive) and 0x8110 info 0x14 (TX buffer overflow) and their resets.
 
+## Open: ISR timing margin (next session)
+- **Loop time:** the position-segment code in `motion_update()` (commit `801d2b9`: master-rate segments, ride-through, 607A hook) raised the `currentLoop()` max in CSP/PP from 18.1 to 18.9 µs, against the ~19 µs budget before the next encoder read.
+- **Encoder late:** a full `cotest.py` run (2026-10-17 18:43, `cotest_runs/20261017_184319.json`) counted 2–13 encoder `late` events in pp, csp, csv, pv, store_restore and stops_at_speed; every functional check passed. A headless run of csp/pp/csv minutes earlier on the same firmware had late 0. That run probably came from the plotter's Tests tab, whose UART traffic shares priority 0. Rerun headless to separate the two causes.
+- **To do:** trim the new ISR code (e.g. compute the segment rate and correction in the tick and hand the ISR ready values), measure the loop max again, get `late` back to 0. CCMRAM is at 96.9 % (≈ 320 B free).
+
 ## Known limits / not done
 - **60B1 in CSP:** not used. The feed-forward comes from the target steps.
 - **Halt in CSP:** not applied.
