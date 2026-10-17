@@ -50,6 +50,7 @@ volatile float g_iq, g_id;
 volatile float g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
+volatile int32_t g_home_pos;
 volatile int32_t g_pos_cnt;
 volatile uint8_t g_ramp_bypass;
 volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
@@ -155,7 +156,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 	int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
 	int64_t p = (g_params.enc_dir > 0) ? raw : -raw;
 	if (g_home_req) {
-		s_home = p;
+		s_home = p - g_home_pos;
 		g_home_req = 0;
 	}
 	if (g_pos_ref_req) {

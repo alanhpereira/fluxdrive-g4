@@ -981,7 +981,8 @@ static st_t cal_cur_off(void) {
 
 static void home(void) {
 	if (g_mode == CTRL_RUN) run_stop(); /* a moving zero would kick the position loop */
-	g_home_req = 1;						/* currentLoop() takes the present position as 0 */
+	g_home_pos = 0;
+	g_home_req = 1; /* currentLoop() takes the present position as 0 */
 }
 
 /* ------------------------------------------------------------------ CiA 402 drive profile (co402.c, main loop) */

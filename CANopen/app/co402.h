@@ -5,7 +5,7 @@
  * co402_poll(), main loop: the state machine (controlword 0x6040), mode changes, faults, master loss. It is the
  *   only CANopen code that changes g_mode / g_loop, through the drive_*() functions of calib.c.
  * co402_tick(), CANopen tick (1 kHz, after the RPDOs): actual values, statusword, and the references while
- *   streaming (CSV, CST, the stop and halt ramps). It only writes references, and only while main has the motor
+ *   streaming (CSP, CSV, CST, the PV ramp, the PP profile, homing, the stop and halt ramps). It only writes references, and only while main has the motor
  *   armed for CANopen and nothing else (a trip, a coast, a local stop) took it */
 
 #include <stdint.h>

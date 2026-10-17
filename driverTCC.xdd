@@ -15,7 +15,7 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="16:25:34.1594048-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <q1:DeviceIdentity>
         <q1:vendorName>Hahn</q1:vendorName>
         <q1:vendorID>0x00000000</q1:vendorID>
@@ -3615,9 +3615,9 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606D" access="readWrite">
-            <description lang="en">inc/s (default ~1 rpm); PV target reached band</description>
-            <UINT />
-            <q1:defaultValue value="34953" />
+            <description lang="en">inc/s (default 10 rpm); PV target reached band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 1.9 rpm with 2^21 inc/rev)</description>
+            <UDINT />
+            <q1:defaultValue value="349525" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606E" access="readWrite">
@@ -3627,8 +3627,8 @@
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606F" access="readWrite">
-            <description lang="en">inc/s; PV speed = 0 band</description>
-            <UINT />
+            <description lang="en">inc/s (default ~1 rpm); PV speed = 0 band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 1.9 rpm with 2^21 inc/rev)</description>
+            <UDINT />
             <q1:defaultValue value="34953" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
@@ -3869,7 +3869,7 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="16:25:34.1594048-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <ApplicationLayers>
         <q2:CANopenObjectList>
           <CANopenObject index="1000" name="Device type" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_1000" />

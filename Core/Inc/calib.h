@@ -77,7 +77,8 @@ extern volatile uint32_t g_ov_resumes; /* count of those resumes, object 0x4002:
 extern volatile float g_vel;		   /* turn/s, PLL estimate */
 extern volatile float g_pos;		   /* turns, display/telemetry only: the loop uses pos_q32_t */
 extern volatile float g_rpm;		   /* g_vel * 60 */
-extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position 0 */
+extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position g_home_pos */
+extern volatile int32_t g_home_pos;	 /* counts the present position gets at homing (0, or CANopen -0x607C) */
 extern volatile int32_t g_pos_cnt;	 /* encoder counts from home, motor direction (atomic copy of the position) */
 extern volatile uint8_t g_ramp_bypass; /* 1: the speed loop takes g_vel_ref as is, no acc_lim slew (CANopen modes) */
 

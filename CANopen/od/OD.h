@@ -16,7 +16,7 @@
 
         Created:      17/10/2026 08:00:00
         Created By:   Hahn03
-        Modified:     17/10/2026 15:44:23
+        Modified:     17/10/2026 16:25:34
         Modified By:  Hahn03
 
     Device Info:
@@ -413,9 +413,9 @@ typedef struct {
     uint16_t x6066_followingErrorTimeOut;
     uint32_t x6067_positionWindow;
     uint16_t x6068_positionWindowTime;
-    uint16_t x606D_velocityWindow;
+    uint32_t x606D_velocityWindow;
     uint16_t x606E_velocityWindowTime;
-    uint16_t x606F_velocityThreshold;
+    uint32_t x606F_velocityThreshold;
     uint16_t x6070_velocityThresholdTime;
     uint16_t x6072_maxTorque;
     int32_t x607C_homeOffset;

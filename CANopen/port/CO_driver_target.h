@@ -11,6 +11,10 @@
 
 #include "main.h"
 
+/* every CANopen source includes this first (CANopenNode through 301/CO_driver.h, OD.c, CANopen/app): build all of
+ * it for size, also in the -Og debug build, where flash is short. Nothing under Core/ includes it */
+#pragma GCC optimize("Os")
+
 #ifdef __cplusplus
 extern "C" {
 #endif

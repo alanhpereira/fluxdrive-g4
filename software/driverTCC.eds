@@ -8,7 +8,7 @@ Description=
 CreationTime=8:00AM
 CreationDate=10-17-2026
 CreatedBy=Hahn03
-ModificationTime=3:44PM
+ModificationTime=4:25PM
 ModificationDate=10-17-2026
 ModifiedBy=Hahn03
 
@@ -1963,9 +1963,9 @@ PDOMapping=1
 ParameterName=Velocity window
 ObjectType=0x7
 ;StorageLocation=PERSIST_APP
-DataType=0x0006
+DataType=0x0007
 AccessType=rw
-DefaultValue=34953
+DefaultValue=349525
 PDOMapping=0
 
 [606E]
@@ -1981,7 +1981,7 @@ PDOMapping=0
 ParameterName=Velocity threshold
 ObjectType=0x7
 ;StorageLocation=PERSIST_APP
-DataType=0x0006
+DataType=0x0007
 AccessType=rw
 DefaultValue=34953
 PDOMapping=0
