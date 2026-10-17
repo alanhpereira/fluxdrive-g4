@@ -15,7 +15,7 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="15:44:23.0641925-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="16:25:34.1594048-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <q1:DeviceIdentity>
         <q1:vendorName>Hahn</q1:vendorName>
         <q1:vendorID>0x00000000</q1:vendorID>
@@ -79,6 +79,14 @@
           <q1:array name="Error behavior object" uniqueID="UID_ARR_1029">
             <q1:subrange lowerLimit="0" upperLimit="2" />
             <USINT />
+          </q1:array>
+          <q1:array name="Software position limit" uniqueID="UID_ARR_607D">
+            <q1:subrange lowerLimit="0" upperLimit="2" />
+            <DINT />
+          </q1:array>
+          <q1:array name="Homing speeds" uniqueID="UID_ARR_6099">
+            <q1:subrange lowerLimit="0" upperLimit="2" />
+            <UDINT />
           </q1:array>
           <q1:struct name="Identity" uniqueID="UID_REC_1018">
             <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_101800">
@@ -624,36 +632,6 @@
               <UDINT />
             </q1:varDeclaration>
           </q1:struct>
-          <q1:array name="Software position limit" uniqueID="UID_ARR_607D">
-            <q1:subrange lowerLimit="0" upperLimit="2" />
-            <DINT />
-          </q1:array>
-          <q1:struct name="Position encoder resolution" uniqueID="UID_REC_608F">
-            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_608F00">
-              <USINT />
-            </q1:varDeclaration>
-            <q1:varDeclaration name="Encoder increments" uniqueID="UID_RECSUB_608F01">
-              <UDINT />
-            </q1:varDeclaration>
-            <q1:varDeclaration name="Motor revolutions" uniqueID="UID_RECSUB_608F02">
-              <UDINT />
-            </q1:varDeclaration>
-          </q1:struct>
-          <q1:array name="Homing speeds" uniqueID="UID_ARR_6099">
-            <q1:subrange lowerLimit="0" upperLimit="2" />
-            <UDINT />
-          </q1:array>
-          <q1:struct name="Interpolation time period" uniqueID="UID_REC_60C2">
-            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_60C200">
-              <USINT />
-            </q1:varDeclaration>
-            <q1:varDeclaration name="Interpolation time period value" uniqueID="UID_RECSUB_60C201">
-              <USINT />
-            </q1:varDeclaration>
-            <q1:varDeclaration name="Interpolation time index" uniqueID="UID_RECSUB_60C202">
-              <SINT />
-            </q1:varDeclaration>
-          </q1:struct>
           <q1:struct name="Device info" uniqueID="UID_REC_4000">
             <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_400000">
               <USINT />
@@ -978,6 +956,45 @@
             </q1:varDeclaration>
             <q1:varDeclaration name="CAN RX overruns" uniqueID="UID_RECSUB_404105">
               <UDINT />
+            </q1:varDeclaration>
+          </q1:struct>
+          <q1:struct name="CiA 402 status" uniqueID="UID_REC_4042">
+            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_404200">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="CiA 402 state" uniqueID="UID_RECSUB_404201">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Last refusal" uniqueID="UID_RECSUB_404202">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Fault" uniqueID="UID_RECSUB_404203">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="CAN has the motor" uniqueID="UID_RECSUB_404204">
+              <USINT />
+            </q1:varDeclaration>
+          </q1:struct>
+          <q1:struct name="Position encoder resolution" uniqueID="UID_REC_608F">
+            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_608F00">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Encoder increments" uniqueID="UID_RECSUB_608F01">
+              <UDINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Motor revolutions" uniqueID="UID_RECSUB_608F02">
+              <UDINT />
+            </q1:varDeclaration>
+          </q1:struct>
+          <q1:struct name="Interpolation time period" uniqueID="UID_REC_60C2">
+            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_60C200">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Interpolation time period value" uniqueID="UID_RECSUB_60C201">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Interpolation time index" uniqueID="UID_RECSUB_60C202">
+              <SINT />
             </q1:varDeclaration>
           </q1:struct>
         </q1:dataTypeList>
@@ -2632,406 +2649,7 @@
             <UDINT />
             <q1:defaultValue value="0x00000000" />
           </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6007" access="readWrite">
-            <label lang="en">Abort connection option code</label>
-            <description lang="en">Reaction to a lost master (heartbeat consumer timeout, NMT leaving operational, SYNC timeout in cyclic modes): 0 none, 1 fault, 2 disable voltage, 3 quick stop</description>
-            <INT />
-            <q1:defaultValue value="1" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_603F">
-            <label lang="en">Error code</label>
-            <description lang="en">Last fault (CiA 402 / CiA 301 error code)</description>
-            <UINT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_flagsPDO" value="true" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6040" access="readWrite">
-            <label lang="en">Controlword</label>
-            <description lang="en">CiA 402 controlword</description>
-            <UINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6041">
-            <label lang="en">Statusword</label>
-            <description lang="en">CiA 402 statusword</description>
-            <UINT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_flagsPDO" value="true" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_605A" access="readWrite">
-            <label lang="en">Quick stop option code</label>
-            <description lang="en">1 or 2: stop on the quick stop ramp (6085) then switch on disabled; 5 or 6: same, stay in quick stop active; 0: disable drive function (coast)</description>
-            <INT />
-            <q1:defaultValue value="2" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_605B" access="readWrite">
-            <label lang="en">Shutdown option code</label>
-            <description lang="en">0: coast; 1: stop on the profile deceleration first</description>
-            <INT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_605C" access="readWrite">
-            <label lang="en">Disable operation option code</label>
-            <description lang="en">0: coast; 1: stop on the profile deceleration first</description>
-            <INT />
-            <q1:defaultValue value="1" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_605D" access="readWrite">
-            <label lang="en">Halt option code</label>
-            <description lang="en">1: profile deceleration; 2: quick stop deceleration</description>
-            <INT />
-            <q1:defaultValue value="1" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_605E" access="readWrite">
-            <label lang="en">Fault reaction option code</label>
-            <description lang="en">0: coast at zero current (the only reaction)</description>
-            <INT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6060" access="readWrite">
-            <label lang="en">Modes of operation</label>
-            <description lang="en">1 PP, 3 PV, 6 HM, 8 CSP, 9 CSV, 10 CST</description>
-            <SINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6061">
-            <label lang="en">Modes of operation display</label>
-            <description lang="en">Mode in effect</description>
-            <SINT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_flagsPDO" value="true" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6062">
-            <label lang="en">Position demand value</label>
-            <description lang="en">inc (2^21 per revolution)</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6064">
-            <label lang="en">Position actual value</label>
-            <description lang="en">inc (2^21 per revolution), from home</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6065" access="readWrite">
-            <label lang="en">Following error window</label>
-            <description lang="en">inc (2^21 per revolution); 0xFFFFFFFF = off. Default a quarter turn</description>
-            <UDINT />
-            <q1:defaultValue value="524288" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6066" access="readWrite">
-            <label lang="en">Following error time out</label>
-            <description lang="en">ms</description>
-            <UINT />
-            <q1:defaultValue value="100" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6067" access="readWrite">
-            <label lang="en">Position window</label>
-            <description lang="en">inc (2^21 per revolution); target reached band</description>
-            <UDINT />
-            <q1:defaultValue value="2048" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6068" access="readWrite">
-            <label lang="en">Position window time</label>
-            <description lang="en">ms</description>
-            <UINT />
-            <q1:defaultValue value="10" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_606B">
-            <label lang="en">Velocity demand value</label>
-            <description lang="en">inc/s</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_606C">
-            <label lang="en">Velocity actual value</label>
-            <description lang="en">inc/s</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_606D" access="readWrite">
-            <label lang="en">Velocity window</label>
-            <description lang="en">inc/s (default ~1 rpm); PV target reached band</description>
-            <UINT />
-            <q1:defaultValue value="34953" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_606E" access="readWrite">
-            <label lang="en">Velocity window time</label>
-            <description lang="en">ms</description>
-            <UINT />
-            <q1:defaultValue value="10" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_606F" access="readWrite">
-            <label lang="en">Velocity threshold</label>
-            <description lang="en">inc/s; PV speed = 0 band</description>
-            <UINT />
-            <q1:defaultValue value="34953" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6070" access="readWrite">
-            <label lang="en">Velocity threshold time</label>
-            <description lang="en">ms</description>
-            <UINT />
-            <q1:defaultValue value="10" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6071" access="readWrite">
-            <label lang="en">Target torque</label>
-            <description lang="en">per mille of rated torque (6076)</description>
-            <INT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6072" access="readWrite">
-            <label lang="en">Max torque</label>
-            <description lang="en">per mille of rated torque</description>
-            <UINT />
-            <q1:defaultValue value="1000" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6073" access="readWrite">
-            <label lang="en">Max current</label>
-            <description lang="en">per mille of rated current; the motor parameter imax (0x4010:10)</description>
-            <UINT />
-            <q1:defaultValue value="1500" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6074">
-            <label lang="en">Torque demand</label>
-            <description lang="en">per mille of rated torque</description>
-            <INT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6075" access="readWrite">
-            <label lang="en">Motor rated current</label>
-            <description lang="en">mA; the motor parameter rated (0x4010:9)</description>
-            <UDINT />
-            <q1:defaultValue value="1000" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6076">
-            <label lang="en">Motor rated torque</label>
-            <description lang="en">mNm; Kt x rated current, Kt from kv (0x4010:1)</description>
-            <UDINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6077">
-            <label lang="en">Torque actual value</label>
-            <description lang="en">per mille of rated torque</description>
-            <INT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6078">
-            <label lang="en">Current actual value</label>
-            <description lang="en">per mille of rated current (iq)</description>
-            <INT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6079">
-            <label lang="en">DC link circuit voltage</label>
-            <description lang="en">mV</description>
-            <UDINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_607A" access="readWrite">
-            <label lang="en">Target position</label>
-            <description lang="en">inc (2^21 per revolution)</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_607C" access="readWrite">
-            <label lang="en">Home offset</label>
-            <description lang="en">inc (2^21 per revolution); position after homing</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_607F" access="readWrite">
-            <label lang="en">Max profile velocity</label>
-            <description lang="en">inc/s (default 100 rev/s)</description>
-            <UDINT />
-            <q1:defaultValue value="209715200" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6080" access="readWrite">
-            <label lang="en">Max motor speed</label>
-            <description lang="en">inc/s; the motor parameter vlim (0x4021:4, turn/s x 2^21)</description>
-            <UDINT />
-            <q1:defaultValue value="20971520" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6081" access="readWrite">
-            <label lang="en">Profile velocity</label>
-            <description lang="en">inc/s (default 10 rev/s)</description>
-            <UDINT />
-            <q1:defaultValue value="20971520" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6083" access="readWrite">
-            <label lang="en">Profile acceleration</label>
-            <description lang="en">inc/s^2 (default 100 rev/s^2)</description>
-            <UDINT />
-            <q1:defaultValue value="209715200" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6084" access="readWrite">
-            <label lang="en">Profile deceleration</label>
-            <description lang="en">inc/s^2</description>
-            <UDINT />
-            <q1:defaultValue value="209715200" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6085" access="readWrite">
-            <label lang="en">Quick stop deceleration</label>
-            <description lang="en">inc/s^2 (default 500 rev/s^2)</description>
-            <UDINT />
-            <q1:defaultValue value="1048576000" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6086" access="readWrite">
-            <label lang="en">Motion profile type</label>
-            <description lang="en">0: linear ramp (trapezoid), the only one</description>
-            <INT />
-            <q1:defaultValue value="0" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6098" access="readWrite">
-            <label lang="en">Homing method</label>
-            <description lang="en">35 or 37: the present position becomes the home offset</description>
-            <SINT />
-            <q1:defaultValue value="37" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_609A" access="readWrite">
-            <label lang="en">Homing acceleration</label>
-            <description lang="en">inc/s^2</description>
-            <UDINT />
-            <q1:defaultValue value="209715200" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_60B1" access="readWrite">
-            <label lang="en">Velocity offset</label>
-            <description lang="en">inc/s; velocity feed-forward in CSP, offset in CSV</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_60B2" access="readWrite">
-            <label lang="en">Torque offset</label>
-            <description lang="en">per mille of rated torque; added in CST</description>
-            <INT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_60F4">
-            <label lang="en">Following error actual value</label>
-            <description lang="en">inc (2^21 per revolution)</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_60FF" access="readWrite">
-            <label lang="en">Target velocity</label>
-            <description lang="en">inc/s</description>
-            <DINT />
-            <q1:defaultValue value="0" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6502" access="const">
-            <label lang="en">Supported drive modes</label>
-            <description lang="en">PP, PV, HM, CSP, CSV, CST</description>
-            <UDINT />
-            <q1:defaultValue value="0x000003A5" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_607D">
-            <label lang="en">Software position limit</label>
-            <description lang="en">inc (2^21 per revolution); PP and CSP targets are clamped to this range</description>
-            <q1:dataTypeIDRef uniqueIDRef="UID_ARR_607D" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_607D00">
-            <label lang="en">Highest sub-index supported</label>
-            <USINT />
-            <q1:defaultValue value="0x02" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_607D01" access="readWrite">
-            <label lang="en">Min position limit</label>
-            <DINT />
-            <q1:defaultValue value="-2147483648" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_607D02" access="readWrite">
-            <label lang="en">Max position limit</label>
-            <DINT />
-            <q1:defaultValue value="2147483647" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_608F">
-            <label lang="en">Position encoder resolution</label>
-            <description lang="en">2^21 increments per motor revolution (MT6835)</description>
-            <q1:dataTypeIDRef uniqueIDRef="UID_REC_608F" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_608F00">
-            <label lang="en">Highest sub-index supported</label>
-            <USINT />
-            <q1:defaultValue value="0x02" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_608F01" access="const">
-            <label lang="en">Encoder increments</label>
-            <UDINT />
-            <q1:defaultValue value="2097152" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_608F02" access="const">
-            <label lang="en">Motor revolutions</label>
-            <UDINT />
-            <q1:defaultValue value="1" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_6099">
-            <label lang="en">Homing speeds</label>
-            <description lang="en">inc/s; not used by methods 35/37</description>
-            <q1:dataTypeIDRef uniqueIDRef="UID_ARR_6099" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_609900">
-            <label lang="en">Highest sub-index supported</label>
-            <USINT />
-            <q1:defaultValue value="0x02" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_609901" access="readWrite">
-            <label lang="en">Speed during search for switch</label>
-            <UDINT />
-            <q1:defaultValue value="2097152" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_609902" access="readWrite">
-            <label lang="en">Speed during search for zero</label>
-            <UDINT />
-            <q1:defaultValue value="209715" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_OBJ_60C2">
-            <label lang="en">Interpolation time period</label>
-            <description lang="en">value x 10^index s: the SYNC period the cyclic modes interpolate over (default 1 ms)</description>
-            <q1:dataTypeIDRef uniqueIDRef="UID_REC_60C2" />
-            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_60C200">
-            <label lang="en">Highest sub-index supported</label>
-            <USINT />
-            <q1:defaultValue value="0x02" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_60C201" access="readWrite">
-            <label lang="en">Interpolation time period value</label>
-            <USINT />
-            <q1:defaultValue value="1" />
-          </q1:parameter>
-          <q1:parameter uniqueID="UID_SUB_60C202" access="readWrite">
-            <label lang="en">Interpolation time index</label>
-            <SINT />
-            <q1:defaultValue value="-3" />
-          </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4000">
-            <label lang="en">Device info</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4000" />
           </q1:parameter>
@@ -3061,7 +2679,6 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4001">
-            <label lang="en">Drive status</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4001" />
           </q1:parameter>
@@ -3071,13 +2688,11 @@
             <q1:defaultValue value="0x0F" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400101">
-            <label lang="en">Mode</label>
             <description lang="en">0 off, 1 calibration, 2 run</description>
             <USINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400102">
-            <label lang="en">Loop</label>
             <description lang="en">0 current, 1 speed, 2 position</description>
             <USINT />
             <q1:defaultValue value="0" />
@@ -3098,19 +2713,16 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400106">
-            <label lang="en">Gate driver status</label>
             <description lang="en">0x100 = I2C error</description>
             <UINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400107">
-            <label lang="en">Bus voltage</label>
             <description lang="en">[V]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400108">
-            <label lang="en">Busy</label>
             <description lang="en">CAL_* running, 0 = idle</description>
             <USINT />
             <q1:defaultValue value="0" />
@@ -3136,7 +2748,6 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40010D">
-            <label lang="en">Trip</label>
             <description lang="en">0 none, 1 bus overvoltage, 2 overcurrent; STOP resets it once the motor has coasted down</description>
             <USINT />
             <q1:defaultValue value="0" />
@@ -3147,13 +2758,11 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40010F">
-            <label lang="en">Coasting to a stop</label>
             <description lang="en">a stop holds zero current until the motor is below 30 rpm, then switches off (never short-brakes)</description>
             <USINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4002">
-            <label lang="en">Diagnostics</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4002" />
           </q1:parameter>
@@ -3163,13 +2772,11 @@
             <q1:defaultValue value="0x0B" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400201">
-            <label lang="en">currentLoop() time</label>
             <description lang="en">[cycles]</description>
             <UDINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400202" access="readWrite">
-            <label lang="en">currentLoop() max</label>
             <description lang="en">[cycles]</description>
             <UDINT />
             <q1:defaultValue value="0" />
@@ -3185,7 +2792,6 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400205" access="readWrite">
-            <label lang="en">Encoder late</label>
             <description lang="en">read not finished at the ADC sample: lower MT6835_GROUPS if this grows</description>
             <UDINT />
             <q1:defaultValue value="0" />
@@ -3196,7 +2802,6 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400207">
-            <label lang="en">Encoder status</label>
             <description lang="en">1 overspeed, 2 weak field, 4 undervoltage</description>
             <USINT />
             <q1:defaultValue value="0" />
@@ -3212,19 +2817,16 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40020A" access="readWrite">
-            <label lang="en">Telemetry drops</label>
             <description lang="en">frames that found the link queue full (USB host not reading fast enough)</description>
             <UDINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40020B" access="readWrite">
-            <label lang="en">Overvoltage resumes</label>
             <description lang="en">overvoltage coasts that ended by themselves once the bus came back down</description>
             <UDINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4010">
-            <label lang="en">Motor</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4010" />
           </q1:parameter>
@@ -3234,84 +2836,127 @@
             <q1:defaultValue value="0x0B" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401001" access="readWrite">
-            <label lang="en">kv</label>
             <description lang="en">[rpm/V] back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401002" access="readWrite">
-            <label lang="en">Pole pairs</label>
             <description lang="en">measured by 'e'</description>
             <USINT />
             <q1:defaultValue value="1" />
-            <q1:allowedValues><q1:range><minValue value="1" /><maxValue value="64" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="1" />
+                <maxValue value="64" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401003" access="readWrite">
-            <label lang="en">Encoder direction</label>
             <description lang="en">+1 or -1, measured by 'e'</description>
             <SINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="-1" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-1" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401004" access="readWrite">
-            <label lang="en">Electrical offset</label>
             <description lang="en">[2^32=360°] electrical angle offset, measured by 'e'</description>
             <UDINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="4294967295" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="4294967295" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401005" access="readWrite">
-            <label lang="en">Rd</label>
             <description lang="en">[mΩ] phase resistance, measured by 'r'</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401006" access="readWrite">
-            <label lang="en">Rq</label>
             <description lang="en">[mΩ] = Rd (surface PM)</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401007" access="readWrite">
-            <label lang="en">Ld</label>
             <description lang="en">[µH] measured by 'l'</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401008" access="readWrite">
-            <label lang="en">Lq</label>
             <description lang="en">[µH] measured by 'q' (shaft held), else = Ld</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401009" access="readWrite">
-            <label lang="en">Rated current</label>
             <description lang="en">[A] calibration currents are fractions of it; current commands are limited to it</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="50" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="50" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40100A" access="readWrite">
-            <label lang="en">Max current</label>
             <description lang="en">[A] trip after 120 µs above it: zero-current coast; bridge off if the current keeps rising (1.5x, or 5 ms)</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="50" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="50" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40100B" access="readWrite">
-            <label lang="en">Calibration flags</label>
             <description lang="en">1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned. Restored by JSON import</description>
             <UDINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="255" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="255" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4011">
-            <label lang="en">Angle source</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4011" />
           </q1:parameter>
@@ -3321,14 +2966,17 @@
             <q1:defaultValue value="0x01" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401101" access="readWrite">
-            <label lang="en">Angle source</label>
             <description lang="en">0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the observer, no encoder in the loop (position mode refused, the encoder is only logged). Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)</description>
             <USINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="2" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="2" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4020">
-            <label lang="en">Current loop</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4020" />
           </q1:parameter>
@@ -3338,42 +2986,61 @@
             <q1:defaultValue value="0x05" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402001" access="readWrite">
-            <label lang="en">Kp d</label>
             <description lang="en">[V/A]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402002" access="readWrite">
-            <label lang="en">Ki d</label>
             <description lang="en">[V/(A·s)]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402003" access="readWrite">
-            <label lang="en">Kp q</label>
             <description lang="en">[V/A]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402004" access="readWrite">
-            <label lang="en">Ki q</label>
             <description lang="en">[V/(A·s)]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402005" access="readWrite">
-            <label lang="en">Bandwidth</label>
             <description lang="en">[Hz] autotune ('t') input, at most fs/20</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1250" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1250" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4021">
-            <label lang="en">Speed and position loops</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4021" />
           </q1:parameter>
@@ -3383,42 +3050,61 @@
             <q1:defaultValue value="0x05" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402101" access="readWrite">
-            <label lang="en">Speed Kp</label>
             <description lang="en">[A/(turn/s)]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="10000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="10000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402102" access="readWrite">
-            <label lang="en">Speed Ki</label>
             <description lang="en">[A/turn]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="10000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="10000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402103" access="readWrite">
-            <label lang="en">Position Kp</label>
             <description lang="en">[1/s]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="10000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="10000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402104" access="readWrite">
-            <label lang="en">Speed limit</label>
             <description lang="en">[rpm] position-mode speed limit and speed-command clamp; overspeed trip at 1.5x</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402105" access="readWrite">
-            <label lang="en">Acceleration limit</label>
             <description lang="en">[rpm/s] speed reference ramp in the speed/position loops; 0 = off</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="10000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="10000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4022">
-            <label lang="en">Limits</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4022" />
           </q1:parameter>
@@ -3428,42 +3114,61 @@
             <q1:defaultValue value="0x05" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402201" access="readWrite">
-            <label lang="en">Bus min</label>
             <description lang="en">[V] calibration and run stop below it</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402202" access="readWrite">
-            <label lang="en">Bus max</label>
             <description lang="en">[V] trip after 1 ms above it: zero-current coast (no regen, no braking), resumes once the bus is below vmax - vresume; outside a run STOP resets. 0 = off</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402203" access="readWrite">
-            <label lang="en">Max temperature</label>
             <description lang="en">[°C] not used yet</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="-40" /><maxValue value="200" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-40" />
+                <maxValue value="200" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402204" access="readWrite">
-            <label lang="en">Regen clamp band</label>
             <description lang="en">[V] braking current falls linearly to zero from vmax - vclamp to vmax, so decelerations stay within what the bus can take; motoring is never limited. 0 = off</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="20" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="20" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402205" access="readWrite">
-            <label lang="en">Overvoltage resume margin</label>
             <description lang="en">[V] after an overvoltage trip the run resumes once the bus has been below vmax - vresume for 10 ms</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="20" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="20" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4023">
-            <label lang="en">Current sensing</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4023" />
           </q1:parameter>
@@ -3473,52 +3178,59 @@
             <q1:defaultValue value="0x07" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402301" access="readWrite">
-            <label lang="en">Current offset A</label>
             <description lang="en">[counts] ADC zero - 2048, stored by the current-offset calibration ('c'); the fallback when the boot measurement is not trusted</description>
             <INT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="-300" /><maxValue value="300" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-300" />
+                <maxValue value="300" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402302" access="readWrite">
-            <label lang="en">Current offset B</label>
             <description lang="en">[counts]</description>
             <INT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="-300" /><maxValue value="300" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-300" />
+                <maxValue value="300" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402303" access="readWrite">
-            <label lang="en">Current offset C</label>
             <description lang="en">[counts]</description>
             <INT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="-300" /><maxValue value="300" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-300" />
+                <maxValue value="300" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402304">
-            <label lang="en">Offset A in use</label>
             <description lang="en">[counts]</description>
             <INT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402305">
-            <label lang="en">Offset B in use</label>
             <description lang="en">[counts]</description>
             <INT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402306">
-            <label lang="en">Offset C in use</label>
             <description lang="en">[counts]</description>
             <INT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402307">
-            <label lang="en">Offsets from</label>
             <description lang="en">0 default, 1 stored, 2 measured at boot</description>
             <USINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4030">
-            <label lang="en">Observer</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4030" />
           </q1:parameter>
@@ -3528,49 +3240,72 @@
             <q1:defaultValue value="0x06" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403001" access="readWrite">
-            <label lang="en">Blend observer</label>
             <description lang="en">1: blend into angle and speed above olo; 0: run and log it only</description>
             <USINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403002" access="readWrite">
-            <label lang="en">Flux correction gain</label>
             <description lang="en">[rad/s]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1000000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1000000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403003" access="readWrite">
-            <label lang="en">Blend start</label>
             <description lang="en">[V] peak back-EMF where the observer starts to get weight</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403004" access="readWrite">
-            <label lang="en">Blend full</label>
             <description lang="en">[V]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="100" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403005" access="readWrite">
-            <label lang="en">Flux tolerance</label>
             <description lang="en">|flux|/lambda must stay within 1 ± tol</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403006" access="readWrite">
-            <label lang="en">Max observer error</label>
             <description lang="en">[deg elec]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="180" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="180" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4031">
-            <label lang="en">HF injection</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4031" />
           </q1:parameter>
@@ -3580,56 +3315,83 @@
             <q1:defaultValue value="0x07" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403101" access="readWrite">
-            <label lang="en">HFI mode</label>
             <description lang="en">0 off; 1 track and log while running (not during calibrations), in the encoder angle sources only. Sensorless (angsrc 2) always injects. Injection adds hid in speed/position mode</description>
             <USINT />
             <q1:defaultValue value="0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403102" access="readWrite">
-            <label lang="en">Half wave</label>
             <description lang="en">[PWM periods] injection flips every hhalf periods (2 = 6.25 kHz square wave). 1 cannot work: the samples would sit on the midpoints of the current triangle</description>
             <USINT />
             <q1:defaultValue value="2" />
-            <q1:allowedValues><q1:range><minValue value="2" /><maxValue value="8" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="2" />
+                <maxValue value="8" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403103" access="readWrite">
-            <label lang="en">Injection voltage</label>
             <description lang="en">[V] HF current step per PWM period is about hv x 40 us / L</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="10" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="10" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403104" access="readWrite">
-            <label lang="en">PLL bandwidth</label>
             <description lang="en">[Hz]</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="500" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="500" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403105" access="readWrite">
-            <label lang="en">d bias</label>
             <description lang="en">[A] d-axis current while HFI runs (saturation saliency); the map stores hsal at this bias</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="50" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="50" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403106" access="readWrite">
-            <label lang="en">Saliency</label>
             <description lang="en">[%] (Lq-Ld)/(Lq+Ld) at hid, stored by the saliency map; 0 = not measured</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="-1" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="-1" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403107" access="readWrite">
-            <label lang="en">Polarity pulse current</label>
             <description lang="en">[A] aim of the +d/-d pulses; needs to be high enough to saturate the d axis</description>
             <REAL />
             <q1:defaultValue value="0.0" />
-            <q1:allowedValues><q1:range><minValue value="0" /><maxValue value="50" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="50" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4040">
-            <label lang="en">CAN settings</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4040" />
           </q1:parameter>
@@ -3639,18 +3401,26 @@
             <q1:defaultValue value="0x05" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404001" access="readWrite">
-            <label lang="en">Node ID</label>
             <description lang="en">CANopen node ID. Takes effect at the next communication reset: 'Apply CAN settings', NMT reset, or reboot</description>
             <USINT />
             <q1:defaultValue value="1" />
-            <q1:allowedValues><q1:range><minValue value="1" /><maxValue value="127" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="1" />
+                <maxValue value="127" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404002" access="readWrite">
-            <label lang="en">Bit rate</label>
             <description lang="en">[kbit/s] 20, 50, 125, 250, 500 or 1000. Takes effect at the next communication reset</description>
             <UINT />
             <q1:defaultValue value="20" />
-            <q1:allowedValues><q1:range><minValue value="20" /><maxValue value="1000" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="20" />
+                <maxValue value="1000" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404003">
             <label lang="en">Node ID in use</label>
@@ -3658,20 +3428,22 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404004">
-            <label lang="en">Bit rate in use</label>
             <description lang="en">[kbit/s]</description>
             <UINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404005" access="readWrite">
-            <label lang="en">Apply CAN settings</label>
             <description lang="en">write 1: CANopen communication reset with the node ID and bit rate above</description>
             <USINT />
             <q1:defaultValue value="1" />
-            <q1:allowedValues><q1:range><minValue value="1" /><maxValue value="1" /></q1:range></q1:allowedValues>
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="1" />
+                <maxValue value="1" />
+              </q1:range>
+            </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4041">
-            <label lang="en">CAN status</label>
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4041" />
           </q1:parameter>
@@ -3701,10 +3473,384 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_404105" access="readWrite">
-            <label lang="en">CAN RX overruns</label>
             <description lang="en">frames lost because the RX FIFO was full</description>
             <UDINT />
             <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_4042">
+            <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_REC_4042" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_404200">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x04" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_404201">
+            <label lang="en">CiA 402 state</label>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_404202">
+            <description lang="en">status code: why switch on / enable was refused</description>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_404203">
+            <description lang="en">status code of the fault in 0x603F</description>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_404204">
+            <label lang="en">CAN has the motor</label>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6007" access="readWrite">
+            <description lang="en">Reaction to a lost master (heartbeat consumer timeout, NMT leaving operational, SYNC timeout in cyclic modes): 0 none, 1 fault, 2 disable voltage, 3 quick stop</description>
+            <INT />
+            <q1:defaultValue value="1" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_603F">
+            <description lang="en">Last fault (CiA 402 / CiA 301 error code)</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_flagsPDO" value="true" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6040" access="readWrite">
+            <description lang="en">CiA 402 controlword</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6041">
+            <description lang="en">CiA 402 statusword</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_flagsPDO" value="true" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_605A" access="readWrite">
+            <description lang="en">1 or 2: stop on the quick stop ramp (6085) then switch on disabled; 5 or 6: same, stay in quick stop active; 0: disable drive function (coast)</description>
+            <INT />
+            <q1:defaultValue value="2" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_605B" access="readWrite">
+            <description lang="en">0: coast; 1: stop on the profile deceleration first</description>
+            <INT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_605C" access="readWrite">
+            <description lang="en">0: coast; 1: stop on the profile deceleration first</description>
+            <INT />
+            <q1:defaultValue value="1" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_605D" access="readWrite">
+            <description lang="en">1: profile deceleration; 2: quick stop deceleration</description>
+            <INT />
+            <q1:defaultValue value="1" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_605E" access="readWrite">
+            <description lang="en">0: coast at zero current (the only reaction)</description>
+            <INT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6060" access="readWrite">
+            <description lang="en">1 PP, 3 PV, 6 HM, 8 CSP, 9 CSV, 10 CST</description>
+            <SINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6061">
+            <description lang="en">Mode in effect</description>
+            <SINT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_flagsPDO" value="true" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6062">
+            <description lang="en">inc (2^21 per revolution)</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6064">
+            <description lang="en">inc (2^21 per revolution), from home</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6065" access="readWrite">
+            <description lang="en">inc (2^21 per revolution); 0xFFFFFFFF = off. Default a quarter turn</description>
+            <UDINT />
+            <q1:defaultValue value="524288" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6066" access="readWrite">
+            <description lang="en">ms</description>
+            <UINT />
+            <q1:defaultValue value="100" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6067" access="readWrite">
+            <description lang="en">inc (2^21 per revolution); target reached band</description>
+            <UDINT />
+            <q1:defaultValue value="2048" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6068" access="readWrite">
+            <description lang="en">ms</description>
+            <UINT />
+            <q1:defaultValue value="10" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_606B">
+            <description lang="en">inc/s</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_606C">
+            <description lang="en">inc/s</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_606D" access="readWrite">
+            <description lang="en">inc/s (default ~1 rpm); PV target reached band</description>
+            <UINT />
+            <q1:defaultValue value="34953" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_606E" access="readWrite">
+            <description lang="en">ms</description>
+            <UINT />
+            <q1:defaultValue value="10" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_606F" access="readWrite">
+            <description lang="en">inc/s; PV speed = 0 band</description>
+            <UINT />
+            <q1:defaultValue value="34953" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6070" access="readWrite">
+            <description lang="en">ms</description>
+            <UINT />
+            <q1:defaultValue value="10" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6071" access="readWrite">
+            <description lang="en">per mille of rated torque (6076)</description>
+            <INT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6072" access="readWrite">
+            <description lang="en">per mille of rated torque</description>
+            <UINT />
+            <q1:defaultValue value="1000" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6073" access="readWrite">
+            <description lang="en">per mille of rated current; the motor parameter imax (0x4010:10)</description>
+            <UINT />
+            <q1:defaultValue value="1500" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6074">
+            <description lang="en">per mille of rated torque</description>
+            <INT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6075" access="readWrite">
+            <description lang="en">mA; the motor parameter rated (0x4010:9)</description>
+            <UDINT />
+            <q1:defaultValue value="1000" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6076">
+            <description lang="en">mNm; Kt x rated current, Kt from kv (0x4010:1)</description>
+            <UDINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6077">
+            <description lang="en">per mille of rated torque</description>
+            <INT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6078">
+            <description lang="en">per mille of rated current (iq)</description>
+            <INT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6079">
+            <description lang="en">mV</description>
+            <UDINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_607A" access="readWrite">
+            <description lang="en">inc (2^21 per revolution)</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_607C" access="readWrite">
+            <description lang="en">inc (2^21 per revolution); position after homing</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_607D">
+            <description lang="en">inc (2^21 per revolution); PP and CSP targets are clamped to this range</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_ARR_607D" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_607D00">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x02" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_607D01" access="readWrite">
+            <label lang="en">Min position limit</label>
+            <DINT />
+            <q1:defaultValue value="-2147483648" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_607D02" access="readWrite">
+            <label lang="en">Max position limit</label>
+            <DINT />
+            <q1:defaultValue value="2147483647" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_607F" access="readWrite">
+            <description lang="en">inc/s (default 100 rev/s)</description>
+            <UDINT />
+            <q1:defaultValue value="209715200" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6080" access="readWrite">
+            <description lang="en">inc/s; the motor parameter vlim (0x4021:4, turn/s x 2^21)</description>
+            <UDINT />
+            <q1:defaultValue value="20971520" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6081" access="readWrite">
+            <description lang="en">inc/s (default 10 rev/s)</description>
+            <UDINT />
+            <q1:defaultValue value="20971520" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6083" access="readWrite">
+            <description lang="en">inc/s^2 (default 100 rev/s^2)</description>
+            <UDINT />
+            <q1:defaultValue value="209715200" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6084" access="readWrite">
+            <description lang="en">inc/s^2</description>
+            <UDINT />
+            <q1:defaultValue value="209715200" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6085" access="readWrite">
+            <description lang="en">inc/s^2 (default 500 rev/s^2)</description>
+            <UDINT />
+            <q1:defaultValue value="1048576000" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6086" access="readWrite">
+            <description lang="en">0: linear ramp (trapezoid), the only one</description>
+            <INT />
+            <q1:defaultValue value="0" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_608F">
+            <description lang="en">2^21 increments per motor revolution (MT6835)</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_REC_608F" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_608F00">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x02" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_608F01" access="const">
+            <label lang="en">Encoder increments</label>
+            <UDINT />
+            <q1:defaultValue value="2097152" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_608F02" access="const">
+            <label lang="en">Motor revolutions</label>
+            <UDINT />
+            <q1:defaultValue value="1" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6098" access="readWrite">
+            <description lang="en">35 or 37: the present position becomes the home offset</description>
+            <SINT />
+            <q1:defaultValue value="37" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6099">
+            <description lang="en">inc/s; not used by methods 35/37</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_ARR_6099" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_609900">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x02" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_609901" access="readWrite">
+            <label lang="en">Speed during search for switch</label>
+            <UDINT />
+            <q1:defaultValue value="2097152" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_609902" access="readWrite">
+            <label lang="en">Speed during search for zero</label>
+            <UDINT />
+            <q1:defaultValue value="209715" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_609A" access="readWrite">
+            <description lang="en">inc/s^2</description>
+            <UDINT />
+            <q1:defaultValue value="209715200" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_60B1" access="readWrite">
+            <description lang="en">inc/s; velocity feed-forward in CSP, offset in CSV</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_60B2" access="readWrite">
+            <description lang="en">per mille of rated torque; added in CST</description>
+            <INT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_60C2">
+            <description lang="en">value x 10^index s: the SYNC period the cyclic modes interpolate over (default 1 ms)</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_REC_60C2" />
+            <q1:property name="CO_storageGroup" value="PERSIST_APP" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_60C200">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x02" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_60C201" access="readWrite">
+            <label lang="en">Interpolation time period value</label>
+            <USINT />
+            <q1:defaultValue value="1" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_60C202" access="readWrite">
+            <label lang="en">Interpolation time index</label>
+            <SINT />
+            <q1:defaultValue value="-3" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_60F4">
+            <description lang="en">inc (2^21 per revolution)</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_60FF" access="readWrite">
+            <description lang="en">inc/s</description>
+            <DINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_6502" access="const">
+            <description lang="en">PP, PV, HM, CSP, CSV, CST</description>
+            <UDINT />
+            <q1:defaultValue value="0x000003A5" />
           </q1:parameter>
         </q1:parameterList>
       </q1:ApplicationProcess>
@@ -3723,7 +3869,7 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="15:44:23.0641925-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="16:25:34.1594048-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <ApplicationLayers>
         <q2:CANopenObjectList>
           <CANopenObject index="1000" name="Device type" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_1000" />
@@ -4037,74 +4183,6 @@
             <CANopenSubObject subIndex="07" name="Application object 7" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_1A0407" />
             <CANopenSubObject subIndex="08" name="Application object 8" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_1A0408" />
           </CANopenObject>
-          <CANopenObject index="6007" name="Abort connection option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6007" />
-          <CANopenObject index="603F" name="Error code" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_603F" />
-          <CANopenObject index="6040" name="Controlword" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6040" />
-          <CANopenObject index="6041" name="Statusword" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6041" />
-          <CANopenObject index="605A" name="Quick stop option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605A" />
-          <CANopenObject index="605B" name="Shutdown option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605B" />
-          <CANopenObject index="605C" name="Disable operation option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605C" />
-          <CANopenObject index="605D" name="Halt option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605D" />
-          <CANopenObject index="605E" name="Fault reaction option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605E" />
-          <CANopenObject index="6060" name="Modes of operation" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6060" />
-          <CANopenObject index="6061" name="Modes of operation display" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6061" />
-          <CANopenObject index="6062" name="Position demand value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6062" />
-          <CANopenObject index="6064" name="Position actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6064" />
-          <CANopenObject index="6065" name="Following error window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6065" />
-          <CANopenObject index="6066" name="Following error time out" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6066" />
-          <CANopenObject index="6067" name="Position window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6067" />
-          <CANopenObject index="6068" name="Position window time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6068" />
-          <CANopenObject index="606B" name="Velocity demand value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_606B" />
-          <CANopenObject index="606C" name="Velocity actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_606C" />
-          <CANopenObject index="606D" name="Velocity window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606D" />
-          <CANopenObject index="606E" name="Velocity window time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606E" />
-          <CANopenObject index="606F" name="Velocity threshold" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606F" />
-          <CANopenObject index="6070" name="Velocity threshold time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6070" />
-          <CANopenObject index="6071" name="Target torque" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6071" />
-          <CANopenObject index="6072" name="Max torque" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6072" />
-          <CANopenObject index="6073" name="Max current" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6073" />
-          <CANopenObject index="6074" name="Torque demand" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6074" />
-          <CANopenObject index="6075" name="Motor rated current" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6075" />
-          <CANopenObject index="6076" name="Motor rated torque" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6076" />
-          <CANopenObject index="6077" name="Torque actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6077" />
-          <CANopenObject index="6078" name="Current actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6078" />
-          <CANopenObject index="6079" name="DC link circuit voltage" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6079" />
-          <CANopenObject index="607A" name="Target position" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_607A" />
-          <CANopenObject index="607C" name="Home offset" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_607C" />
-          <CANopenObject index="607F" name="Max profile velocity" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_607F" />
-          <CANopenObject index="6080" name="Max motor speed" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6080" />
-          <CANopenObject index="6081" name="Profile velocity" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6081" />
-          <CANopenObject index="6083" name="Profile acceleration" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6083" />
-          <CANopenObject index="6084" name="Profile deceleration" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6084" />
-          <CANopenObject index="6085" name="Quick stop deceleration" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6085" />
-          <CANopenObject index="6086" name="Motion profile type" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6086" />
-          <CANopenObject index="6098" name="Homing method" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6098" />
-          <CANopenObject index="609A" name="Homing acceleration" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_609A" />
-          <CANopenObject index="60B1" name="Velocity offset" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60B1" />
-          <CANopenObject index="60B2" name="Torque offset" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60B2" />
-          <CANopenObject index="60F4" name="Following error actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_60F4" />
-          <CANopenObject index="60FF" name="Target velocity" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60FF" />
-          <CANopenObject index="6502" name="Supported drive modes" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6502" />
-          <CANopenObject index="607D" name="Software position limit" objectType="8" uniqueIDRef="UID_OBJ_607D" subNumber="3">
-            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D00" />
-            <CANopenSubObject subIndex="01" name="Min position limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D01" />
-            <CANopenSubObject subIndex="02" name="Max position limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D02" />
-          </CANopenObject>
-          <CANopenObject index="608F" name="Position encoder resolution" objectType="9" uniqueIDRef="UID_OBJ_608F" subNumber="3">
-            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F00" />
-            <CANopenSubObject subIndex="01" name="Encoder increments" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F01" />
-            <CANopenSubObject subIndex="02" name="Motor revolutions" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F02" />
-          </CANopenObject>
-          <CANopenObject index="6099" name="Homing speeds" objectType="8" uniqueIDRef="UID_OBJ_6099" subNumber="3">
-            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609900" />
-            <CANopenSubObject subIndex="01" name="Speed during search for switch" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609901" />
-            <CANopenSubObject subIndex="02" name="Speed during search for zero" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609902" />
-          </CANopenObject>
-          <CANopenObject index="60C2" name="Interpolation time period" objectType="9" uniqueIDRef="UID_OBJ_60C2" subNumber="3">
-            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C200" />
-            <CANopenSubObject subIndex="01" name="Interpolation time period value" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C201" />
-            <CANopenSubObject subIndex="02" name="Interpolation time index" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C202" />
-          </CANopenObject>
           <CANopenObject index="4000" name="Device info" objectType="9" uniqueIDRef="UID_OBJ_4000" subNumber="5">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400000" />
             <CANopenSubObject subIndex="01" name="Protocol version" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400001" />
@@ -4231,6 +4309,81 @@
             <CANopenSubObject subIndex="04" name="CAN frames sent" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404104" />
             <CANopenSubObject subIndex="05" name="CAN RX overruns" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404105" />
           </CANopenObject>
+          <CANopenObject index="4042" name="CiA 402 status" objectType="9" uniqueIDRef="UID_OBJ_4042" subNumber="5">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404200" />
+            <CANopenSubObject subIndex="01" name="CiA 402 state" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404201" />
+            <CANopenSubObject subIndex="02" name="Last refusal" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404202" />
+            <CANopenSubObject subIndex="03" name="Fault" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404203" />
+            <CANopenSubObject subIndex="04" name="CAN has the motor" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_404204" />
+          </CANopenObject>
+          <CANopenObject index="6007" name="Abort connection option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6007" />
+          <CANopenObject index="603F" name="Error code" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_603F" />
+          <CANopenObject index="6040" name="Controlword" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6040" />
+          <CANopenObject index="6041" name="Statusword" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6041" />
+          <CANopenObject index="605A" name="Quick stop option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605A" />
+          <CANopenObject index="605B" name="Shutdown option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605B" />
+          <CANopenObject index="605C" name="Disable operation option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605C" />
+          <CANopenObject index="605D" name="Halt option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605D" />
+          <CANopenObject index="605E" name="Fault reaction option code" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_605E" />
+          <CANopenObject index="6060" name="Modes of operation" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6060" />
+          <CANopenObject index="6061" name="Modes of operation display" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6061" />
+          <CANopenObject index="6062" name="Position demand value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6062" />
+          <CANopenObject index="6064" name="Position actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6064" />
+          <CANopenObject index="6065" name="Following error window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6065" />
+          <CANopenObject index="6066" name="Following error time out" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6066" />
+          <CANopenObject index="6067" name="Position window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6067" />
+          <CANopenObject index="6068" name="Position window time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6068" />
+          <CANopenObject index="606B" name="Velocity demand value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_606B" />
+          <CANopenObject index="606C" name="Velocity actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_606C" />
+          <CANopenObject index="606D" name="Velocity window" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606D" />
+          <CANopenObject index="606E" name="Velocity window time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606E" />
+          <CANopenObject index="606F" name="Velocity threshold" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_606F" />
+          <CANopenObject index="6070" name="Velocity threshold time" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6070" />
+          <CANopenObject index="6071" name="Target torque" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6071" />
+          <CANopenObject index="6072" name="Max torque" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6072" />
+          <CANopenObject index="6073" name="Max current" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6073" />
+          <CANopenObject index="6074" name="Torque demand" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6074" />
+          <CANopenObject index="6075" name="Motor rated current" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6075" />
+          <CANopenObject index="6076" name="Motor rated torque" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6076" />
+          <CANopenObject index="6077" name="Torque actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6077" />
+          <CANopenObject index="6078" name="Current actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6078" />
+          <CANopenObject index="6079" name="DC link circuit voltage" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_6079" />
+          <CANopenObject index="607A" name="Target position" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_607A" />
+          <CANopenObject index="607C" name="Home offset" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_607C" />
+          <CANopenObject index="607D" name="Software position limit" objectType="8" uniqueIDRef="UID_OBJ_607D" subNumber="3">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D00" />
+            <CANopenSubObject subIndex="01" name="Min position limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D01" />
+            <CANopenSubObject subIndex="02" name="Max position limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_607D02" />
+          </CANopenObject>
+          <CANopenObject index="607F" name="Max profile velocity" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_607F" />
+          <CANopenObject index="6080" name="Max motor speed" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6080" />
+          <CANopenObject index="6081" name="Profile velocity" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6081" />
+          <CANopenObject index="6083" name="Profile acceleration" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6083" />
+          <CANopenObject index="6084" name="Profile deceleration" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_6084" />
+          <CANopenObject index="6085" name="Quick stop deceleration" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6085" />
+          <CANopenObject index="6086" name="Motion profile type" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6086" />
+          <CANopenObject index="608F" name="Position encoder resolution" objectType="9" uniqueIDRef="UID_OBJ_608F" subNumber="3">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F00" />
+            <CANopenSubObject subIndex="01" name="Encoder increments" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F01" />
+            <CANopenSubObject subIndex="02" name="Motor revolutions" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_608F02" />
+          </CANopenObject>
+          <CANopenObject index="6098" name="Homing method" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6098" />
+          <CANopenObject index="6099" name="Homing speeds" objectType="8" uniqueIDRef="UID_OBJ_6099" subNumber="3">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609900" />
+            <CANopenSubObject subIndex="01" name="Speed during search for switch" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609901" />
+            <CANopenSubObject subIndex="02" name="Speed during search for zero" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_609902" />
+          </CANopenObject>
+          <CANopenObject index="609A" name="Homing acceleration" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_609A" />
+          <CANopenObject index="60B1" name="Velocity offset" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60B1" />
+          <CANopenObject index="60B2" name="Torque offset" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60B2" />
+          <CANopenObject index="60C2" name="Interpolation time period" objectType="9" uniqueIDRef="UID_OBJ_60C2" subNumber="3">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C200" />
+            <CANopenSubObject subIndex="01" name="Interpolation time period value" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C201" />
+            <CANopenSubObject subIndex="02" name="Interpolation time index" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_60C202" />
+          </CANopenObject>
+          <CANopenObject index="60F4" name="Following error actual value" objectType="7" PDOmapping="TPDO" uniqueIDRef="UID_OBJ_60F4" />
+          <CANopenObject index="60FF" name="Target velocity" objectType="7" PDOmapping="RPDO" uniqueIDRef="UID_OBJ_60FF" />
+          <CANopenObject index="6502" name="Supported drive modes" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_6502" />
         </q2:CANopenObjectList>
         <dummyUsage>
           <dummy entry="Dummy0001=0" />

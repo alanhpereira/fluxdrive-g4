@@ -5,6 +5,7 @@
 
 #include "boot.h"		/* boot_reboot() */
 #include "bridgeCtrl.h" /* checkAndClearBridgeFault(), disableBridge(), initBridge() */
+#include "co402.h"
 #include "co_app.h"
 #include "co_store.h"
 #include "tim.h"
@@ -53,6 +54,8 @@ void cmd_init(void) {
 
 /* set while CTRL_RUN only holds zero current until the motor is slow enough for CTRL_OFF (run_watchdog()) */
 volatile uint8_t g_coasting;
+volatile uint8_t g_can_owner;
+volatile uint8_t g_stop_reason;
 
 /* from CTRL_RUN: CTRL_OFF puts the zero vector on the motor, which short-brakes it (about lambda / L of
  * current at speed, far above imax). So switch off only below COAST_END_TURNS; faster, keep the current loop
@@ -598,7 +601,7 @@ static st_t cal_enter(void) {
 
 /* what the chosen angle source needs before a run (speed/position too when outer). Encoder modes need the
  * electrical offset from 'e'; sensorless needs no encoder at all, but R, L, the PI, kv, the saliency map and hv */
-static st_t run_enter(int outer) {
+static st_t run_prereq(int outer) {
 	if (g_params.ang_src == ANG_SENSORLESS) {
 		const uint32_t rl = PF_R_VALID | PF_L_VALID;
 		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
@@ -614,7 +617,12 @@ static st_t run_enter(int outer) {
 	}
 	if (outer && !(g_params.vel_kp > 0.0f)) return ST_NEED_VGAINS;
 	if (outer && !(g_params.vel_lim > 0.0f)) return ST_NEED_VLIM;
-	return cal_enter();
+	return ST_OK;
+}
+
+static st_t run_enter(int outer) {
+	st_t e = run_prereq(outer);
+	return e ? e : cal_enter();
 }
 
 /* d-axis current under the speed/position loops: the HFI bias while HFI runs (always when sensorless) */
@@ -853,7 +861,8 @@ static int trip_watchdog(void) {
 	}
 	if (!reported) {
 		reported = 1;
-		const float v[3] = {(float)(g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT), g_id, g_iq};
+		g_stop_reason = (uint8_t)(g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT);
+		const float v[3] = {(float)g_stop_reason, g_id, g_iq};
 		proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 	}
 	if (g_mode == CTRL_RUN && !g_trip_moe && !(fabsf(g_vel) < COAST_END_TURNS)) return 1; /* still coasting */
@@ -911,6 +920,7 @@ static void run_watchdog(void) {
 		g_coasting = 0;
 		g_mode = CTRL_OFF;
 	}
+	g_stop_reason = (uint8_t)e;
 	const float v[3] = {(float)e, g_id, g_iq};
 	proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 }
@@ -968,6 +978,60 @@ static void home(void) {
 	g_home_req = 1;						/* currentLoop() takes the present position as 0 */
 }
 
+/* ------------------------------------------------------------------ CiA 402 drive profile (co402.c, main loop) */
+/* ready to run now, without blocking and without proto_poll() (unlike chk()) */
+static st_t ready_check(void) {
+	if (g_trip) return ST_TRIPPED;
+	if (!(TIM1->BDTR & TIM_BDTR_MOE)) return ST_BRIDGE_OFF;
+	if (g_params.rated_current <= 0.0f || g_params.max_current <= 0.0f) return ST_NEED_RATED;
+	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
+	if (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) return ST_VBUS_HIGH;
+	return ST_OK;
+}
+
+st_t drive_check(loop_t loop) {
+	if (g_busy) return ST_BUSY;
+	if (g_mode != CTRL_OFF && !g_can_owner) return ST_RUNNING; /* the USB side has the motor */
+	if (loop == LOOP_POS && g_params.ang_src == ANG_SENSORLESS) return ST_NEED_ENC_POS;
+	if (loop == LOOP_POS && !(g_params.pos_kp > 0.0f)) return ST_NEED_PKP;
+	const st_t e = run_prereq(loop != LOOP_CURRENT);
+	return e ? e : ready_check();
+}
+
+st_t drive_enter(loop_t loop) {
+	const st_t e = drive_check(loop);
+	if (e) return e;
+	g_coasting = 0; /* a coasting motor is picked up as it is */
+	if (g_mode != CTRL_RUN) {
+		g_mode = CTRL_OFF; /* currentLoop() holds the integrators at zero */
+		HAL_Delay(1);
+		g_loop = LOOP_CURRENT;
+		g_id_ref = 0.0f;
+		g_iq_ref = 0.0f;
+		g_mode = CTRL_RUN;
+	}
+	g_id_ref = id_bias();
+	if (loop == LOOP_VEL) {
+		g_vel_ref = g_vel; /* reference first, then the switch: bumpless from the present speed */
+		g_loop = LOOP_VEL;
+	}
+	else
+		g_loop = LOOP_CURRENT; /* iq stays where it is: bumpless */
+	return ST_OK;
+}
+
+void drive_coast(void) {
+	coast_or_off();
+}
+
+int drive_trip_reset(void) {
+	if (!g_trip) return 1;
+	if (g_mode != CTRL_OFF) return 0; /* still coasting */
+	g_trip_moe = 0;
+	g_trip = TRIP_NONE;
+	return 1;
+}
+
 /* ------------------------------------------------------------------ binary commands (proto.c) */
 static st_t (*const k_cal[CAL_N])(void) = {
 	[CAL_ENC] = cal_encoder,
@@ -1010,6 +1074,12 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 		s_tok = 0;
 		return;
 	}
+	if (g_can_owner && (type == MSG_CAL || type == MSG_SAVE || type == MSG_RUN_CUR || type == MSG_RUN_VEL ||
+						type == MSG_RUN_POS || type == MSG_HOME || type == MSG_REBOOT)) {
+		proto_reply_st(type, tok, ST_CAN_ACTIVE); /* STOP still works: a local stop, the CANopen side goes to fault */
+		s_tok = 0;
+		return;
+	}
 	switch (type) {
 		case MSG_CAL:
 			cal_message(p, len);
@@ -1047,13 +1117,12 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 			break;
 		case MSG_STOP:
 			if (g_trip) { /* reset the trip, once the coast has ended; the bridge re-arms if it was switched off */
-				if (g_mode != CTRL_OFF)
-					e = ST_TRIPPED;
-				else {
-					g_trip_moe = 0;
-					g_trip = TRIP_NONE;
-				}
+				if (!drive_trip_reset()) e = ST_TRIPPED;
 				break;
+			}
+			if (g_can_owner) { /* take the motor from the CANopen master first: the tick stops writing references */
+				g_can_owner = 0;
+				g_stop_reason = ST_ABORTED;
 			}
 			finish(); /* ramps down and switches off */
 			break;
@@ -1081,6 +1150,7 @@ void cmd_poll(void) {
 	run_watchdog();
 	proto_poll(0); /* frames -> objdict / cmd_message() */
 	co_app_poll(); /* CANopen communication / node resets */
+	co402_poll();  /* CiA 402 state machine */
 	const uint8_t rq = co_store_take_request(); /* 0x1010 / 0x1011 over SDO, acknowledged already */
 	if (rq && g_mode == CTRL_OFF && !g_trip) save_records(rq); /* a trip: initBridge() would re-arm it */
 }

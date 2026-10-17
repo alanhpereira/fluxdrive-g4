@@ -78,6 +78,8 @@ extern volatile float g_vel;		   /* turn/s, PLL estimate */
 extern volatile float g_pos;		   /* turns, display/telemetry only: the loop uses pos_q32_t */
 extern volatile float g_rpm;		   /* g_vel * 60 */
 extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position 0 */
+extern volatile int32_t g_pos_cnt;	 /* encoder counts from home, motor direction (atomic copy of the position) */
+extern volatile uint8_t g_ramp_bypass; /* 1: the speed loop takes g_vel_ref as is, no acc_lim slew (CANopen modes) */
 
 /* implement in main.c:  uint32_t enc_angle21(void) { return hMT6835.angle; } */
 uint32_t enc_angle21(void);
@@ -87,6 +89,17 @@ static inline uint32_t elec_angle(uint32_t angle21) {
 	uint32_t m = (angle21 << 11) * (uint32_t)g_params.pole_pairs;
 	return (g_params.enc_dir > 0 ? m : 0u - m) + g_params.elec_offset;
 }
+
+/* ---- CiA 402 drive profile (CANopen/app/co402.c), main loop only ---- */
+#include "proto.h" /* st_t */
+extern volatile uint8_t g_can_owner;   /* 1 while the CANopen master has the motor: USB run/cal/home/save/reboot get
+										* ST_CAN_ACTIVE; a USB STOP clears it (local stop) */
+extern volatile uint8_t g_stop_reason; /* st_t of the last stop by the watchdogs, or ST_ABORTED for a local STOP.
+										* co402.c takes it (sets 0) */
+st_t drive_check(loop_t loop);		   /* could drive_enter() run now? Nothing is touched */
+st_t drive_enter(loop_t loop);		   /* CTRL_RUN in loop (LOOP_VEL or LOOP_CURRENT), bumpless from the present state */
+void drive_coast(void);				   /* zero current; CTRL_OFF once slow (never the zero vector at speed) */
+int drive_trip_reset(void);			   /* clears a latched trip once the coast has ended: 1 if none is latched now */
 
 void cmd_init(void); /* call once after MX_USART1_UART_Init() */
 void cmd_poll(void); /* call from the main loop */

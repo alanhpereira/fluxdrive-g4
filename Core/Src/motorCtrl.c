@@ -50,6 +50,8 @@ volatile float g_iq, g_id;
 volatile float g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
+volatile int32_t g_pos_cnt;
+volatile uint8_t g_ramp_bypass;
 volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
 volatile uint32_t g_tlm_drop;				   /* telemetry frames that found the link queue full */
 volatile uint16_t g_sl_lost_n;				  /* sensorless: consecutive cycles HFI was not tracking, see SL_LOST_N */
@@ -158,6 +160,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		g_pos_ref_req = 0;
 	}
 	s_pos = (p - s_home) * 2048; /* counts -> Q32.32 */
+	g_pos_cnt = (int32_t)(p - s_home); /* CANopen 0x6064: wraps at +-1024 turns */
 	g_pos = (float)(int32_t)(s_pos >> 32) + (float)(uint32_t)s_pos * (float)(1.0 / POS_Q32_ONE);
 
 	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
@@ -217,7 +220,7 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 			const float dv = g_params.acc_lim * (1.0f / 60.0f) * (float)OUTER_DIV / CTRL_FS_HZ;
 			if (s_regen_k < 1.0f && (vref - vramp) * vramp < 0.0f)
 				; /* regen clamp: hold the deceleration ramp, the motor slows as fast as the bus allows */
-			else if (!(dv > 0.0f))
+			else if (!(dv > 0.0f) || g_ramp_bypass) /* bypass: the CANopen profile (or the master) ramps already */
 				vramp = vref;
 			else if (vref > vramp + dv)
 				vramp += dv;

@@ -13,7 +13,7 @@ import threading
 
 SYNC_MSG = b"\xA5\x5C"
 MAX_LEN = 64
-PROTO_VERSION = 4
+PROTO_VERSION = 5
 
 # message types (the reply is type | REPLY)
 PING, READ, WRITE, LIST = 0x01, 0x10, 0x11, 0x12
@@ -54,6 +54,8 @@ STATUS = [
     "bus voltage above vmax",
     "tripped: press STOP to reset (once the motor has coasted down)",
     "current-sense offsets implausible (rotor turning? sense stage?)",
+    "the CANopen master has the motor (STOP takes it back)",
+    "CANopen master lost (heartbeat timeout or NMT left operational)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 SDO = {

@@ -324,6 +324,13 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .CANFramesSent = 0x00000000,
         .CAN_RXOverruns = 0x00000000
     },
+    .x4042_ciA402Status = {
+        .highestSub_indexSupported = 0x04,
+        .ciA402State = 0x00,
+        .lastRefusal = 0x00,
+        .fault = 0x00,
+        .CANHasTheMotor = 0x00
+    },
     .x603F_errorCode = 0x0000,
     .x6040_controlword = 0x0000,
     .x6041_statusword = 0x0000,
@@ -444,6 +451,7 @@ typedef struct {
     OD_obj_record_t o_4031_HFInjection[8];
     OD_obj_record_t o_4040_CANSettings[6];
     OD_obj_record_t o_4041_CANStatus[6];
+    OD_obj_record_t o_4042_ciA402Status[5];
     OD_obj_var_t o_6007_abortConnectionOptionCode;
     OD_obj_var_t o_603F_errorCode;
     OD_obj_var_t o_6040_controlword;
@@ -1973,6 +1981,38 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .dataLength = 4
         }
     },
+    .o_4042_ciA402Status = {
+        {
+            .dataOrig = &OD_RAM.x4042_ciA402Status.highestSub_indexSupported,
+            .subIndex = 0,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4042_ciA402Status.ciA402State,
+            .subIndex = 1,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4042_ciA402Status.lastRefusal,
+            .subIndex = 2,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4042_ciA402Status.fault,
+            .subIndex = 3,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4042_ciA402Status.CANHasTheMotor,
+            .subIndex = 4,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        }
+    },
     .o_6007_abortConnectionOptionCode = {
         .dataOrig = &OD_PERSIST_APP.x6007_abortConnectionOptionCode,
         .attribute = ODA_SDO_RW | ODA_MB,
@@ -2323,6 +2363,7 @@ static OD_ATTR_OD OD_entry_t ODList[] = {
     {0x4031, 0x08, ODT_REC, &ODObjs.o_4031_HFInjection, NULL},
     {0x4040, 0x06, ODT_REC, &ODObjs.o_4040_CANSettings, NULL},
     {0x4041, 0x06, ODT_REC, &ODObjs.o_4041_CANStatus, NULL},
+    {0x4042, 0x05, ODT_REC, &ODObjs.o_4042_ciA402Status, NULL},
     {0x6007, 0x01, ODT_VAR, &ODObjs.o_6007_abortConnectionOptionCode, NULL},
     {0x603F, 0x01, ODT_VAR, &ODObjs.o_603F_errorCode, NULL},
     {0x6040, 0x01, ODT_VAR, &ODObjs.o_6040_controlword, NULL},

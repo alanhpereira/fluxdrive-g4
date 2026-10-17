@@ -23,6 +23,10 @@ void co_app_init(void); /* once, after MX_FDCAN1_Init(), before the main loop */
 void co_app_poll(void); /* main loop: pending communication / application resets */
 void co_app_request_reset(void); /* communication reset at the next co_app_poll() (0x4040:5) */
 
+
+void* co_app_co(void); /* the stack object (CO_t*), NULL before the first communication reset */
+int co_app_abort_to_odr(uint32_t abort); /* objdict SDO_* abort code -> ODR_t */
+
 uint8_t co_app_nmt_state(void);	 /* CO_NMT_internalState_t: 0 init, 4 stopped, 5 operational, 127 pre-operational */
 uint16_t co_app_can_state(void); /* CANerrorStatus bits (CO_CAN_ERR*) */
 

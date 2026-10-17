@@ -63,6 +63,9 @@ G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI, G_CAN = ("Motor", "Curren
                                                                 "Current sensing", "Observer", "HF injection", "CAN")
 CAN_KBIT = (20, 50, 125, 250, 500, 1000)
 NMT_STATES = {0: "initializing", 4: "stopped", 5: "operational", 127: "pre-operational"}
+FSA_STATES = {0: "not ready", 1: "switch on disabled", 2: "ready to switch on", 3: "switched on", 4: "operation enabled",
+              5: "quick stop active", 6: "fault reaction", 7: "fault"}
+CIA402_MODES = {0: "-", 1: "PP", 3: "PV", 6: "HM", 8: "CSP", 9: "CSV", 10: "CST"}
 BW_MAX = 25000.0 / 20
 
 OBJECTS = [
@@ -205,6 +208,11 @@ OBJECTS = [
     Obj(0x4041, 4, T_U32, 0, "can_tx", "CAN frames sent", lo=0, hi=0, group=G_DIAG),
     Obj(0x4041, 5, T_U32, 0, "can_lost", "CAN RX overruns", lo=0, hi=0, group=G_DIAG,
         help="frames lost because the RX FIFO was full"),
+    # 0x4042 CiA 402 drive profile
+    Obj(0x4042, 1, T_U8, RO, "fsa", "CiA 402 state", group=G_DIAG),
+    Obj(0x4042, 2, T_U8, RO, "fsa_refused", "Last refusal", group=G_DIAG, help="status code: why switch on / enable was refused"),
+    Obj(0x4042, 3, T_U8, RO, "fsa_fault", "Fault", group=G_DIAG, help="status code of the fault in 0x603F"),
+    Obj(0x4042, 4, T_U8, RO, "can_owner", "CAN has the motor", group=G_DIAG),
 ]
 
 BY_KEY = {o.key: o for o in OBJECTS}

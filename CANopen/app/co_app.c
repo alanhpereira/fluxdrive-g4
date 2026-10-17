@@ -2,6 +2,7 @@
 
 #include "CANopen.h"
 #include "OD.h"
+#include "co402.h"
 #include "co_store.h"
 #include "storage/CO_storage.h"
 #include "boot.h"		/* boot_reboot() */
@@ -57,7 +58,7 @@ static ODR_t restore_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
  * The OD holds them (exported from driverTCC.xdd) so masters and the EDS see them, but the values live in the
  * firmware's own variables: reads and writes go through objdict.c, with the same range checks and side effects
  * (pi_apply(), OF_NOTRUN...) as the USB/serial protocol. Sub-index 0 stays the OD's own */
-static ODR_t sdo_to_odr(uint32_t ab) {
+int co_app_abort_to_odr(uint32_t ab) {
 	switch (ab) {
 		case SDO_NO_OBJECT: return ODR_IDX_NOT_EXIST;
 		case SDO_NO_SUB: return ODR_SUB_NOT_EXIST;
@@ -73,7 +74,7 @@ static ODR_t native_read(OD_stream_t* st, void* buf, OD_size_t count, OD_size_t*
 	if (st->subIndex == 0) return OD_readOriginal(st, buf, count, n);
 	uint8_t v[8], len = 0;
 	const uint32_t ab = od_read_fast(st->index, st->subIndex, v, &len);
-	if (ab) return sdo_to_odr(ab);
+	if (ab) return (ODR_t)co_app_abort_to_odr(ab);
 	if (count < len) return ODR_DEV_INCOMPAT; /* all native values are 1..4 bytes: never segmented */
 	memcpy(buf, v, len);
 	*n = len;
@@ -84,7 +85,7 @@ static ODR_t native_write(OD_stream_t* st, const void* buf, OD_size_t count, OD_
 	if (st->subIndex == 0) return ODR_READONLY;
 	if (count > 8) return ODR_DATA_LONG;
 	const uint32_t ab = od_write(st->index, st->subIndex, buf, (uint8_t)count);
-	if (ab) return sdo_to_odr(ab);
+	if (ab) return (ODR_t)co_app_abort_to_odr(ab);
 	*n = count;
 	return ODR_OK;
 }
@@ -145,6 +146,7 @@ static void comm_reset(void) {
 
 void co_app_init(void) {
 	native_init();
+	co402_init();
 	co_store_load(); /* node ID and bit rate */
 	comm_reset();
 
@@ -188,8 +190,13 @@ void TIM7_IRQHandler(void) {
 	else if (!s_co->nodeIdUnconfigured && s_co->CANmodule->CANnormal) {
 		const bool_t sync = CO_process_SYNC(s_co, 1000, NULL);
 		CO_process_RPDO(s_co, sync, 1000, NULL);
+		co402_tick(); /* references from the fresh RPDO data, actual values for the TPDOs */
 		CO_process_TPDO(s_co, sync, 1000, NULL);
 	}
+}
+
+void* co_app_co(void) {
+	return s_co;
 }
 
 uint8_t co_app_nmt_state(void) {

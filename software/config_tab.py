@@ -54,7 +54,8 @@ STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "tri
                "dirty", "seq"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
              "enc_crc_check", "proto_err", "ov_resumes", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src",
-             "can_id_act", "can_kbit_act", "can_nmt", "can_err", "can_rx", "can_tx", "can_lost"]
+             "can_id_act", "can_kbit_act", "can_nmt", "can_err", "can_rx", "can_tx", "can_lost", "fsa", "fsa_refused",
+             "fsa_fault", "can_owner"]
 TRIPS = {1: "bus overvoltage", 2: "overcurrent"}
 COFF_SRC = {0: "default", 1: "stored", 2: "measured at boot"}
 CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err", "ov_resumes", "can_rx", "can_tx",
@@ -794,6 +795,18 @@ class ConfigTab(QtWidgets.QWidget):
             f"{O.NMT_STATES.get(nmt, nmt)}</span><br>RX {g('can_rx', 0):,}, TX {g('can_tx', 0):,}, overruns "
             + (f"<span style='color:{RED}'>{g('can_lost')}</span>" if g("can_lost") else "0")
             + (f"<br><span style='color:{RED if err & 0x0006 else ORANGE}'>{bits(err, CAN_BITS)}</span>" if err else "") + pend)
+        if "fsa" in s:
+            fsa = g("fsa")
+            col = RED if fsa >= 6 else GREEN if fsa == 4 else None
+            txt = O.FSA_STATES.get(fsa, fsa)
+            txt = f"<span style='color:{col}'>{txt}</span>" if col else txt
+            if g("can_owner"):
+                txt += " — <b>CAN has the motor</b>"
+            if g("fsa_fault"):
+                txt += f"<br><span style='color:{RED}'>fault: {P.status_text(g('fsa_fault'))}</span>"
+            if g("fsa_refused"):
+                txt += f"<br><span style='color:{ORANGE}'>refused: {P.status_text(g('fsa_refused'))}</span>"
+            self.st_lbl["can"].setText(self.st_lbl["can"].text() + "<br>CiA 402: " + txt)
 
     def _show_link(self):
         link = self.link

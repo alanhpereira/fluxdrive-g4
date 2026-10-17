@@ -2353,7 +2353,7 @@ DefaultValue=0x000003A5
 PDOMapping=0
 
 [ManufacturerObjects]
-SupportedObjects=13
+SupportedObjects=14
 1=0x4000
 2=0x4001
 3=0x4002
@@ -2367,6 +2367,7 @@ SupportedObjects=13
 11=0x4031
 12=0x4040
 13=0x4041
+14=0x4042
 
 [4000]
 ParameterName=Device info
@@ -3435,6 +3436,57 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=rw
+DefaultValue=0
+PDOMapping=0
+
+[4042]
+ParameterName=CiA 402 status
+ObjectType=0x9
+;StorageLocation=RAM
+SubNumber=0x5
+
+[4042sub0]
+ParameterName=Highest sub-index supported
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0x04
+PDOMapping=0
+
+[4042sub1]
+ParameterName=CiA 402 state
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+PDOMapping=0
+
+[4042sub2]
+ParameterName=Last refusal
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+PDOMapping=0
+
+[4042sub3]
+ParameterName=Fault
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+PDOMapping=0
+
+[4042sub4]
+ParameterName=CAN has the motor
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
 DefaultValue=0
 PDOMapping=0
 

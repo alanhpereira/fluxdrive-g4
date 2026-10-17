@@ -5,6 +5,7 @@
 #include "bridgeCtrl.h" /* readBridgeStatus() */
 #include "main.h"		/* DRV_RDY pin */
 #include "calib.h"
+#include "co402.h"    /* 0x4042 */
 #include "co_app.h"   /* 0x4040/0x4041 */
 #include "co_store.h" /* co_store_dirty() */
 #include "hfi.h" /* HFI_HALF_MAX */
@@ -135,6 +136,11 @@ static const obj_t k_tab[] = {
 	{0x4041, 3, T_U32, 0, F(g_can_rx), 0.0f, 0.0f},
 	{0x4041, 4, T_U32, 0, F(g_can_tx), 0.0f, 0.0f},
 	{0x4041, 5, T_U32, 0, F(g_can_rx_lost), 0.0f, 0.0f},
+	/* 0x4042 CiA 402 drive profile */
+	{0x4042, 1, T_U8, OF_RO, F(g_co402_state), NOLIM},	/* FSA_* (co402.h) */
+	{0x4042, 2, T_U8, OF_RO, F(g_co402_refused), NOLIM}, /* st_t: why the last switch on / enable was refused */
+	{0x4042, 3, T_U8, OF_RO, F(g_co402_fault), NOLIM},	/* st_t of the fault in 0x603F */
+	{0x4042, 4, T_U8, OF_RO, F(g_can_owner), NOLIM},	/* 1: the CANopen master has the motor */
 };
 #define N_OBJ ((int)(sizeof k_tab / sizeof k_tab[0]))
 

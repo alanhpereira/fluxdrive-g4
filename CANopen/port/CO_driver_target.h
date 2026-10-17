@@ -40,6 +40,16 @@ extern "C" {
 #define CO_CONFIG_FIFO 0
 #define CO_CONFIG_TRACE 0
 
+/* error register 0x1001 from the error status bits. The drive faults (co402.c) use the manufacturer range:
+ * 0x40 overcurrent, 0x41-0x42 bus voltage, 0x43 power stage, 0x44 speed, 0x45 angle, 0x46 following error,
+ * 0x47 local stop, 0x48 master lost, 0x49 other. They set the current / voltage / device-profile bits and, like
+ * every error, the generic bit; never the communication bit (that one takes NMT out of operational) */
+#define CO_CONFIG_ERR_CONDITION_GENERIC (em->errorStatusBits[5] != 0 || em->errorStatusBits[8] != 0 || em->errorStatusBits[9] != 0)
+#define CO_CONFIG_ERR_CONDITION_CURRENT ((em->errorStatusBits[8] & 0x01U) != 0)
+#define CO_CONFIG_ERR_CONDITION_VOLTAGE ((em->errorStatusBits[8] & 0x06U) != 0)
+#define CO_CONFIG_ERR_CONDITION_DEV_PROFILE ((em->errorStatusBits[8] & 0xF8U) != 0 || em->errorStatusBits[9] != 0)
+#define CO_CONFIG_ERR_CONDITION_MANUFACTURER 0
+
 /* ------------------------------------------------------------------ basic types */
 #define CO_LITTLE_ENDIAN
 #define CO_SWAP_16(x) x
