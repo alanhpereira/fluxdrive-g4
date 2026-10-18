@@ -1210,6 +1210,7 @@ class UsbSerial(UsbSync):
     def __init__(self, port, baud=2000000):
         import serial  # only needed headless
         self.serial = serial
+        self.port, self.baud = port, baud
         self.ser = serial.Serial(port, baud, timeout=0.01)
         self.split = P.Splitter()
         self.wlock = threading.Lock()
@@ -1224,15 +1225,48 @@ class UsbSerial(UsbSync):
         self._dr.start()
 
     def _write(self, frame):
+        """a write into a port that went away (the drive resetting) waits up to 5 s for _reopen() and retries once:
+        CAN reports the boot-up ~0.1 s after a reset node, the USB CDC is back 1-2 s later"""
+        ser = self.ser
+        try:
+            with self.wlock:
+                ser.write(frame)
+            return
+        except (self.serial.SerialException, OSError):
+            t0 = time.time()
+            while self.running and self.ser is ser and time.time() - t0 < 5.0:
+                time.sleep(0.05)
+            if self.ser is ser:
+                raise
         with self.wlock:
             self.ser.write(frame)
+
+    def _reopen(self):
+        """the USB CDC port goes away when the drive resets (reset node, REBOOT): wait for it to come back"""
+        try:
+            self.ser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        while self.running:
+            time.sleep(0.2)
+            try:
+                ser = self.serial.Serial(self.port, self.baud, timeout=0.01)
+            except (self.serial.SerialException, OSError):
+                continue
+            ser.dtr = True
+            with self.wlock:
+                self.ser = ser
+            self.split = P.Splitter()
+            return
 
     def _read_loop(self):
         while self.running:
             try:
                 chunk = self.ser.read(self.ser.in_waiting or 1)
             except (self.serial.SerialException, OSError):
-                break
+                if self.running:
+                    self._reopen()
+                continue
             for kind, d in self.split.feed(chunk):
                 if kind == "msg":
                     self.link.on_message(*d)
