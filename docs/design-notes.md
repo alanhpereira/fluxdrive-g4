@@ -1,6 +1,6 @@
 # Design notes
 
-Written for developers working on the firmware or the PC software. They record why things are built the way they are, what was measured on the bench, and what is still open. How to *use* the driver and the software is in [user-manual-driver.md](user-manual-driver.md) and [user-manual-software.md](user-manual-software.md); the architecture, build rules and conventions are in [CLAUDE.md](../CLAUDE.md). The tables there (CANopen units, default PDOs, fault codes, parameters) are not repeated here.
+Written for developers working on the firmware or the PC software. They record why things are built the way they are, what was measured on the bench, and what is still open. How to *use* the driver and the software is in [user-manual-driver.md](user-manual-driver.md) and [user-manual-software.md](user-manual-software.md); the architecture, build rules and conventions are in [developer-guide.md](developer-guide.md). The tables there (CANopen units, default PDOs, fault codes, parameters) are not repeated here.
 
 These notes condense six per-feature handoff documents (config protocol, CANopen drive, CANopen PC tool, HFI, sensorless tuning, flash budget). The originals, with the full planning history, are in git history before this file was added.
 

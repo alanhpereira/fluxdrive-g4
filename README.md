@@ -14,8 +14,9 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 |---|---|
 | [docs/user-manual-driver.md](docs/user-manual-driver.md) | Using the driver: connections, flashing, commissioning a motor, run modes, protections, CANopen, parameter reference, troubleshooting |
 | [docs/user-manual-software.md](docs/user-manual-software.md) | Using the PC software: plotter (Scope, Config, CANopen tabs), test runner, helper scripts |
-| [CLAUDE.md](CLAUDE.md) | Developer overview: build system, CubeMX rules, architecture, execution model, conventions |
+| [docs/developer-guide.md](docs/developer-guide.md) | Developer guide: build system, CubeMX rules, architecture, execution model, conventions |
 | [docs/design-notes.md](docs/design-notes.md) | Design decisions, bench measurements and open items: config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget |
+| [docs/software-structure.md](docs/software-structure.md) | Flowcharts of the software: modules, boot, main loop, PWM period, `currentLoop()`, protocol, telemetry, CANopen, trips, flash, PC tools, interrupt priorities |
 
 ## Repository layout
 

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Developer guide
 
-This file guides Claude Code (claude.ai/code) when it works in this repository.
+This guide is for developers and for Claude Code (claude.ai/code) working in this repository. Claude Code loads it through the stub `.claude/CLAUDE.md`. Paths are relative to the repository root.
 
 ## What this is
 
@@ -17,6 +17,7 @@ Firmware, PC software and hardware of a graduation-thesis BLDC/PMSM motor driver
 - `docs/user-manual-driver.md`: using the driver (pin-outs, commissioning, modes, protections, CANopen tables, parameter reference).
 - `docs/user-manual-software.md`: using the PC tools.
 - `docs/design-notes.md`: design decisions, bench measurements and open items (config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget).
+- `docs/software-structure.md`: Mermaid flowcharts of the firmware and PC software structure (execution paths, data flow, priorities). Update it when a call path or module role changes.
 - Hardware: KiCad project in `hardware/`, schematic PDF `hardware/Driver TCC schematic.pdf`, datasheets in `hardware/datasheets/`.
 
 Keep the manuals in step when a change affects what a user sees (parameters, status codes, GUI controls, pin use).

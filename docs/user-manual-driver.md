@@ -2,7 +2,7 @@
 
 This manual covers the motor driver board and its firmware: connecting it, flashing it, commissioning a motor, running it, the protections, and operation over CANopen. The PC program (plotter, Config tab, CANopen tab, test runner) has its own manual: [user-manual-software.md](user-manual-software.md).
 
-Developer documentation (internals, design decisions, measurements) is in [design-notes.md](design-notes.md) and `CLAUDE.md`.
+Developer documentation (internals, design decisions, measurements) is in [design-notes.md](design-notes.md) and [developer-guide.md](developer-guide.md).
 
 ---
 
