@@ -101,7 +101,22 @@ HAL_StatusTypeDef readBridgeStatus(uint8_t* status) {
 /* re-arming loads zero duty (and SVPWM() waits FAULT_CLEAR_MIN_TIME): the zero vector, which short-brakes a
  * spinning motor. Encoder modes: only below COAST_END_TURNS. Sensorless cannot see the speed with the bridge
  * off: wait SL_REARM_MS. Until MOE has been on once (latched power-up faults) it does not wait */
-static uint8_t s_was_on; /* MOE has been on since boot */
+static uint8_t s_was_on;	  /* MOE has been on since boot */
+static uint8_t s_fault_seen; /* driver status fault bits cleared by checkAndClearBridgeFault() since the last bridge_fault_info() */
+
+uint32_t bridge_fault_info(void) {
+	uint8_t st = 0;
+	uint32_t r = s_fault_seen;
+	s_fault_seen = 0;
+	if (readBridgeStatus(&st) == HAL_OK)
+		r |= st & DRV_ST_FAULTS;
+	else
+		r |= BFI_I2C;
+	if (!(GPIOE->IDR & GPIO_PIN_15)) r |= BFI_NFAULT;
+	if (TIM1->SR & TIM_SR_BIF) r |= BFI_BRK;
+	if (TIM1->SR & TIM_SR_B2IF) r |= BFI_BRK2;
+	return r;
+}
 
 static int rearm_safe(uint32_t off_ms) {
 	if (!s_was_on) return 1;
@@ -145,6 +160,7 @@ int32_t checkAndClearBridgeFault() {
 	/* any latched fault, including VCC_UVLO from a slow power-up, must be cleared explicitly.
 	 * If the condition is still there the bit comes straight back and we retry next time */
 	if (fault_reg & DRV_ST_FAULTS) {
+		s_fault_seen |= fault_reg & DRV_ST_FAULTS; /* for bridge_fault_info(): this write clears them */
 		uint8_t v = 0xFF;
 		HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_CLEAR, I2C_MEMADD_SIZE_8BIT, &v, 1, 10);
 		return -(int32_t)(fault_reg & DRV_ST_FAULTS);

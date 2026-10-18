@@ -209,7 +209,7 @@ Starting while the motor is already spinning fast is not supported in sensorless
 | Undervoltage | bus < `vmin` | Stop. Calibrations and runs are refused below it. | Raise the supply. |
 | Overspeed | \|speed\| > 1.5 × `vlim` | Stop (coast). | — |
 | Encoder lost | no valid angle for 10 ms (encoder modes) | Bridge off, motor coasts. The driver re-sends the encoder setup every 100 ms while stopped, so a sensor that lost power comes back. | Home again if absolute position matters. |
-| Gate driver fault | nFAULT / break input | Bridge off by hardware. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless: after 3 s). |
+| Gate driver fault | nFAULT / break input | Bridge off by hardware. The STOPPED message gives the bus voltage and the driver's reason: VCC UVLO (the supply sagged, often a bench supply's current limit), thermal shutdown, VDS protection (MOSFET overcurrent) or driver reset. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless: after 3 s). |
 
 While a trip is latched, every command except STOP and REBOOT is refused with "a trip is latched". The Status box shows the trip and whether the bridge was switched off.
 

@@ -934,8 +934,8 @@ static void run_watchdog(void) {
 		g_mode = CTRL_OFF;
 	}
 	g_stop_reason = (uint8_t)e;
-	const float v[3] = {(float)e, g_id, g_iq};
-	proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
+	const float v[5] = {(float)e, g_id, g_iq, g_vin, e == ST_BRIDGE_FAULT ? (float)bridge_fault_info() : 0.0f};
+	proto_event(0, EV_STOPPED, 5, v); /* unsolicited: tok 0 */
 }
 
 /* the motor params (pages 62-63) and/or the CANopen comm record (pages 60-61, co_store.c). CO_RQ_* bits */

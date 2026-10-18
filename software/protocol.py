@@ -113,9 +113,20 @@ def _fmt_hfi_pol(v):
             f"({'flipped' if v[2] else 'kept'}, contrast {v[3] * 100:+.1f} %)")
 
 
+# bridge_fault_info() in bridgeCtrl.c: gate-driver status fault bits (DRV_ST_FAULTS) + BFI_*
+BRIDGE_FAULT_BITS = ((0x01, "VCC UVLO"), (0x02, "thermal shutdown"), (0x04, "VDS protection"), (0x08, "driver reset"),
+                     (0x10, "nFAULT low"), (0x20, "break"), (0x40, "break 2"), (0x80, "driver I2C read failed"))
+
+
+def bridge_fault_text(bits):
+    return "driver: " + ", ".join(t for b, t in BRIDGE_FAULT_BITS if bits & b)
+
+
 EVENTS = {
     EV_DONE: lambda v: f"{CAL_NAMES.get(int(v[1]), '?')}: " + ("done" if int(v[0]) == 0 else f"FAILED: {status_text(int(v[0]))}"),
-    EV_STOPPED: lambda v: f"STOPPED: {status_text(int(v[0]))} (id {v[1]:.2f} A, iq {v[2]:.2f} A)",
+    EV_STOPPED: lambda v: f"STOPPED: {status_text(int(v[0]))} (id {v[1]:.2f} A, iq {v[2]:.2f} A"
+                          + (f", bus {v[3]:.1f} V" if len(v) > 3 else "")
+                          + (f"; {bridge_fault_text(int(v[4]))}" if len(v) > 4 and int(v[4]) else "") + ")",
     EV_RPM_LIMITED: lambda v: f"limited to vlim {v[0]:.0f} rpm",
     EV_CUR_LIMITED: lambda v: f"limited to rated {v[0]:.2f} A",
     EV_RESUMED: lambda v: f"bus back down to {v[0]:.1f} V: resumed after the overvoltage coast ({v[1]:.0f} so far)",

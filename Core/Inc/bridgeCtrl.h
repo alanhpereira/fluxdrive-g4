@@ -46,5 +46,12 @@ static inline void bridge_trip_off(void) {
 }
 
 int32_t checkAndClearBridgeFault();
+/* why the bridge went off, for the STOPPED event: driver status fault bits (DRV_ST_FAULTS, read now or cleared
+ * by checkAndClearBridgeFault() since the last call) plus the BFI_* bits. Main only (I2C) */
+#define BFI_NFAULT 0x10 /* nFAULT low now */
+#define BFI_BRK 0x20	/* TIM1 break flag */
+#define BFI_BRK2 0x40	/* TIM1 break 2 flag */
+#define BFI_I2C 0x80	/* status read failed */
+uint32_t bridge_fault_info(void);
 HAL_StatusTypeDef readBridgeStatus(uint8_t* status);
 #endif
