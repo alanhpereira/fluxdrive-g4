@@ -42,7 +42,7 @@ HAL_StatusTypeDef initBridge() {
 	htim1.Instance->CCR4 = g_pwm_res - 75;
 
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
-	// ser scref for shutting drivers down to SCREF MV
+	// short-circuit reference: the gate driver shuts down above SCREF_MV
 	HAL_DAC_SetValue(&hdac1, DAC1_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF * SCREF_MV / 3300);
 
 	/* cold power-up: the driver supply comes up after the MCU. Give it up to 100 ms to report ready,

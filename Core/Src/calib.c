@@ -944,7 +944,7 @@ static HAL_StatusTypeDef save_records(uint8_t what) {
 	HAL_StatusTypeDef st = HAL_OK;
 	if (what & CO_RQ_SAVE_APP) st = params_save();
 	if (st == HAL_OK) st = co_store_save(what); /* any request: the record holds the CAN settings and both OD parts */
-	initBridge(); /* use whatever your normal power-up sequence is */
+	initBridge(); /* same bring-up as at boot: CCRs, short-circuit reference, gate-driver fault clear */
 	return st;
 }
 

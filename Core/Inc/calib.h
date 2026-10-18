@@ -38,7 +38,7 @@ extern volatile uint16_t g_rec_n;
 extern volatile uint8_t g_rec_state; /* 0 idle, 1 armed, 2 recording, 3 done */
 extern volatile uint8_t g_rec_use_q; /* record iq instead of id */
 
-/* defined elsewhere in your code: must be volatile float, defined exactly once */
+/* measured currents (A, motorCtrl.c) and bus voltage (V, curSnsCtrl.c), written by the ISR every cycle */
 extern volatile float g_id, g_iq, g_vin;
 extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from currentLoop() */
 
@@ -86,9 +86,6 @@ extern volatile int32_t g_home_pos;	 /* counts the present position gets at homi
 extern volatile int32_t g_pos_cnt;	 /* encoder counts from home, motor direction (atomic copy of the position) */
 extern volatile int32_t g_pos_ref_cnt; /* the ISR's position reference, same counts (meaningful in LOOP_POS) */
 extern volatile uint8_t g_ramp_bypass; /* 1: the speed loop takes g_vel_ref as is, no acc_lim slew (CANopen modes) */
-
-/* implement in main.c:  uint32_t enc_angle21(void) { return hMT6835.angle; } */
-uint32_t enc_angle21(void);
 
 /* electrical angle for normal (non-calibration) operation */
 static inline uint32_t elec_angle(uint32_t angle21) {
