@@ -1,6 +1,6 @@
 # Driver TCC: user manual (PC software)
 
-This manual covers the PC tools in `software/`: the plotter GUI (Scope, Config and CANopen tabs), the CANopen test runner, and the helper scripts. How the driver itself behaves (calibration, modes, protections, CANopen profile, parameters) is in [user-manual-driver.md](user-manual-driver.md).
+This manual covers the PC tools in `software/`: the plotter GUI (a USB page with the Scope and Config tabs, and a CANopen page), the CANopen test runner, and the helper scripts. How the driver itself behaves (calibration, modes, protections, CANopen profile, parameters) is in [user-manual-driver.md](user-manual-driver.md).
 
 | Tool | What it is for |
 |---|---|
@@ -37,7 +37,7 @@ pythonw software/plotter.py           Windows, without a console window
 2. Press **Connect**. The baud rate only matters for a UART build of the firmware; USB ignores it.
 3. On connect the GUI pings the device and compares the protocol version and the object-table hash with its own. A mismatch (GUI and firmware from different versions) is shown in orange above the parameter grid; parameters that differ are disabled rather than written wrongly. Then all parameters are read.
 
-The window remembers its size, the port, the tab and the plot selection between sessions.
+The window remembers its size, the port, the page and tab, and the plot selection between sessions.
 
 **Numbers** are always entered with a `.` decimal point, whatever the operating system's language settings.
 
@@ -45,7 +45,9 @@ The window remembers its size, the port, the tab and the plot selection between 
 
 ## 3. Window layout
 
-The left sidebar is shared by all tabs:
+The window has two pages, one per link: **USB** (the config protocol and telemetry: Scope and Config tabs) and **CANopen** (section 6, with its own left panel).
+
+On the USB page the left sidebar is shared by the Scope and Config tabs:
 
 | Box | Content |
 |---|---|
@@ -168,9 +170,9 @@ Every command, its result, and every event from the driver, with measurement res
 
 ---
 
-## 6. CANopen tab
+## 6. CANopen page
 
-A CANopen master for testing the drive over its CAN port. It uses its own CAN adapter and can run at the same time as the USB link (keep USB connected: its STOP is the independent stop, and its Statistics box shows the drive side).
+A CANopen master for testing the drive over its CAN port. It uses its own CAN adapter and can run at the same time as the USB link (keep USB connected: its STOP is the independent stop and E-STOP sends it too, and the USB page's Statistics box shows the drive side).
 
 **Safety:** the tab never enables the drive by itself. The mode combo only sends when you pick a mode. Closing the window sends disable voltage first, then stops the PC heartbeat.
 

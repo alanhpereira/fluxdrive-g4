@@ -252,17 +252,26 @@ class Main(QtWidgets.QMainWindow):
         scroll.setWidget(side)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         scroll.setMinimumWidth(side.minimumSizeHint().width() + 24)
-        self.tabs = QtWidgets.QTabWidget()
+        self.tabs = QtWidgets.QTabWidget()  # USB pages: Scope and Config
         self.tabs.addTab(self.glw, "Scope")
         self.tabs.addTab(self.config, "Config")
-        self.tabs.addTab(self.canopen, "CANopen")
         self.tabs.currentChanged.connect(self.tab_changed)
-        hs = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)  # sidebar left of the tabs, whichever is shown
+        hs = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)  # USB sidebar left of Scope/Config, whichever is shown
         hs.addWidget(scroll)
         hs.addWidget(self.tabs)
         hs.setStretchFactor(1, 1)
-        hs.setSizes([scroll.minimumWidth(), 10000])  # sidebar as narrow as its contents allow
-        self.setCentralWidget(hs)
+        # both pages' sidebars get the same width: the wider minimum, and dragging one splitter moves the other
+        w = max(scroll.minimumWidth(), self.canopen.side_scroll.minimumWidth())
+        for sc, sp in ((scroll, hs), (self.canopen.side_scroll, self.canopen.split)):
+            sc.setMinimumWidth(w)
+            sp.setSizes([w, 10000])
+        self.splits = (hs, self.canopen.split)
+        self.top = QtWidgets.QTabWidget()  # one page per link: USB (config protocol + telemetry) and CANopen
+        self.top.setDocumentMode(True)
+        self.top.addTab(hs, "USB")
+        self.top.addTab(self.canopen, "CANopen")
+        self.top.currentChanged.connect(self.page_changed)
+        self.setCentralWidget(self.top)
 
         self.status = QtWidgets.QLabel()
         self.statusBar().addPermanentWidget(self.status, 1)
@@ -284,7 +293,8 @@ class Main(QtWidgets.QMainWindow):
             self.restoreGeometry(geo)
         else:
             self.resize(1400, 900)
-        self.tabs.setCurrentIndex(int(s.value("tab", 0)))
+        self.tabs.setCurrentIndex(min(int(s.value("tab", 0)), self.tabs.count() - 1))
+        self.top.setCurrentIndex(int(s.value("top_tab", 0)))
         self.tab_changed(self.tabs.currentIndex())
         for w in (self.window_s, self.loop_hz, self.cpf):
             w.valueChanged.connect(self.resize_buffer)
@@ -306,6 +316,11 @@ class Main(QtWidgets.QMainWindow):
         scope = self.tabs.widget(i) is self.glw
         self.display_box.setVisible(scope)
         self.plots_box.setVisible(scope)
+
+    def page_changed(self, i):
+        """The page now shown takes the sidebar width of the one left (a hidden splitter has no valid sizes)"""
+        new, old = self.splits[i], self.splits[1 - i]
+        new.setSizes([old.sizes()[0], max(1, sum(old.sizes()) - old.sizes()[0])])
 
     def frame_dt(self):
         return self.cpf.value() / self.loop_hz.value()
@@ -520,6 +535,7 @@ class Main(QtWidgets.QMainWindow):
         s.setValue("refresh", self.refresh.value())
         s.setValue("geometry", self.saveGeometry())
         s.setValue("tab", self.tabs.currentIndex())
+        s.setValue("top_tab", self.top.currentIndex())
         self.canopen.shutdown()  # disable voltage over CAN, then the PC heartbeat stops
         self.disconnect()
         super().closeEvent(e)

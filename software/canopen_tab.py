@@ -176,13 +176,14 @@ class CanopenTab(QtWidgets.QWidget):
         self.sub.addTab(self._build_emcy(), "EMCY")
         self.sub.addTab(self._build_tests(), "Tests")
 
-        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        split = self.split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)  # Main sizes it like the USB sidebar
+        self.side_scroll = scroll
         split.addWidget(scroll)
         split.addWidget(self.sub)
         split.setStretchFactor(1, 1)
         split.setSizes([scroll.minimumWidth(), 10000])
         lay = QtWidgets.QVBoxLayout(self)
-        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)
 
         self._load_settings()
