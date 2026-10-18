@@ -57,6 +57,8 @@ static float s_pp_v;		/* PP profile velocity, counts/s */
 static int64_t s_pp_tgt;	/* PP target in progress */
 static int64_t s_pp_next;	/* PP buffered set-point */
 static uint8_t s_pp_busy, s_pp_pend, s_pp_ack;
+static uint8_t s_csp_halt; /* CSP: halted, the PP profile brings the reference to rest */
+static float s_csp_v;	   /* CSP: rate of the last segment, counts/s (where a halt starts braking from) */
 /* main only */
 enum { AFTER_SO = 1, AFTER_RTSO, AFTER_SOD, AFTER_HOLD };
 static uint8_t s_after; /* where a stop ramp ends: switched on, ready, switch on disabled, or hold in quick stop */
@@ -66,6 +68,7 @@ static uint8_t s_st_prev;
 static uint8_t s_nmt_op;  /* NMT was operational while the master had the motor */
 static uint8_t s_hb_prev; /* heartbeat consumer timeout seen */
 static uint8_t s_fault_bit;
+static int8_t s_want_refused; /* 6060 value a mode change in operation was refused for, 0 = none */
 
 /* ------------------------------------------------------------------ faults -> 0x603F, EMCY, 0x1001 */
 static const struct {
@@ -131,6 +134,11 @@ static void fault(uint8_t st) {
 	g_co402_state = FSA_FAULT_REACTION_ACTIVE;
 }
 
+void co402_comm_reset(void) {
+	/* the reset re-initialised the emergency object: an active drive fault would be gone from 0x1001 / 0x1003 */
+	if (s_fault_bit && em()) CO_errorReport(em(), s_fault_bit, OD_RAM.x603F_errorCode, g_co402_fault);
+}
+
 /* ramp the speed to zero in the tick, then go to `after`. Needs the speed loop: from CST it switches over
  * bumplessly, or coasts if the speed gains are not set */
 static void start_ramp(int quick, uint8_t after) {
@@ -169,7 +177,8 @@ void co402_poll(void) {
 	uint8_t st = g_co402_state;
 	const uint16_t cw = OD_RAM.x6040_controlword;
 	const int fr_edge = (cw & 0x80) && !(s_cw_prev & 0x80);
-	const int fresh = cw != s_cw_prev || st != s_st_prev; /* switch on / enable: tried once per command or state */
+	const int cw_new = cw != s_cw_prev;
+	const int fresh = cw_new || st != s_st_prev; /* switch on / enable: tried once per command or state */
 	s_cw_prev = cw;
 	s_st_prev = st; /* the state this poll started in: "switch on + enable" in one command takes two polls */
 	const int b7 = (cw & 0x80) != 0;
@@ -189,6 +198,8 @@ void co402_poll(void) {
 		const uint8_t hb = em() && CO_isError(em(), CO_EM_HEARTBEAT_CONSUMER);
 		const int lost = (s_nmt_op && nmt != 5) || (hb && !s_hb_prev); /* NMT left operational, or heartbeat timeout */
 		s_hb_prev = hb;
+		if (nmt == 5) s_nmt_op = 1; /* enabled in pre-operational, then started: a later drop (bus-off) counts too */
+		if (!g_can_owner) g_ramp_bypass = 0; /* a local STOP took it: a USB run that follows slews at acc_lim again */
 		if (why)
 			fault(why);
 		else if (!g_can_owner)
@@ -208,6 +219,12 @@ void co402_poll(void) {
 				default: fault(ST_CAN_LOST); break;
 			}
 		}
+		st = g_co402_state;
+	}
+	else if (g_trip && st != FSA_FAULT_REACTION_ACTIVE && st != FSA_FAULT) {
+		/* a trip outside operation (the coast after disable voltage, an overvoltage with the bridge idle): only a fault
+		 * reset clears it over CANopen, so it must show as a fault, or every switch on is refused with ST_TRIPPED */
+		fault(why ? why : g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT);
 		st = g_co402_state;
 	}
 
@@ -258,6 +275,7 @@ void co402_poll(void) {
 					s_ramp = 0;
 					s_mode_init = 1;
 					s_ferr = 0;
+					s_want_refused = 0;
 					s_stream = 1;
 					s_nmt_op = co_app_nmt_state() == 5;
 					s_hb_prev = em() && CO_isError(em(), CO_EM_HEARTBEAT_CONSUMER);
@@ -294,17 +312,30 @@ void co402_poll(void) {
 			}
 			else if (eo) {
 				if (s_ramp) { /* the master changed its mind during a disable / shutdown ramp: back to the mode */
-					s_ramp = 0;
-					if (g_loop != loop_of(s_mode)) drive_enter(loop_of(s_mode));
-					s_rv = g_vel_ref;
-					s_mode_init = 1;
+					/* no references until the mode has restarted: once drive_enter() has switched the loop, the tick
+					   would stream from stale CSP / PP state (a PP profile left where the ramp began) */
+					s_stream = 0;
+					if (g_loop == loop_of(s_mode) || drive_enter(loop_of(s_mode)) == ST_OK) {
+						s_ramp = 0;
+						s_rv = g_vel_ref;
+						s_mode_init = 1;
+					} /* else the ramp carries on: cancelled without its loop it would hold the speed of the moment */
+					s_stream = 1;
 				}
-				if (want != s_mode && supported(want)) {
+				if (want != s_want_refused) s_want_refused = 0; /* 6060 changed since: the next value is tried */
+				if (!s_ramp && want != s_mode && supported(want) && want != s_want_refused) {
 					s_stream = 0; /* switch the loop bumplessly, then stream the new mode */
-					if (drive_enter(loop_of(want)) == ST_OK) {
+					const st_t e = drive_enter(loop_of(want));
+					if (e == ST_OK) {
 						s_rv = g_vel_ref;
 						s_mode_init = 1;
 						s_mode = want;
+						g_co402_refused = 0;
+						s_warn = 0;
+					}
+					else { /* once per 6060 value: the old mode carries on, 6061 shows it, warning + 0x4042:2 say why */
+						refuse(e);
+						s_want_refused = want;
 					}
 					s_stream = 1;
 				}
@@ -315,12 +346,17 @@ void co402_poll(void) {
 				stop_now();
 				st = FSA_SWITCH_ON_DISABLED;
 			}
-			else if (eo && s_after == AFTER_HOLD) { /* transition 16: options 5..8 may go back to operation */
-				s_ramp = 0;
-				if (s_mode != MODE_CSV) drive_enter(loop_of(s_mode));
-				s_rv = g_vel_ref;
-				s_mode_init = 1;
-				st = FSA_OPERATION_ENABLED;
+			/* transition 16: options 5..8 may go back to operation, on a new controlword only: after a quick stop for a
+			   lost master (6007 = 3) its last one is still enable operation, and must not undo the stop */
+			else if (eo && cw_new && s_after == AFTER_HOLD) {
+				s_stream = 0; /* as above: nothing streamed from stale state while the loop switches */
+				if (g_loop == loop_of(s_mode) || drive_enter(loop_of(s_mode)) == ST_OK) {
+					s_ramp = 0;
+					s_rv = g_vel_ref;
+					s_mode_init = 1;
+					st = FSA_OPERATION_ENABLED;
+				} /* else it stays in quick stop, holding zero speed */
+				s_stream = 1;
 			}
 			break;
 		case FSA_FAULT:
@@ -456,6 +492,7 @@ void co402_tick(void) {
 
 	/* actual values */
 	const int32_t cnt = g_pos_cnt;
+	const int32_t ref = g_pos_ref_cnt; /* read together: at most one ISR cycle apart */
 	s_act64 += (int32_t)((uint32_t)cnt - (uint32_t)s_cnt_prev); /* int32 delta: unwraps past +-1024 turns */
 	s_cnt_prev = cnt;
 	OD_RAM.x6064_positionActualValue = cnt;
@@ -475,6 +512,8 @@ void co402_tick(void) {
 		s_tgt_rx = 0; /* only a target written from now on moves it: not one left over in 607A */
 		s_pp_frac = s_pp_v = 0.0f;
 		s_pp_busy = s_pp_pend = s_pp_ack = 0;
+		s_csp_halt = 0;
+		s_csp_v = 0.0f;
 		s_ferr_ms = s_win_ms = s_thr_ms = 0;
 		s_hm = 0;
 		s_mode_init = 0;
@@ -505,7 +544,8 @@ void co402_tick(void) {
 	else if (run && (s_mode == MODE_CSV || s_mode == MODE_PV || s_mode == MODE_HM) && g_loop == LOOP_VEL) {
 		const float vmax = s_mode == MODE_CSV ? g_params.vel_lim : fminf(g_params.vel_lim, (float)OD_PERSIST_APP.x607F_maxProfileVelocity * (1.0f / INC_PER_TURN));
 		if (s_mode == MODE_CSV) { /* the master's value as it is */
-			const float v = (float)(OD_RAM.x60FF_targetVelocity + OD_RAM.x60B1_velocityOffset) * (1.0f / INC_PER_TURN);
+			/* summed in float: in int32 a large target plus an offset could wrap and turn round at vlim */
+			const float v = ((float)OD_RAM.x60FF_targetVelocity + (float)OD_RAM.x60B1_velocityOffset) * (1.0f / INC_PER_TURN);
 			g_vel_ref = s_rv = clampf(v, vmax, &lim);
 			b12 = 1;
 		}
@@ -533,7 +573,27 @@ void co402_tick(void) {
 	else if (run && (s_mode == MODE_CSP || s_mode == MODE_PP) && g_loop == LOOP_POS) {
 		const int32_t lo = OD_PERSIST_APP.x607D_softwarePositionLimit[0], hi = OD_PERSIST_APP.x607D_softwarePositionLimit[1];
 		int32_t t = OD_RAM.x607A_targetPosition;
-		if (s_mode == MODE_CSP) {
+		if (s_mode == MODE_CSP && halt) {
+			/* halt: brake the reference from the master's rate to rest at 6084 (605D = 2: 6085) with the PP profile,
+			   and hold there; the targets meanwhile are ignored */
+			if (!s_csp_halt) {
+				s_csp_halt = 1;
+				s_pp_pos = s_tgt64;
+				s_pp_frac = 0.0f;
+				s_pp_v = s_csp_v;
+				s_pp_busy = s_pp_pend = 0;
+			}
+			pp_profile(1);
+			pos_step((int32_t)(s_pp_pos - s_tgt64), TICK_S, &lim);
+			reached = s_pp_v == 0.0f;
+		}
+		else if (s_mode == MODE_CSP) {
+			if (s_csp_halt) { /* released: like a mode start, only targets written from now on move it, relative to here */
+				s_csp_halt = 0;
+				s_csp_v = 0.0f;
+				s_tgt_last32 = (int32_t)s_tgt64;
+				s_tgt_rx = 0;
+			}
 			if (lo < hi && (t < lo || t > hi)) {
 				t = t < lo ? lo : hi;
 				lim = 1;
@@ -541,9 +601,11 @@ void co402_tick(void) {
 			const int32_t dc = (int32_t)((uint32_t)t - (uint32_t)s_tgt_last32);
 			/* every target received is a segment over one period, an unchanged one too (hold). None this tick: the
 			   ISR carries on at the last rate, a late frame or the 1 ms tick grid must not stop the reference */
-			if (s_tgt_rx && pos_step(dc, interp_period(), &lim)) {
+			const float T = interp_period();
+			if (s_tgt_rx && pos_step(dc, T, &lim)) {
 				s_tgt_last32 = t;
 				s_tgt_rx = 0;
+				s_csp_v = (float)dc / T;
 			}
 			b12 = 1;
 		}
@@ -605,7 +667,9 @@ void co402_tick(void) {
 
 	/* position demand and following error (CSP, PP) */
 	const int pos = run && (s_mode == MODE_CSP || s_mode == MODE_PP) && g_loop == LOOP_POS;
-	const int64_t dem = pos ? s_tgt64 : s_act64;
+	/* the demand is the ISR's interpolated reference, not the end of the segment (s_tgt64): that one leads by up to
+	   a whole 0x60C2 period of travel, which at speed alone overran the window */
+	const int64_t dem = pos ? s_act64 + (int32_t)((uint32_t)ref - (uint32_t)cnt) : s_act64;
 	const int64_t fe = dem - s_act64;
 	OD_RAM.x6062_positionDemandValue = (int32_t)dem;
 	OD_RAM.x60F4_followingErrorActualValue = fe > INT32_MAX ? INT32_MAX : fe < INT32_MIN ? INT32_MIN : (int32_t)fe;
@@ -671,9 +735,10 @@ static ODR_t r_param(OD_stream_t* s, void* buf, OD_size_t count, OD_size_t* n) {
 		case 0x6073: {
 			const float r = g_params.rated_current;
 			const uint16_t pm = r > 0.0f ? (uint16_t)(g_params.max_current / r * 1000.0f + 0.5f) : 0;
+			if (count < 2) return ODR_DEV_INCOMPAT;
 			memcpy(buf, &pm, 2);
 			*n = 2;
-			return count >= 2 ? ODR_OK : ODR_DEV_INCOMPAT;
+			return ODR_OK;
 		}
 		case 0x6075: v = (uint32_t)(g_params.rated_current * 1000.0f + 0.5f); break;
 		case 0x6076: v = (uint32_t)(kt() * g_params.rated_current * 1000.0f + 0.5f); break;

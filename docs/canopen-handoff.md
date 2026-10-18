@@ -50,7 +50,7 @@ New native objects go in three places: `k_tab` in `objdict.c`, `OBJECTS` in `obj
 - **Why the tick runs the stack:** heartbeat and SDO keep going while main blocks (calibrations, `run_stop()`).
 - **Why the FSA runs in main:** transitions call `drive_enter()`/`drive_coast()`/`drive_trip_reset()` in `calib.c`, which may wait on the ISR. That never races `run_watchdog()`.
 - **Tick → ISR:** the tick only writes references (`g_vel_ref`, `g_iq_ref`, the position handshake), and only while main has armed it (`s_stream`) and nothing else took the motor (`g_can_owner`, `CTRL_RUN`, no coast, no trip).
-- **Communication reset** (NMT reset communication, 0x4040:5 apply): `co_app_poll()` runs it in main, because `HAL_FDCAN_Init()` waits on `HAL_GetTick()`. NMT reset node waits for `CTRL_OFF`, then reboots.
+- **Communication reset** (NMT reset communication, 0x4040:5 apply): `co_app_poll()` runs it in main, because `HAL_FDCAN_Init()` waits on `HAL_GetTick()`. NMT reset node waits for `CTRL_OFF`, then reboots; meanwhile the stack keeps running, and a motor the master drives coasts at once (one USB runs is left to it). Frames already queued go out before the FDCAN stops (up to 20 ms).
 
 ## Units (CAN side)
 | Quantity | Unit | Conversion |
@@ -83,16 +83,16 @@ RPDO4 and TPDO4 are disabled. The statusword TPDO is requested from `co402_tick(
 - Not ready / switch on disabled / ready to switch on / switched on = `CTRL_OFF`.
 - "Switch on" checks the run prerequisites (`drive_check()`: calibration flags, gains, bus voltage, bridge, trip) for the mode in 0x6060, and is refused if they fail. The `st_t` reason shows in 0x4042:2 and the statusword warning bit (7).
 - Enable operation = `drive_enter(loop)`: `CTRL_RUN` with `g_loop` from the mode, bumpless. CSP/PP start at the present position.
-- Mode changes while enabled are bumpless.
+- Mode changes while enabled are bumpless. A change `drive_enter()` refuses (e.g. CSP with `pkp` = 0) is tried once per 0x6060 value: the old mode carries on, 6061 keeps showing it, and the reason goes to 0x4042:2 and the warning bit.
 - Shutdown, disable operation, quick stop and disable voltage follow 605B/605C/605A:
   - **Ramps:** the speed loop ramps to zero at 6084, or 6085 for quick stop, then the drive coasts.
   - **No zero vector above 30 rpm:** a stop is a coast through `coast_or_off()`, as everywhere else.
-  - **Quick stop hold:** options 5–8 hold in quick stop active, and enable operation goes back to the mode.
+  - **Quick stop hold:** options 5–8 hold in quick stop active, and a new enable operation command goes back to the mode (not the one still standing from before: after a quick stop for a lost master, 6007 = 3, its last controlword is enable operation).
 - **Halt (bit 8):**
   - **PV, CSV, HM:** ramp to zero at 6084 (605D = 2: 6085) and hold.
   - **PP:** the profile stops and holds, then continues to the target when halt is released.
   - **CST:** zero torque.
-  - **CSP:** not applied; the master owns the trajectory.
+  - **CSP:** the reference brakes from the master's rate to rest at 6084 (605D = 2: 6085) through the PP profile and holds; targets are ignored meanwhile. On release only targets written from then on count, relative to the halted position.
 
 **Ownership:**
 - **USB is refused while CAN has the motor.** `g_can_owner` is set from enable operation until the motor is off again. During that time USB RUN_*/CAL/HOME/SAVE/REBOOT get `ST_CAN_ACTIVE`.
@@ -112,9 +112,9 @@ RPDO4 and TPDO4 are disabled. The statusword TPDO is requested from `co402_tick(
 - **Home offset sign:** after homing, the position at home is **−607C**. This follows the CiA 402 text: zero position = home position + home offset. Some vendors use +607C, so check the master's expectation. The ISR applies it through `g_home_pos`; USB HOME still sets 0.
 - **Ramps bypass `acc_lim`:** in all CAN modes the speed loop takes its reference as is (`g_ramp_bypass`), because the profile comes from the master or the tick. The regen clamp still applies.
 - **Speed limit:** in the position modes `vlim` is applied in the outer loop. Statusword bit 11 (internal limit) shows when it or a 607D clamp acts. The reference itself always completes the step.
-- **Following error** (CSP, PP): \|demand − actual\| > 6065 for 6066 ms → fault 0x8611. 0xFFFFFFFF switches it off. Measured: CSP tracks a 5 ms RPDO stream within 3–5° at 94 rpm; PP lags 0.5–1.4 % of a turn at 60 rpm with `pkp` = 5.
+- **Following error** (CSP, PP): \|demand − actual\| > 6065 for 6066 ms → fault 0x8611. 0xFFFFFFFF switches it off. The demand (also 6062) is the ISR's interpolated position reference (`g_pos_ref_cnt`), not the end of the current segment. Measured (before that change): CSP tracks a 5 ms RPDO stream within 3–5° at 94 rpm; PP lags 0.5–1.4 % of a turn at 60 rpm with `pkp` = 5.
 
-**Faults → 603F, EMCY, 0x1001.** `run_watchdog()`/`trip_watchdog()` leave their reason in `g_stop_reason`; `co402_poll()` maps it. The fault reaction is the existing coast. Fault reset (bit 7 rising) runs `drive_trip_reset()` once the coast has ended.
+**Faults → 603F, EMCY, 0x1001.** `run_watchdog()`/`trip_watchdog()` leave their reason in `g_stop_reason`; `co402_poll()` maps it. A trip (`g_trip`) is a fault in any FSA state, not only while enabled: only a fault reset clears it over CAN. A communication reset reports an active fault to the new EM again. The fault reaction is the existing coast. Fault reset (bit 7 rising) runs `drive_trip_reset()` once the coast has ended.
 
 | Cause | 603F | 0x1001 bit |
 |---|---|---|
@@ -138,8 +138,8 @@ Master loss applies 0x6007: 0 nothing, 1 fault (default), 2 disable voltage, 3 q
   - `:2` (comm) writes the CANopen record.
   - `:3` (application) writes the 402 settings **and** the motor parameters.
   - `:1` writes all of it.
-- **0x1011 restore** `:2`/`:3`: the exported defaults load at the next communication reset / boot. The motor parameters have no restore.
-- **Only with the motor off:** store and restore are refused unless `g_mode == CTRL_OFF`. The SDO only records the request; the main loop does the save with the bridge off, because each erase stalls the CPU ~20 ms.
+- **0x1011 restore** `:2`/`:3`: the exported defaults load at the next communication reset / boot. The motor parameters have no restore. A restore stores nothing: the other part, the node ID and the bit rate are copied from the old record, and an earlier restore stays in effect.
+- **Only with the motor off:** store and restore are refused unless `g_mode == CTRL_OFF` and no trip is latched. The SDO only records the request; the main loop does the save with the bridge off, because each erase stalls the CPU ~20 ms.
 - **Identity 0x1018:** vendor 0 (no CiA vendor ID), product 1. The revision is `PROTO_VERSION << 16 | PARAM_VERSION` and the serial is a hash of the STM32 UID, both set at runtime.
 
 ## Native objects for CAN (also over USB; Config tab, groups CAN / Diagnostics)
@@ -190,7 +190,6 @@ The Statistics box in the sidebar shows the CAN row.
 
 ## Known limits / not done
 - **60B1 in CSP:** not used. The feed-forward comes from the target steps.
-- **Halt in CSP:** not applied.
 - **SYNC and RPDO timeouts don't stop the motor.** Master loss is detected through the heartbeat consumer and the NMT state only. Configure 0x1016 for a real master.
 - **Homing:** only 35/37. There are no limit switches or index pulse on this hardware; a hard-stop method would need current sensing in the homing logic.
 - **PP:** a single buffered set-point. Bit 9 (change on set-point) and 0x60F2 positioning options are not implemented, and the profile type is trapezoid only.

@@ -32,5 +32,6 @@ extern volatile uint8_t g_co402_fault;	/* st_t of the fault in 0x603F, 0 = none 
 void co402_init(void); /* once, before the first communication reset: OD extensions */
 void co402_poll(void); /* main loop */
 void co402_tick(void); /* CANopen tick, after CO_process_RPDO() */
+void co402_comm_reset(void); /* main, after each communication reset: reports an active fault to the new EM again */
 
 #endif

@@ -145,8 +145,13 @@ CO_ReturnError_t CO_CANsend(CO_CANmodule_t* m, CO_CANtx_t* b) {
 		err = CO_ERROR_TX_OVERFLOW;
 	}
 	CO_LOCK_CAN_SEND(m);
-	if (send_frame(m, b))
+	if (send_frame(m, b)) {
 		m->bufferInhibitFlag = b->syncFlag;
+		if (b->bufferFull) { /* a slot freed with its TX-complete still pending: that one must not send it again */
+			b->bufferFull = false;
+			m->CANtxCount--;
+		}
+	}
 	else if (!b->bufferFull) { /* hardware queue full: the TX-complete interrupt sends it */
 		b->bufferFull = true;
 		m->CANtxCount++;

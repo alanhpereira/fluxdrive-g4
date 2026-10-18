@@ -40,16 +40,17 @@ static CO_storage_entry_t s_store_entries[] = {
 	{.addr = &g_params, .len = sizeof(g_params), .subIndexOD = 3, .attr = CO_storage_cmd},
 };
 
+/* refused here, not dropped later: cmd_poll() does not save under a running motor or a latched trip */
 static ODR_t store_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
 	(void)m;
-	if (g_mode != CTRL_OFF) return ODR_DATA_DEV_STATE; /* the flash erase would stall the running control loop */
+	if (g_mode != CTRL_OFF || g_trip) return ODR_DATA_DEV_STATE; /* the flash erase would stall the running control loop */
 	co_store_request(e->subIndexOD == 3 ? CO_RQ_SAVE_APP : CO_RQ_SAVE_COMM);
 	return ODR_OK;
 }
 
 static ODR_t restore_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
 	(void)m;
-	if (g_mode != CTRL_OFF) return ODR_DATA_DEV_STATE;
+	if (g_mode != CTRL_OFF || g_trip) return ODR_DATA_DEV_STATE;
 	co_store_request(e->addr == (void*)&OD_PERSIST_COMM ? CO_RQ_RESTORE_COMM : CO_RQ_RESTORE_APP);
 	return ODR_OK;
 }
@@ -111,6 +112,11 @@ static uint32_t uid_serial(void) {
 /* (re)initialises the stack with the pending node ID and bit rate; the tick is held off meanwhile */
 static void comm_reset(void) {
 	s_run = 0;
+	/* let the frames already queued go out first (the SDO reply to 0x4040:5, an EMCY): stopping the FDCAN drops
+	 * them. 20 ms is three frames at 20 kbit/s; without an ACK they never go, so do not wait longer */
+	const uint32_t t0 = HAL_GetTick();
+	while (hfdcan1.State == HAL_FDCAN_STATE_BUSY && hfdcan1.Instance->TXBRP && HAL_GetTick() - t0 < 20) {
+	}
 	if (s_co) {
 		CO_CANsetConfigurationMode(&hfdcan1);
 		CO_delete(s_co);
@@ -138,6 +144,7 @@ static void comm_reset(void) {
 	uint32_t errInfo = 0;
 	if (CO_CANopenInit(s_co, NULL, NULL, OD, NULL, NMT_CONTROL, FIRST_HB_MS, SDO_SRV_TIMEOUT_MS, 0, false, id, &errInfo) != CO_ERROR_NO) return;
 	if (CO_CANopenInitPDO(s_co, s_co->em, OD, id, &errInfo) != CO_ERROR_NO) return;
+	co402_comm_reset();
 	g_can_node_id_act = id;
 	g_can_kbit_act = kbit;
 	CO_CANsetNormalMode(s_co->CANmodule);
@@ -172,9 +179,16 @@ void co_app_poll(void) {
 		s_reset_req = 0;
 		comm_reset();
 	}
-	else if (r == CO_RESET_APP && g_mode == CTRL_OFF) { /* NMT reset node: like MSG_REBOOT, never under a running motor */
-		disableBridge();
-		boot_reboot(0);
+	else if (r == CO_RESET_APP) { /* NMT reset node: like MSG_REBOOT, never under a running motor */
+		if (g_mode == CTRL_OFF) {
+			disableBridge();
+			boot_reboot(0);
+		}
+		/* wait for it to stop, but keep the stack running meanwhile (heartbeat, SDO, NMT): the command is consumed,
+		 * and a silent node would leave the motor on its last reference with nobody able to reach it. A motor the
+		 * master drives coasts now; one the USB side runs is left to it, and the reset follows its stop */
+		if (g_can_owner && g_mode == CTRL_RUN && !g_coasting && !g_trip) drive_coast();
+		s_run = 1;
 	}
 }
 
@@ -184,7 +198,7 @@ void TIM7_IRQHandler(void) {
 	if (!s_run) return; /* no lock: the FDCAN IRQ has the same priority and cannot preempt this */
 	const CO_NMT_reset_cmd_t rc = CO_process(s_co, false, 1000, NULL);
 	if (rc == CO_RESET_COMM || rc == CO_RESET_APP) {
-		s_reset_req = (uint8_t)rc;
+		if ((uint8_t)rc > s_reset_req) s_reset_req = (uint8_t)rc; /* a reset node waiting for the motor stays pending */
 		s_run = 0; /* main does the reset */
 	}
 	else if (!s_co->nodeIdUnconfigured && s_co->CANmodule->CANnormal) {

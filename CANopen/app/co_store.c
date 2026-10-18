@@ -169,6 +169,7 @@ int co_store_dirty(void) {
 typedef struct {
 	rec_hdr_t h;
 	uint32_t crc;
+	const uint8_t* src[N_PARTS]; /* each part from RAM, or (kept by a restore) from the old record */
 } save_ctx_t;
 
 static uint8_t rec_byte(const save_ctx_t* c, uint32_t off) {
@@ -177,7 +178,7 @@ static uint8_t rec_byte(const save_ctx_t* c, uint32_t off) {
 	if (off < od0 + OD_MAX) {
 		uint32_t o = off - od0;
 		for (int i = 0; i < N_PARTS; i++) {
-			if (o < k_part[i].len) return ((const uint8_t*)k_part[i].p)[o];
+			if (o < k_part[i].len) return c->src[i][o];
 			o -= k_part[i].len;
 		}
 		return 0xFF;
@@ -202,6 +203,23 @@ HAL_StatusTypeDef co_store_save(uint8_t rq) {
 	c.h.od_sig = od_signature();
 	c.h.od_len = parts_len();
 	c.h.od_valid = (uint8_t)((1u << N_PARTS) - 1u);
+	for (int i = 0; i < N_PARTS; i++) c.src[i] = k_part[i].p;
+	if (!(rq & (CO_RQ_SAVE_COMM | CO_RQ_SAVE_APP))) {
+		/* a restore alone stores nothing: the part it does not restore, the node ID and the bit rate stay as stored
+		   (unsaved changes in RAM are not saved by it), and it re-validates nothing (0x1011:3 then 0x1011:2 before
+		   the reset keeps both restored) */
+		c.h.od_valid = 0;
+		if (s_active >= 0) {
+			c.h.node_id = slot(s_active)->h.node_id;
+			c.h.kbit = slot(s_active)->h.kbit;
+			for (int i = 0; i < N_PARTS; i++) {
+				const uint8_t* old = stored(i);
+				if (!old) continue; /* nothing usable stored: stays invalid, the exported defaults apply */
+				c.src[i] = old;
+				c.h.od_valid |= (uint8_t)(1u << i);
+			}
+		}
+	}
 	if (rq & CO_RQ_RESTORE_COMM) c.h.od_valid &= (uint8_t)~(1u << PART_COMM);
 #if N_PARTS > 1
 	if (rq & CO_RQ_RESTORE_APP) c.h.od_valid &= (uint8_t)~(1u << PART_APP);
