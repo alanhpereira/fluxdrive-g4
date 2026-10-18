@@ -941,9 +941,11 @@ static void run_watchdog(void) {
 /* the motor params (pages 62-63) and/or the CANopen comm record (pages 60-61, co_store.c). CO_RQ_* bits */
 static HAL_StatusTypeDef save_records(uint8_t what) {
 	disableBridge(); /* the CPU stalls ~20 ms during each flash erase */
+	const uint32_t late0 = hMT6835.late; /* the stall delays the encoder read (vector table in flash): not a timing fault */
 	HAL_StatusTypeDef st = HAL_OK;
 	if (what & CO_RQ_SAVE_APP) st = params_save();
 	if (st == HAL_OK) st = co_store_save(what); /* any request: the record holds the CAN settings and both OD parts */
+	hMT6835.late = late0;
 	initBridge(); /* same bring-up as at boot: CCRs, short-circuit reference, gate-driver fault clear */
 	return st;
 }

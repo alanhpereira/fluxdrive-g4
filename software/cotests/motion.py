@@ -199,9 +199,10 @@ def t_following_error(ctx):
     """6065 = 200 inc, 6066 = 5 ms, 1/4-turn CSP step: fault 0x8611 + EMCY, reset OK"""
     n, d = ctx.node, ctx.drive
     ctx.operational()
+    d.goto_enabled(C.MODE_CSP)
+    ctx.sleep(0.2)  # the tight window only after enable: the current loop starting moves the rotor a few hundred inc
     ctx.set(0x6065, 0, 200)
     ctx.set(0x6066, 0, 5)
-    d.goto_enabled(C.MODE_CSP)
     p0 = n.read(0x6064)
     since = time.time()
     s = C.Streamer(d, C.MODE_CSP, C.gen_step(0.25, 0.05), period=0.005, max_rpm=600.0, max_turns=0.5,
