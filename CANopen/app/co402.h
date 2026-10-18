@@ -1,7 +1,7 @@
 #ifndef CO402_H
 #define CO402_H
 
-/* CiA 402 drive profile on top of the firmware's run modes (docs/canopen-handoff.md).
+/* CiA 402 drive profile on top of the firmware's run modes (docs/design-notes.md, CANopen drive).
  * co402_poll(), main loop: the state machine (controlword 0x6040), mode changes, faults, master loss. It is the
  *   only CANopen code that changes g_mode / g_loop, through the drive_*() functions of calib.c.
  * co402_tick(), CANopen tick (1 kHz, after the RPDOs): actual values, statusword, and the references while

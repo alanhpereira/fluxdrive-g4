@@ -2,7 +2,7 @@
 
 This manual covers the motor driver board and its firmware: connecting it, flashing it, commissioning a motor, running it, the protections, and operation over CANopen. The PC program (plotter, Config tab, CANopen tab, test runner) has its own manual: [user-manual-software.md](user-manual-software.md).
 
-Developer documentation (internals, design decisions, measurements) is in the `*-handoff.md` files in this folder and in `CLAUDE.md`.
+Developer documentation (internals, design decisions, measurements) is in [design-notes.md](design-notes.md) and `CLAUDE.md`.
 
 ---
 
@@ -44,7 +44,7 @@ Read this before powering a motor.
 
 ## 3. Connections
 
-Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `Driver TCC.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
+Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `hardware/Driver TCC schematic.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
 
 ### Power and motor
 | Ref | Connector | Pins | Notes |

@@ -15,7 +15,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | [docs/user-manual-driver.md](docs/user-manual-driver.md) | Using the driver: connections, flashing, commissioning a motor, run modes, protections, CANopen, parameter reference, troubleshooting |
 | [docs/user-manual-software.md](docs/user-manual-software.md) | Using the PC software: plotter (Scope, Config, CANopen tabs), test runner, helper scripts |
 | [CLAUDE.md](CLAUDE.md) | Developer overview: build system, CubeMX rules, architecture, execution model, conventions |
-| `docs/*-handoff.md` | Design notes and measurements per feature: [config protocol](docs/config-gui-handoff.md), [CANopen drive](docs/canopen-handoff.md), [CANopen PC tool](docs/canopen-pc-handoff.md), [HFI](docs/hfi-handoff.md), [sensorless tuning](docs/sensorless-optimization-handoff.md), [flash budget](docs/flash-optimization-handoff.md) |
+| [docs/design-notes.md](docs/design-notes.md) | Design decisions, bench measurements and open items: config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget |
 
 ## Repository layout
 
@@ -27,8 +27,8 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | `Driver TCC.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
 | `driverTCC.xdd` | CANopenEditor project of the object dictionary |
 | `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `driverTCC.eds` (EDS for CANopen masters) |
-| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB |
-| `Driver TCC.pdf` | Schematic as PDF |
+| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`Driver TCC schematic.pdf`) |
+| `hardware/datasheets/` | Datasheets of the main parts: STSPIN32G4 (controller + gate driver), STM32G431 (its MCU), DI100N10PQ (bridge MOSFETs), MT6835 (encoder), TJA1051 (CAN transceiver), USBLC6-2 (USB ESD protection), ANTC1608-103F3450FB (board NTC). The STM32G4 reference manual (RM0440, register descriptions) is not included: get it from [st.com](https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf). |
 | `docs/` | Manuals and design notes |
 
 ## Quick start

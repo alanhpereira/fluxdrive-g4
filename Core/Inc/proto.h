@@ -1,7 +1,7 @@
 #ifndef PROTO_H
 #define PROTO_H
 
-/* Binary config protocol on USART1, next to the telemetry frames (docs/config-gui-handoff.md):
+/* Binary config protocol on the link (USB CDC or USART1), next to the telemetry frames (docs/design-notes.md):
  *   A5 5C | type u8 | tok u8 | len u8 | payload[len] | crc u16
  *   crc = CRC-16/CCITT-FALSE over type..payload, little-endian; len <= PROTO_MAX_LEN
  * Bytes outside frames are ignored.

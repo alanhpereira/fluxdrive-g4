@@ -1,7 +1,7 @@
 /* ISR path (called from currentLoop()): -O2 even in the -Os build, like motorCtrl.c */
 #pragma GCC optimize("O2")
 
-/* High-frequency injection (docs/hfi-handoff.md). Square wave of +-hfi_v on the estimated d axis,
+/* High-frequency injection (docs/design-notes.md, HFI). Square wave of +-hfi_v on the estimated d axis,
  * demodulated from consecutive current samples.
  *
  * Timing: the duty written in cycle n loads at the next bottom and stays for a whole period, and the

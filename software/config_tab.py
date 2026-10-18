@@ -1,6 +1,6 @@
 """
 Config tab of the plotter: parameter grid, calibration wizard and log, plus the run panel and the
-status/statistics boxes that the plotter shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/config-gui-handoff.md has the design.
+status/statistics boxes that the plotter shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/design-notes.md has the design.
 """
 import decimal
 import html
