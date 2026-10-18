@@ -57,6 +57,7 @@ STATUS = [
     "the CANopen master has the motor (STOP takes it back)",
     "CANopen master lost (heartbeat timeout or NMT left operational)",
     "following error (position error above 0x6065 for longer than 0x6066)",
+    "encoder lost: no valid angle for 10 ms (stream stalled, CRC failing, sensor not answering)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 ST_NEED_VGAINS, ST_RUNNING, ST_CAN_ACTIVE, ST_CAN_LOST, ST_FOLLOWING_ERROR = 13, 34, 48, 49, 50

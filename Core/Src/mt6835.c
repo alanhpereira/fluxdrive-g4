@@ -184,17 +184,25 @@ int MT6835_Sample(MT6835_HandleTypeDef* h, float* age_s) {
 	uint32_t start = (MT6835_BUF_LEN - left) / 4u * 4u - 4u; /* newest complete group */
 	for (int tries = 0; tries < 2 && start < MT6835_BUF_LEN; tries++, start -= 4u) {
 		const volatile uint8_t* g = &h->buf[start];
+		const uint32_t word = *(const volatile uint32_t*)g; /* buf is 4-aligned, start a multiple of 4 */
+		if (word == 0u || word == 0xFFFFFFFFu) {
+			/* MISO stuck low or high: no sensor answering (all zeros even passes the CRC). Never an angle */
+			h->crc_errors++;
+			continue;
+		}
 		if (crc8(g, 3) != g[3]) {
 			h->crc_errors++;
 			if (h->crc_check) {
-				/* noise gives isolated failures; every group failing means the CRC rule does not match
-				 * this sensor: stop rejecting (diagnostics 0x4002:8 shows it) */
-				if (++h->crc_fail_run >= 25) h->crc_check = 0;
+				/* noise gives isolated failures; every group failing from the start means the CRC rule does
+				 * not match this sensor: stop rejecting (diagnostics 0x4002:8 shows it). Once a group has
+				 * passed, failures are a fault (lost alignment, wiring) and keep being rejected */
+				if (!h->crc_seen && ++h->crc_fail_run >= 25) h->crc_check = 0;
 				continue; /* try the group before, 3 us older */
 			}
 		}
 		else {
 			h->crc_fail_run = 0;
+			h->crc_seen = 1;
 		}
 		h->samples++;
 		h->status = g[2] & 0x07;
@@ -214,6 +222,7 @@ HAL_StatusTypeDef MT6835_StartBurst(MT6835_HandleTypeDef* hMT6835) {
 	hMT6835->angle_valid = 0; /* the angle may have moved (or been re-zeroed) while stopped */
 	hMT6835->crc_check = 1;
 	hMT6835->crc_fail_run = 0;
+	hMT6835->crc_seen = 0;
 	hMT6835->tx_zero = 0;
 
 	dma_stop(hrx);

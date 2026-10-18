@@ -97,6 +97,7 @@ typedef enum {
 	ST_CAN_ACTIVE,	 /* the CANopen master has the motor (CiA 402 operation enabled): STOP takes it back */
 	ST_CAN_LOST,	 /* CANopen master lost (heartbeat timeout or NMT left operational) while it had the motor */
 	ST_FOLLOWING_ERROR, /* position error above 0x6065 for longer than 0x6066 (CiA 402 position modes) */
+	ST_ENC_LOST,	 /* encoder: no valid angle for 10 ms (stream stalled, CRC failing, sensor not answering) */
 	ST_N
 } st_t;
 

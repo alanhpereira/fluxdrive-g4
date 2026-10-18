@@ -105,7 +105,8 @@ static uint8_t s_was_on; /* MOE has been on since boot */
 
 static int rearm_safe(uint32_t off_ms) {
 	if (!s_was_on) return 1;
-	if (g_params.ang_src == ANG_SENSORLESS) return off_ms >= SL_REARM_MS;
+	/* without a valid encoder angle g_vel decays to zero while the rotor may still turn: wait, like sensorless */
+	if (g_params.ang_src == ANG_SENSORLESS || g_enc_lost_n >= ENC_LOST_N) return off_ms >= SL_REARM_MS;
 	return fabsf(g_vel) < COAST_END_TURNS;
 }
 

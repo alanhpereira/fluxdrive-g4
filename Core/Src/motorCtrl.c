@@ -52,10 +52,12 @@ volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
 volatile int32_t g_home_pos;
 volatile int32_t g_pos_cnt;
+volatile int32_t g_pos_ref_cnt;
 volatile uint8_t g_ramp_bypass;
 volatile uint32_t g_loop_cyc, g_loop_cyc_max; /* currentLoop() run time, CPU cycles */
 volatile uint32_t g_tlm_drop;				   /* telemetry frames that found the link queue full */
 volatile uint16_t g_sl_lost_n;				  /* sensorless: consecutive cycles HFI was not tracking, see SL_LOST_N */
+volatile uint16_t g_enc_lost_n;				  /* consecutive cycles without a fresh encoder angle, see ENC_LOST_N */
 
 volatile uint8_t control_enabled = 0;
 
@@ -221,6 +223,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		g_pos_here_req = 0;
 	}
 	g_pos_cnt = (int32_t)(p - s_home); /* CANopen 0x6064: wraps at +-1024 turns */
+	g_pos_ref_cnt = (int32_t)(s_pos_ref >> 11); /* CANopen 0x6062 / following error: the interpolated reference */
 	g_pos = q32_to_f(s_pos);
 
 	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
@@ -558,6 +561,10 @@ void currentLoop(void) {
 	float age;
 	int fresh = MT6835_Sample(&hMT6835, &age); /* last good group of this period's burst read */
 	age_cur = fresh ? age + ENC_EXTRA_S : age_cur + 1.0f / CTRL_FS_HZ;
+	if (fresh)
+		g_enc_lost_n = 0;
+	else if (g_enc_lost_n < UINT16_MAX)
+		g_enc_lost_n++;
 	uint32_t ang = hMT6835.angle;								   /* one snapshot for the whole cycle */
 	motion_update(ang, fresh, age_cur + since_current_sample_s()); /* the PLL works in "now" time */
 

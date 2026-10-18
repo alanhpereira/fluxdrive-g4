@@ -132,6 +132,11 @@ static st_t sl_lost(void) {
 	return (g_params.ang_src == ANG_SENSORLESS && g_sl_lost_n >= SL_LOST_N) ? ST_HFI_LOST : ST_OK;
 }
 
+/* encoder modes: ST_ENC_LOST once no valid angle has come for ENC_LOST_N cycles. Checked by chk() and the watchdog */
+static st_t enc_lost(void) {
+	return (g_params.ang_src != ANG_SENSORLESS && g_enc_lost_n >= ENC_LOST_N) ? ST_ENC_LOST : ST_OK;
+}
+
 /* returns ST_OK, or why the routine must stop. Serves the protocol in busy mode: READ works, ABORT and
  * STOP abort, anything else gets ST_BUSY */
 static st_t chk(void) {
@@ -141,6 +146,7 @@ static st_t chk(void) {
 	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
 	if (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) return ST_VBUS_HIGH;
 	if (sl_lost() != ST_OK) return ST_HFI_LOST;
+	if (enc_lost() != ST_OK) return ST_ENC_LOST;
 	return ST_OK;
 }
 
@@ -905,6 +911,7 @@ static void run_watchdog(void) {
 	else if (g_vin < g_params.vbus_min) e = ST_VBUS_LOW;
 	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
 	else if (sl_lost() != ST_OK) e = ST_HFI_LOST; /* sensorless: HFI stopped tracking */
+	else if (enc_lost() != ST_OK) e = ST_ENC_LOST; /* encoder modes: no valid angle */
 	if (g_coasting && (e == ST_VBUS_LOW || e == ST_OVERSPEED)) e = ST_OK; /* the coast already is the reaction */
 	if (!e) {
 		if (g_coasting && fabsf(g_vel) < COAST_END_TURNS) {
@@ -916,7 +923,7 @@ static void run_watchdog(void) {
 
 	/* immediately, no ramp: the outer loops are not in control any more */
 	g_hfi_cmd = HFI_OFF;
-	if (e == ST_HFI_LOST) TIM1->BDTR &= ~TIM_BDTR_MOE; /* no angle for the current loop: bridge off, it coasts */
+	if (e == ST_HFI_LOST || e == ST_ENC_LOST) TIM1->BDTR &= ~TIM_BDTR_MOE; /* no angle for the current loop: bridge off, it coasts */
 	if (TIM1->BDTR & TIM_BDTR_MOE)
 		coast_or_off();
 	else { /* off already: checkAndClearBridgeFault() re-arms it once the zero vector is harmless */
@@ -1160,8 +1167,23 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 	s_tok = 0;
 }
 
+/* a sensor that lost its supply (or was unplugged) wakes up out of burst mode and never streams again by itself:
+ * with the motor off, send the burst command again every ENC_RETRY_MS until angles come. The turns counter
+ * carries on, but the rotor may have moved meanwhile: home again for an exact position */
+#define ENC_RETRY_MS 100
+static void enc_recover(void) {
+	static uint32_t last;
+	if (g_mode != CTRL_OFF || g_enc_lost_n < ENC_LOST_N) return; /* also after a StartBurst that timed out */
+	const uint32_t now = HAL_GetTick();
+	if (now - last < ENC_RETRY_MS) return;
+	last = now;
+	MT6835_StopBurst(&hMT6835);
+	MT6835_StartBurst(&hMT6835);
+}
+
 void cmd_poll(void) {
 	run_watchdog();
+	enc_recover();
 	proto_poll(0); /* frames -> objdict / cmd_message() */
 	co_app_poll(); /* CANopen communication / node resets */
 	co402_poll();  /* CiA 402 state machine */

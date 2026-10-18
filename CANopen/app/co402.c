@@ -79,6 +79,7 @@ static const struct {
 	{ST_OVERSPEED, 0x44, 0x8400},	 /* velocity speed controller */
 	{ST_HFI_LOST, 0x45, 0x7300},	 /* sensor (sensorless angle lost) */
 	{ST_HFI_POL_WEAK, 0x45, 0x7300},
+	{ST_ENC_LOST, 0x45, 0x7305}, /* incremental sensor 1 fault */
 	{ST_ABORTED, 0x47, 0xFF01},	 /* manufacturer: stopped from the USB/serial link */
 	{ST_CAN_LOST, 0x48, 0x8130}, /* heartbeat / life guard error: master lost */
 	{ST_FOLLOWING_ERROR, 0x46, 0x8611},

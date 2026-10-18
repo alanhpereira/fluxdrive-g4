@@ -46,6 +46,10 @@ extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from curr
 #define SL_LOST_N 1250 /* sensorless: HFI not tracking for this many cycles (50 ms) stops the motor */
 #define SL_AGREE_MAX_TURNS 10.0f /* sensorless: above this speed (turn/s, ~600 rpm) HFI is not checked against the observer */
 extern volatile uint16_t g_sl_lost_n; /* consecutive such cycles, from currentLoop() */
+/* encoder modes: no fresh encoder angle (stream stalled, every group bad, MISO stuck) for this many cycles (10 ms)
+ * stops the motor with the bridge off, like a lost HFI angle */
+#define ENC_LOST_N 250
+extern volatile uint16_t g_enc_lost_n; /* consecutive cycles without a fresh angle, from currentLoop() */
 
 /* trips, detected in currentLoop(). In CTRL_RUN the ISR coasts at zero current (id = iq = 0, outer loops
  * held): no torque, no regen into the bus, no short-brake. Outside CTRL_RUN, or when the current keeps
@@ -80,6 +84,7 @@ extern volatile float g_rpm;		   /* g_vel * 60 */
 extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position g_home_pos */
 extern volatile int32_t g_home_pos;	 /* counts the present position gets at homing (0, or CANopen -0x607C) */
 extern volatile int32_t g_pos_cnt;	 /* encoder counts from home, motor direction (atomic copy of the position) */
+extern volatile int32_t g_pos_ref_cnt; /* the ISR's position reference, same counts (meaningful in LOOP_POS) */
 extern volatile uint8_t g_ramp_bypass; /* 1: the speed loop takes g_vel_ref as is, no acc_lim slew (CANopen modes) */
 
 /* implement in main.c:  uint32_t enc_angle21(void) { return hMT6835.angle; } */
