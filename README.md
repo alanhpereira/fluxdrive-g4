@@ -28,7 +28,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | `driverTCC.xdd` | CANopenEditor project of the object dictionary |
 | `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `driverTCC.eds` (EDS for CANopen masters) |
 | `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`Driver TCC schematic.pdf`) |
-| `hardware/datasheets/` | STSPIN32G4 and STM32G431 datasheets |
+| `hardware/datasheets/` | Datasheets of the main parts: STSPIN32G4 (controller + gate driver), STM32G431 (its MCU), DI100N10PQ (bridge MOSFETs), MT6835 (encoder), TJA1051 (CAN transceiver), USBLC6-2 (USB ESD protection), ANTC1608-103F3450FB (board NTC). The STM32G4 reference manual (RM0440, register descriptions) is not included: get it from [st.com](https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf). |
 | `docs/` | Manuals and design notes |
 
 ## Quick start
