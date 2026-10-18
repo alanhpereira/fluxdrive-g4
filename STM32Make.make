@@ -86,8 +86,8 @@ CANopen/CANopenNode/301/CO_fifo.c \
 CANopen/CANopenNode/301/crc16-ccitt.c \
 CANopen/CANopenNode/CANopen.c \
 CANopen/CANopenNode/storage/CO_storage.c \
-CANopen/app/co_app.c \
 CANopen/app/co402.c \
+CANopen/app/co_app.c \
 CANopen/app/co_store.c \
 CANopen/od/OD.c \
 CANopen/port/CO_driver_stm32g4.c \
