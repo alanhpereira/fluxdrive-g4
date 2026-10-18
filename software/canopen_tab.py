@@ -1684,7 +1684,11 @@ class CanopenTab(QtWidgets.QWidget):
                 if self.bus:
                     self.pdo_refresh()
                 continue
-            self.t_log.appendPlainText(line)
+            col = {"pass": GREEN, "fail": RED, "skip": GREY, "head": BLUE}.get(cotest.line_kind(line))
+            for ln in line.split("\n"):  # tracebacks come as one multi-line entry
+                ln = ln.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                style = "white-space:pre" + (f"; color:{col}" if col else "")
+                self.t_log.appendHtml(f"<span style='{style}'>{ln}</span>")
 
     # ------------------------------------------------------------------ timers
     def poll(self):

@@ -37,6 +37,30 @@ REGISTRY = []  # Test, in definition order
 sys.modules.setdefault("cotest", sys.modules[__name__])  # run as a script, cotests/* still register here
 
 
+def line_kind(line):
+    """'pass' / 'fail' / 'skip' / 'head' / None for a log line, for the colours in the GUI and the CLI"""
+    w = line.split(None, 1)[0] if line.strip() else ""
+    if w == "PASS":
+        return "pass"
+    if w in ("FAIL", "ERROR", "runner:"):
+        return "fail"
+    if w in ("skip", "cancelled"):
+        return "skip"
+    if w == "--":
+        return "head"
+    if w == "==":
+        return "pass" if " 0 failed" in line else "fail"
+    return None
+
+
+ANSI = {"pass": "\033[32m", "fail": "\033[31m", "skip": "\033[90m", "head": "\033[1;36m"}
+
+
+def print_colored(line):
+    c = ANSI.get(line_kind(line))
+    print(f"{c}{line}\033[0m" if c else line)
+
+
 class Test:
     def __init__(self, fn, name, usb, motion, doc):
         self.fn, self.name, self.usb, self.motion, self.doc = fn, name, usb, motion, doc
@@ -365,7 +389,11 @@ def main():
     if usb and usb.request(P.PING).status != P.ST_OK:
         print(f"no reply from the config link on {a.usb}")
         return 2
-    runner = Runner(bus, a.node, usb, motion=not a.no_motion)
+    log = print
+    if sys.stdout.isatty() and not os.environ.get("NO_COLOR"):
+        os.system("")  # turns on ANSI colours in the Windows console
+        log = print_colored
+    runner = Runner(bus, a.node, usb, log=log, motion=not a.no_motion)
     try:
         runner.run(tests)
     except KeyboardInterrupt:
