@@ -3,6 +3,7 @@ Config tab of the plotter: parameter grid, calibration wizard and log, plus the 
 status/statistics boxes that the plotter shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/config-gui-handoff.md has the design.
 """
 import decimal
+import html
 import json
 import time
 
@@ -283,7 +284,9 @@ class ConfigTab(QtWidgets.QWidget):
         return self.main.link
 
     def log(self, text, color=None):
-        self.ev_log.appendHtml(f'<span style="color:{color}">{text}</span>' if color else text.replace("<", "&lt;"))
+        """plain text (escaped, spaces kept: the event formatters align columns)"""
+        style = "white-space:pre-wrap" + (f";color:{color}" if color else "")
+        self.ev_log.appendHtml(f'<span style="{style}">{html.escape(text)}</span>')
 
     def set_enabled(self, on):
         for wdg in (self.btn_read, self.btn_write, self.btn_revert, self.btn_save, self.btn_export, self.btn_import,

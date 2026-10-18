@@ -18,6 +18,7 @@ write is not safe from two threads: SLCAN gave write timeouts).
 """
 import bisect
 import collections
+import itertools
 import math
 import os
 import struct
@@ -190,6 +191,13 @@ class Ring:
     def snapshot(self):
         with self.lock:
             return list(self.q)
+
+    def tail(self, n):
+        """-> the newest n items, oldest first (walks back from the end: touches only those n)"""
+        with self.lock:
+            out = list(itertools.islice(reversed(self.q), n))
+        out.reverse()
+        return out
 
     def since(self, total):
         """-> (items appended after the counter was `total`, new counter)"""
@@ -1084,6 +1092,7 @@ class Streamer:
             self.node.write(0x60C2, 2, -3)
             self.start_pos = self.node.read(0x6064) if start_pos is None else start_pos
         self._u = u
+        self._pos_ref = None
         self.t0 = None
         self._wall0 = time.time() - time.perf_counter()
         self.running = True
@@ -1120,16 +1129,18 @@ class Streamer:
         u = self._u
         s = self.node.series
         w0 = self.t0 + self._wall0  # guards look only at samples from this stream
+        # only the newest sample each period (tail, not get: a copy of the whole ring every 5 ms in this thread,
+        # under the lock the notifier thread needs to append)
         if self.max_rpm is not None:
-            tt, vv = s.get((0x606C, 0))
+            tt, vv = s.tail((0x606C, 0), 1)
             if len(vv) and tt[-1] >= w0 and abs(u.ips_to_rpm(vv[-1])) > self.max_rpm:
                 return self._guard(f"speed {u.ips_to_rpm(vv[-1]):.0f} rpm beyond the {self.max_rpm:.0f} rpm guard")
         if self.max_turns is not None:
-            tt, vv = s.get((0x6064, 0))
-            k = tt >= w0
-            if k.any():
-                ref = self.start_pos if self.mode == MODE_CSP else vv[k][0]
-                if abs(u.inc_to_turn(vv[-1] - ref)) > self.max_turns:
+            tt, vv = s.tail((0x6064, 0), 1)
+            if len(vv) and tt[-1] >= w0:
+                if self._pos_ref is None:  # CSP: the start position; else the first sample of this stream
+                    self._pos_ref = self.start_pos if self.mode == MODE_CSP else vv[-1]
+                if abs(u.inc_to_turn(vv[-1] - self._pos_ref)) > self.max_turns:
                     return self._guard(f"position beyond the ±{self.max_turns:g} turn guard")
         e = self.gen(tr)
         try:

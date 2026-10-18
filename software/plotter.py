@@ -119,7 +119,10 @@ class Receiver(threading.Thread):
         self.last_raw = seq
         log = self.log
         if log:
-            log.write(frame)
+            try:
+                log.write(frame)
+            except (ValueError, OSError):  # closed by Stop rec meanwhile (or disk full): must not end this thread
+                pass
         with self.lock:
             k = self.head % self.cap
             self.data[k] = vals
@@ -373,9 +376,7 @@ class Main(QtWidgets.QMainWindow):
         if rx:
             link = self.link
             if link:
-                link.drain()
-                while link.events:
-                    self.config.on_event(*link.events.popleft())
+                link.drain()  # results and events in arrival order (events -> config.on_event)
             if rx.error:
                 self.say(f"connection lost: {rx.error}", "#ff6060")
                 self.disconnect()
@@ -426,6 +427,7 @@ class Main(QtWidgets.QMainWindow):
         self.rx = Receiver(self.ser, self.capacity())
         self.tx = Sender(self.ser)
         self.link = P.Link(self.tx.send_raw)
+        self.link.on_event = self.config.on_event
         self.rx.on_message = self.link.on_message
         self.rx.start()
         self.tx.start()

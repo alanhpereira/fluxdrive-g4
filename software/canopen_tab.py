@@ -1060,7 +1060,8 @@ class CanopenTab(QtWidgets.QWidget):
     # ------------------------------------------------------------------ streamer
     def gen_changed(self, i):
         name, params = GENS[i]
-        unit = UNITS.get(self.mode_cb.currentData(), "")
+        mode = self.mode_cb.currentData()
+        unit = UNITS.get(mode, "")
         for k in range(4):
             vis = k < len(params)
             self.gen_lbls[k].setVisible(vis)
@@ -1070,7 +1071,7 @@ class CanopenTab(QtWidgets.QWidget):
                 self.gen_lbls[k].setText(label.replace("(/s)", f"({unit}/s)").replace("(/s²)", f"({unit}/s²)")
                                          + (f" ({unit})" if label in ("amplitude", "offset", "limit", "distance") else ""))
                 self.gen_sp[k].setDecimals(dec)
-                key = f"co/gen/{name}/{k}"
+                key = f"co/gen/{mode}/{name}/{k}"  # per mode: 300 (rpm) in CSV must not come back as 300 turn in CSP
                 self.gen_sp[k].setValue(float(self.settings.value(key, default)))
         self.gen_file_row.setVisible(name == "file")
 
@@ -1082,8 +1083,9 @@ class CanopenTab(QtWidgets.QWidget):
     def make_gen(self):
         name, params = GENS[self.gen_cb.currentIndex()]
         vals = [self.gen_sp[k].value() for k in range(len(params))]
+        mode = self.mode_cb.currentData()
         for k, v in enumerate(vals):
-            self.settings.setValue(f"co/gen/{name}/{k}", v)
+            self.settings.setValue(f"co/gen/{mode}/{name}/{k}", v)
         if name == "file":
             return C.gen_file(self.gen_file.text())
         return C.GENERATORS[name](*vals)
@@ -1205,7 +1207,7 @@ class CanopenTab(QtWidgets.QWidget):
                 if s is None or SENT_PLOT.get(s.mode) != pi:
                     curve.setData([], [])
                     continue
-                rows = s.log.snapshot()[-n:]
+                rows = s.log.tail(n)  # not snapshot(): the log holds the whole stream (200k)
                 if not rows:
                     curve.setData([], [])
                     continue

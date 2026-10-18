@@ -65,8 +65,8 @@ def t_stops(ctx):
         ctx.check(f"{name}: running at 60 rpm first", abs(ctx.rpm() - 60) < 15, f"{ctx.rpm():+.1f} rpm")
         cmd()
         t = wait_slow(ctx, 5.0, 3.0)
-        ctx.check(f"{name}: below 5 rpm", t is not None, f"{t:.2f} s (ramp at {rate:.0f} rpm/s: {60 / rate:.2f} s)"
-                  if t is not None else "still turning")
+        ramp = f"ramp at {rate:.0f} rpm/s: {60 / rate:.2f} s" if rate else "no ramp (rate 0)"
+        ctx.check(f"{name}: below 5 rpm", t is not None, f"{t:.2f} s ({ramp})" if t is not None else "still turning")
         sw = d.wait_state(want, 2.0)
         ctx.check(f"{name}: ends in {C.FSA_NAMES[want]}", sw is not None, f"0x{d.node.sw:04X}")
         ctx.check(f"{name}: CAN released the motor", ctx.wait(lambda: not n.read_native("can_owner"), 2.0))

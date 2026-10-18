@@ -295,8 +295,11 @@ class Link(threading.Thread):
     """Request/reply over a byte sink, one request in flight, replies matched by token.
 
     write(bytes) sends a whole frame (the caller serialises it with text lines). The receive side
-    calls on_message() for every good A5 5C frame. Results and events are queued for the GUI thread:
-    call drain() from there, which runs the callbacks."""
+    calls on_message() for every good A5 5C frame. Results and events are queued for the GUI thread
+    in one ordered queue: call drain() from there, which runs the callbacks and on_event(tok, code, vals)
+    (without on_event, events collect in .events). An event tagged with the request in flight is held
+    until that request's result is queued: a CAL that fails its checks sends ACK and EV_DONE back to back,
+    and the EV_DONE must not reach the GUI before the ACK."""
 
     def __init__(self, write):
         super().__init__(daemon=True)
@@ -306,11 +309,14 @@ class Link(threading.Thread):
         self.running = True
         self.tok = 0
         self.wait_tok = None
+        self.hold_tok = None  # events with this tok wait in held until the request's result is queued
+        self.held = []
         self.reply = None
         self.got = threading.Event()
         self.lock = threading.Lock()
-        self.done = collections.deque()  # (callback, Result) for the GUI thread
-        self.events = collections.deque()  # (tok, code, [floats]) for the GUI thread
+        self.done = collections.deque()  # ("res", callback, Result) | ("ev", (tok, code, [floats]), None), in order
+        self.on_event = None  # GUI thread: on_event(tok, code, vals), from drain()
+        self.events = collections.deque()  # (tok, code, [floats]) drained while on_event is None
         self.timeouts = 0
         self.unmatched = 0
 
@@ -324,7 +330,12 @@ class Link(threading.Thread):
             if len(payload) >= 3:
                 code, n = struct.unpack_from("<HB", payload)
                 n = min(n, (len(payload) - 3) // 4)
-                self.events.append((tok, code, list(struct.unpack_from(f"<{n}f", payload, 3))))
+                ev = (tok, code, list(struct.unpack_from(f"<{n}f", payload, 3)))
+                with self.lock:
+                    if tok and tok == self.hold_tok:
+                        self.held.append(ev)
+                    else:
+                        self.done.append(("ev", ev, None))
             return
         with self.lock:
             if self.wait_tok is not None and tok == self.wait_tok[0] and mtype == (self.wait_tok[1] | REPLY):
@@ -347,16 +358,29 @@ class Link(threading.Thread):
         return bool(self.q) or self.wait_tok is not None
 
     def clear_queue(self, keep=()):
-        """drop queued (not yet sent) requests, except the given types"""
-        kept = [r for r in self.q if r[0] in keep]
-        self.q.clear()
-        self.q.extend(kept)
+        """drop queued (not yet sent) requests, except the given types. Their callbacks still run, with
+        ST_ABORTED, so whoever counts replies (read_all, an export, a blocking UsbSync) is not left waiting"""
+        dropped, kept = [], []
+        while True:  # popleft is atomic; iterating the deque while the Link thread pops it raises RuntimeError
+            try:
+                r = self.q.popleft()
+            except IndexError:
+                break
+            (kept if r[0] in keep else dropped).append(r)
+        self.q.extendleft(reversed(kept))
+        for r in dropped:
+            self.done.append(("res", r[2], Result(ST_ABORTED)))
 
     def drain(self):
         while self.done:
-            cb, res = self.done.popleft()
-            if cb:
-                cb(res)
+            kind, a, b = self.done.popleft()
+            if kind == "ev":
+                if self.on_event:
+                    self.on_event(*a)
+                else:
+                    self.events.append(a)
+            elif a:
+                a(b)
 
     def stop(self):
         self.running = False
@@ -370,7 +394,11 @@ class Link(threading.Thread):
             while self.q and self.running:
                 mtype, payload, cb, timeout = self.q.popleft()
                 res = self._transact(mtype, payload, timeout)
-                self.done.append((cb, res))
+                with self.lock:  # the result first, then the events it held back
+                    self.done.append(("res", cb, res))
+                    self.done.extend(("ev", e, None) for e in self.held)
+                    self.held.clear()
+                    self.hold_tok = None
 
     def _transact(self, mtype, payload, timeout):
         t, retry = TIMING.get(mtype, (0.5, False))
@@ -379,11 +407,14 @@ class Link(threading.Thread):
             tok = self._next_tok()
             with self.lock:
                 self.wait_tok = (tok, mtype)
+                self.hold_tok = tok
                 self.reply = None
                 self.got.clear()
             try:
                 self.write(encode(mtype, tok, payload))
             except Exception:  # noqa: BLE001 (port gone: report as a timeout)
+                with self.lock:
+                    self.wait_tok = None  # else busy() stays true and the status poll stops
                 break
             ok = self.got.wait(t)
             with self.lock:
