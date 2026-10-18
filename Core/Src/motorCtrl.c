@@ -146,6 +146,10 @@ static float s_pos_ff;		/* turn/s, the matching speed feed-forward while it last
 static pos_q32_t s_pos_tgt; /* where the segment in progress ends */
 static uint16_t s_pos_ff_hold; /* after a segment: cycles left to carry on at its rate, waiting for the next one */
 static uint8_t s_pos_snap;	   /* the segment ends exactly on s_pos_tgt (a hold) */
+/* Q32.32 -> float inline: a plain (float) of an int64 is a library call (__aeabi_l2f, in flash) */
+static inline float q32_to_f(int64_t x) {
+	return (float)(int32_t)(x >> 32) + (float)(uint32_t)x * (float)(1.0 / POS_Q32_ONE);
+}
 static uint32_t s_pll_ph;	/* Q32 = one turn, motor direction */
 static float s_pll_vel;		/* turn/s */
 static uint8_t s_pll_init;
@@ -217,7 +221,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		g_pos_here_req = 0;
 	}
 	g_pos_cnt = (int32_t)(p - s_home); /* CANopen 0x6064: wraps at +-1024 turns */
-	g_pos = (float)(int32_t)(s_pos >> 32) + (float)(uint32_t)s_pos * (float)(1.0 / POS_Q32_ONE);
+	g_pos = q32_to_f(s_pos);
 
 	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
 	if (!s_pll_init) {
@@ -266,14 +270,14 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 			float vref = g_vel_ref;
 			if (lp == LOOP_POS) {
 				/* exact integer difference; only the (small) error becomes a float */
-				float err = (float)(s_pos_ref - s_pos) * (float)(1.0 / POS_Q32_ONE);
+				float err = q32_to_f(s_pos_ref - s_pos);
 				vref = s_pos_ff + g_params.pos_kp * err;
 			}
 			if (vref > lim)
 				vref = lim;
 			else if (vref < -lim)
 				vref = -lim;
-			const float dv = g_params.acc_lim * (1.0f / 60.0f) * (float)OUTER_DIV / CTRL_FS_HZ;
+			const float dv = g_params.acc_lim * ((float)OUTER_DIV / (60.0f * CTRL_FS_HZ)); /* rpm/s -> turn/s per step */
 			if (s_regen_k < 1.0f && (vref - vramp) * vramp < 0.0f)
 				; /* regen clamp: hold the deceleration ramp, the motor slows as fast as the bus allows */
 			else if (!(dv > 0.0f) || g_ramp_bypass) /* bypass: the CANopen profile (or the master) ramps already */
@@ -324,9 +328,11 @@ static float s_obs_xa, s_obs_xb;	/* stator flux estimate, Wb */
 static float s_obs_ia, s_obs_ib;	/* currents at the previous sample, A */
 static float s_obs_va, s_obs_vb;	/* last voltage written to the bridge, V */
 static float s_obs_va1, s_obs_vb1;	/* the one written before it */
-static float s_obs_kv = -1.0f;		/* kv and gain the constants below were computed from */
+static float s_obs_kv = -1.0f;		/* kv, pole pairs and gain the constants below were computed from */
+static uint8_t s_obs_pp;
 static float s_obs_gain = -1.0f;
 static float s_obs_lambda, s_obs_k; /* Wb peak phase (as cal_kv()), correction gain */
+static float s_obs_inv_lambda, s_obs_inv_pp;
 static uint16_t s_obs_good;			/* consecutive cycles both checks passed (up to OBS_LOCK_N) */
 static uint16_t s_obs_flux_bad;		/* leaky counts of failing cycles, see OBS_FLUX_DROP_N */
 static uint16_t s_obs_enc_bad;
@@ -341,9 +347,12 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 		s_obs_ratio = NAN;
 		return 0;
 	}
-	if (g_params.kv != s_obs_kv) {
+	if (g_params.kv != s_obs_kv || g_params.pole_pairs != s_obs_pp) {
 		s_obs_kv = g_params.kv;
-		s_obs_lambda = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * s_obs_kv);
+		s_obs_pp = g_params.pole_pairs;
+		s_obs_lambda = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)s_obs_pp * s_obs_kv);
+		s_obs_inv_lambda = 1.0f / s_obs_lambda;
+		s_obs_inv_pp = 1.0f / (float)s_obs_pp;
 		s_obs_xa = s_obs_xb = 0.0f;
 		s_obs_good = 0;
 		s_obs_gain = -1.0f;
@@ -367,7 +376,7 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 	s_obs_xb += (vb + c * eb) * (1.0f / CTRL_FS_HZ);
 	ea = s_obs_xa - l * i_a;
 	eb = s_obs_xb - l * i_b;
-	s_obs_ratio = sqrtf(ea * ea + eb * eb) / s_obs_lambda;
+	s_obs_ratio = sqrtf(ea * ea + eb * eb) * s_obs_inv_lambda;
 	if (!(s_obs_ratio < 3.0f)) {
 		/* far off (or NaN) the cubic correction overshoots in discrete time and runs away: restart from eta = 0 */
 		s_obs_xa = l * i_a;
@@ -448,7 +457,7 @@ static void obs_pll(int valid, uint32_t th_obs, float seed) {
 	float err = (float)(int32_t)(th_obs - s_opll_ph) * (1.0f / 4294967296.0f); /* electrical turns */
 	s_opll_vel += PLL_KI_TS * err;
 	s_opll_ph += (uint32_t)(int32_t)((s_opll_vel + PLL_KP * err) * (4294967296.0f / CTRL_FS_HZ));
-	s_obs_vel = s_opll_vel / (float)g_params.pole_pairs;
+	s_obs_vel = s_opll_vel * s_obs_inv_pp; /* valid: obs_update() has set it */
 }
 
 /* time since the ADC sampled the currents (CC4 on the way up), from the TIM1 counter */
@@ -506,8 +515,23 @@ static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
 	return 1;
 }
 
-/* telemetry frame, once every 10 cycles, queued on the link (USB CDC or UART DMA). Kept out of CCM: its code is large and it runs rarely */
+/* telemetry, once every 10 cycles. The ISR only fills in the values; tlm_finish() adds the sum and queues the
+ * frame from the link IRQ (priority 1). Doing all of it here made these the longest cycles. In flash, like
+ * tlm_finish(): CCM is nearly full, and these cycles have room (the outer loops never run in them). s_tlm_full hands
+ * the frame over: set here, cleared there; a frame still waiting is not overwritten */
+static volatile uint8_t s_tlm_full;
+
+static void tlm_finish(void) {
+	telemetry.sum = frame_sum(&telemetry);
+	if (!link_tx(&telemetry, sizeof(telemetry))) g_tlm_drop++;
+	s_tlm_full = 0;
+}
+
 static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, float iq, ctrl_mode_t mode) {
+	if (s_tlm_full) {
+		g_tlm_drop++;
+		return;
+	}
 	telemetry.seq = seq;
 	telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
 	telemetry.v[1] = g_vin;
@@ -519,14 +543,14 @@ static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, flo
 	telemetry.v[7] = g_rpm;
 	telemetry.v[8] = s_vel_ref_eff * 60.0f; /* NaN unless a speed/position loop is active */
 	telemetry.v[9] = g_pos;
-	telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? (float)(int32_t)(s_pos_ref >> 32) + (float)(uint32_t)s_pos_ref * (float)(1.0 / POS_Q32_ONE) : NAN;
+	telemetry.v[10] = (mode == CTRL_RUN && g_loop == LOOP_POS) ? q32_to_f(s_pos_ref) : NAN;
 	telemetry.v[11] = s_obs_err * 360.0f; /* observer - base (encoder, HFI when sensorless), deg electrical; NaN without R, L, kv */
 	telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
 	telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
 	telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
 	telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
-	telemetry.sum = frame_sum(&telemetry);
-	if (!link_tx(&telemetry, sizeof(telemetry))) g_tlm_drop++;
+	s_tlm_full = 1;
+	link_defer(tlm_finish);
 }
 void currentLoop(void) {
 	static float age_cur; /* encoder sample -> current sample */
@@ -627,15 +651,15 @@ void currentLoop(void) {
 	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
 	/* regen clamp: braking current shrinks to zero across the vbus_clamp band below vbus_max (0 = off) */
 	float rk = 1.0f;
-	if (g_params.vbus_max > 0.0f && g_params.vbus_clamp > 0.0f) {
-		rk = (g_params.vbus_max - g_vin) / g_params.vbus_clamp;
-		rk = rk > 1.0f ? 1.0f : rk < 0.0f ? 0.0f : rk;
+	if (g_params.vbus_max > 0.0f && g_params.vbus_clamp > 0.0f && g_vin > g_params.vbus_max - g_params.vbus_clamp) {
+		rk = (g_params.vbus_max - g_vin) / g_params.vbus_clamp; /* inside the band only: no divide on most cycles */
+		rk = rk < 0.0f ? 0.0f : rk;
 	}
 	s_regen_k = rk;
 	const int outer_ran = outer_loops((hold || coast) ? CTRL_OFF : mode); /* held: bumpless from the present state after */
 	if (mode == CTRL_RUN) {
 		if (!hold) {
-			float vmax = 0.9f * vin / SQRT3 - (hf == HFI_INJECT ? g_params.hfi_v : 0.0f);
+			float vmax = (0.9f * INV_SQRT3) * vin - (hf == HFI_INJECT ? g_params.hfi_v : 0.0f);
 			float iq_ref = g_iq_ref;
 			if (iq_ref * s_vel < 0.0f) iq_ref *= rk; /* braking: only what the bus can take */
 			pi_current_step(id, iq, iq_ref, vmax > 0.0f ? vmax : 0.0f, &v_d, &v_q);

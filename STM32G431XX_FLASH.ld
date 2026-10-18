@@ -86,8 +86,8 @@ SECTIONS
     _sccmram = .;
     *(.text.currentLoop) *(.text.SVPWM)
     *(.text.hfi_step) *(.text.hfi_estimate) *(.text.hfi_filter)
-    *(.text.HAL_ADCEx_InjectedConvCpltCallback) *(.text.ADC1_2_IRQHandler) *(.text.HAL_ADC_IRQHandler)
-    *(.text.HAL_ADCEx_InjectedGetValue)
+    *(.text.cs_adc_irq) *(.text.ADC1_2_IRQHandler)
+    *(.text.outer_loops) *(.text.link_tx_ready) *(.text.link_defer)
     *(.text.MT6835_Sample) *(.text.TIM1_UP_TIM16_IRQHandler)
     *(.text.HAL_GetTick)
     *(.ccmram) *(.ccmram*)

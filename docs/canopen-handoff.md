@@ -181,10 +181,12 @@ The Statistics box in the sidebar shows the CAN row.
   - **SLCAN drops a reply now and then.** It drops about one SDO reply in a few hundred; the drive's own counters show nothing lost and a 2–3 ms response time. Use a 1 s SDO timeout and retry. For 1 kHz cyclic tests on Linux, a gs_usb/candleLight adapter as `can0` times better.
   - **EMCYs at connect:** with the adapter port closed, nothing acknowledges the drive's frames. Opening the port gives EMCYs 0x8120 (error passive) and 0x8110 info 0x14 (TX buffer overflow) and their resets.
 
-## Open: ISR timing margin (next session)
-- **Loop time:** the position-segment code in `motion_update()` (commit `801d2b9`: master-rate segments, ride-through, 607A hook) raised the `currentLoop()` max in CSP/PP from 18.1 to 18.9 µs, against the ~19 µs budget before the next encoder read.
-- **Encoder late:** a full `cotest.py` run (2026-10-17 18:43, `cotest_runs/20261017_184319.json`) counted 2–13 encoder `late` events in pp, csp, csv, pv, store_restore and stops_at_speed; every functional check passed. A headless run of csp/pp/csv minutes earlier on the same firmware had late 0. That run probably came from the plotter's Tests tab, whose UART traffic shares priority 0. Rerun headless to separate the two causes.
-- **To do:** trim the new ISR code (e.g. compute the segment rate and correction in the tick and hand the ISR ready values), measure the loop max again, get `late` back to 0. CCMRAM is at 96.9 % (≈ 320 B free).
+## ISR timing margin (done, 2026-10-17)
+- **Before:** `currentLoop()` max 18.9 µs in CSP/PP, 2–13 encoder `late` in pp, csp, csv, pv, stops_at_speed (`cotest_runs/20261017_184319.json`). The ISR ended up to 22 µs after the current sample, past the next encoder trigger at 20.4 µs.
+- **Measured causes** (DWT checkpoints, idle): `HAL_ADC_IRQHandler` ×2 on the first conversion (JEOC) took 3.6 µs before `currentLoop()` started; the telemetry cycle cost 7.2 µs (HAL UART DMA start, byte-wise `memcpy` from flash, its DMA/UART TC interrupts at priority 0); `outer_loops()` ran from flash with an `__aeabi_l2f`.
+- **Fixes:** `cs_adc_irq()` (one JEOS interrupt, register reads); telemetry only filled in the ISR and finished from the link IRQ (`link_defer()`); UART TX by register, UART IRQ at priority 1, `link_tx()` masks with BASEPRI; `outer_loops` in CCM; divides taken off the per-cycle path.
+- **After:** full `cotest.py` run (`cotest_runs/20261017_210439.json`): loop max 10.5–12.9 µs (CSP/PP 12.8/12.9), `late` 0 in every motion test. `currentLoop()` starts 2.0–2.5 µs after the CC4 trigger, so the ISR ends ≈ 15.5 µs after it. CCMRAM 95.6 %.
+- **store_restore** still counts 1–2 `late`, as before; most likely the flash write, which stalls every flash access (the interrupt vector fetch included) for the page erase. Not confirmed. The motor is off then (store is refused while running).
 
 ## Known limits / not done
 - **60B1 in CSP:** not used. The feed-forward comes from the target steps.

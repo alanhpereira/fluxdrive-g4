@@ -12,7 +12,6 @@ volatile uint16_t vin_raw;
 volatile float g_cur[3];
 volatile float g_vin;
 
-static volatile uint8_t convCptlMask = 0;
 static int16_t cur_offset[3]; /* ADC counts subtracted in the callback: 2048 + g_cs_off[i] */
 int16_t g_cs_off[3];
 volatile uint8_t g_cs_off_src;
@@ -131,26 +130,28 @@ HAL_StatusTypeDef initCS() {
 		disableCS();
 		return status;
 	}
+	/* one interrupt per cycle, at the end of ADC2's sequence: cs_adc_irq() */
+	ADC1->IER &= ~(ADC_IER_JEOCIE | ADC_IER_JEOSIE);
+	ADC2->IER = (ADC2->IER & ~ADC_IER_JEOCIE) | ADC_IER_JEOSIE;
 	return HAL_OK;
 }
 
-void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	if (hadc == &hadc1) {
-		convCptlMask |= 1;
-		cur_raw[0] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset[0];
-		cur_raw[2] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2) - cur_offset[2];
-	}
-	if (hadc == &hadc2) {
-		convCptlMask |= 2;
-		cur_raw[1] = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1) - cur_offset[1];
-		vin_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
-	}
-	if (convCptlMask == 3) {
-		convCptlMask = 0;
-		g_cur[0] = cur_raw[0] * g_curMult;
-		g_cur[1] = cur_raw[1] * g_curMult;
-		g_cur[2] = cur_raw[2] * g_curMult;
-		g_vin = vin_raw * g_vinMult;
-		currentLoop();
-	}
+/* ADC1_2_IRQHandler, from its USER CODE section, which returns before the HAL handlers. Both ADCs convert a
+ * two-rank injected sequence on the same CC4 trigger, so one interrupt at the end of ADC2's sequence (JEOS)
+ * reads all four results. HAL_ADC_IRQHandler ran on the first conversion of each (JEOC, from the .ioc's
+ * EOC_SINGLE_CONV) and took ~3.6 us before currentLoop() started: measured 4.5 us after the trigger, now 2.0-2.5 us */
+void cs_adc_irq(void) {
+	ADC2->ISR = ADC_ISR_JEOC | ADC_ISR_JEOS; /* write 1 to clear */
+	for (int n = 0; !(ADC1->ISR & ADC_ISR_JEOS) && n < 100; n++) {
+	} /* same clock and trigger: ADC1 is done too, or a few cycles away */
+	ADC1->ISR = ADC_ISR_JEOC | ADC_ISR_JEOS;
+	cur_raw[0] = (int16_t)(ADC1->JDR1 - cur_offset[0]);
+	cur_raw[2] = (int16_t)(ADC1->JDR2 - cur_offset[2]);
+	cur_raw[1] = (int16_t)(ADC2->JDR1 - cur_offset[1]);
+	vin_raw = (uint16_t)ADC2->JDR2;
+	g_cur[0] = cur_raw[0] * g_curMult;
+	g_cur[1] = cur_raw[1] * g_curMult;
+	g_cur[2] = cur_raw[2] * g_curMult;
+	g_vin = vin_raw * g_vinMult;
+	currentLoop();
 }
