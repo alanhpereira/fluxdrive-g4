@@ -27,8 +27,8 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | `Driver TCC.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
 | `driverTCC.xdd` | CANopenEditor project of the object dictionary |
 | `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `driverTCC.eds` (EDS for CANopen masters) |
-| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB |
-| `Driver TCC.pdf` | Schematic as PDF |
+| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`Driver TCC schematic.pdf`) |
+| `hardware/datasheets/` | STSPIN32G4 and STM32G431 datasheets |
 | `docs/` | Manuals and design notes |
 
 ## Quick start

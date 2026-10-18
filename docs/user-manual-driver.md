@@ -44,7 +44,7 @@ Read this before powering a motor.
 
 ## 3. Connections
 
-Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `Driver TCC.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
+Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `hardware/Driver TCC schematic.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
 
 ### Power and motor
 | Ref | Connector | Pins | Notes |
