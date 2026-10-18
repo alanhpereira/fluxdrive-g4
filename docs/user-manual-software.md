@@ -136,7 +136,7 @@ Editing works in two steps:
 | **Save to flash** | Stores what the device holds (not pending edits) in flash, plus the CANopen settings. Refused while the motor runs. The orange line "device RAM differs from flash" means there is something unsaved. |
 | **Export JSON…** | Reads everything and saves it with a timestamp. Use it as a backup of a calibrated motor. |
 | **Import JSON…** | Loads a file as pending edits (nothing is sent yet). Then **Write changed** and **Save to flash**. This is how a calibration is restored after a firmware update that reset the parameters. |
-| **Reboot** | Resets the driver (unsaved RAM edits are lost). The port closes; reconnect when it is back. |
+| **Reboot** | Resets the driver (unsaved RAM edits are lost). The port closes and the plotter reopens it when the driver is back (it retries for 10 s). |
 | **Reboot to DFU** | Resets into the ST USB bootloader for flashing with STM32CubeProgrammer. |
 
 Reboot and DFU are refused while the motor runs.
@@ -265,7 +265,7 @@ Close the GUI's CAN connection before running `cotest.py`: an SLCAN adapter can 
 | "no reply to PING" | Wrong port (e.g. the CAN adapter or the ST-Link UART), or a firmware without the binary protocol. |
 | Orange "object table differs" | GUI and firmware come from different versions. Update one of them; mismatched rows are disabled. |
 | Dropped frames counting up | The PC is not reading fast enough: lower the plot refresh rate or close other heavy programs. A few drops when commands are sent are normal. |
-| "connection lost" | The cable was pulled, or the driver reset. Reconnect. |
+| "connection lost" | The cable was pulled, or the driver reset (Reboot, or a CANopen reset node, e.g. the `identity` test). The plotter retries the same port for 10 s (the button reads **Cancel** meanwhile); if it does not come back, reconnect by hand. |
 | A typed value becomes 10× larger | It should not: inputs use `.` decimals. Use `.` not `,`. |
 | CANopen tab: replies late or SYNC uneven | Use a 5–10 ms period over SLCAN on Windows; a gs_usb adapter on Linux times better. About one SDO reply in a few hundred is lost by SLCAN on the PC side; the tool retries. |
 | CANopen tab: no plots | Switch on the SYNC producer and NMT start (TPDO2/3 are sent on SYNC in operational). |

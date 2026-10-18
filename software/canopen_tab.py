@@ -1638,7 +1638,7 @@ class CanopenTab(QtWidgets.QWidget):
                                               QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
             if r != QtWidgets.QMessageBox.StandardButton.Ok:
                 return
-        usb = C.UsbSync(self.main.link) if self.main.link and self.main.config.proto_ok else None
+        usb = C.UsbSync(lambda: self.main.link) if self.main.link and self.main.config.proto_ok else None
         if self.streamer:
             self.stream_stop()
         self.cancel.clear()

@@ -523,9 +523,9 @@ class ConfigTab(QtWidgets.QWidget):
             if not res.ok:
                 self.log(f"{what}: " + P.status_text(res.status), RED)
                 return
-            self.log("rebooting into the bootloader: port closed" if dfu else "rebooting: port closed, reconnect when it is back",
+            self.log("rebooting into the bootloader: port closed" if dfu else "rebooting: port closed, reconnecting when it is back",
                      GREEN)
-            QtCore.QTimer.singleShot(0, self.main.disconnect)  # the device is about to drop off the bus
+            QtCore.QTimer.singleShot(0, lambda: self.main.disconnect(reconnect=not dfu))  # the device is about to drop off the bus
         self._req(P.REBOOT, P.p_reboot(dfu), cb)
 
     def export_json(self):

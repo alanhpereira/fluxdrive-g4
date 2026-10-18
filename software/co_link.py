@@ -1163,22 +1163,37 @@ class Streamer:
 # ---------------------------------------------------------------------------------------------- USB link
 class UsbSync:
     """Blocking requests over a protocol.Link whose drain() someone else calls (the GUI timer), or
-    UsbSerial below (its own drain thread)."""
+    UsbSerial below (its own drain thread). link may be a callable that returns the current Link (or None):
+    the GUI replaces its Link when it reopens a port that went away (the drive resetting), and a request
+    in flight on the old one is sent again on the new one."""
 
     def __init__(self, link):
-        self.link = link
+        self._link = link
+
+    @property
+    def link(self):
+        return self._link() if callable(self._link) else self._link
 
     def request(self, mtype, payload=b"", timeout=6.0):
-        ev = threading.Event()
-        box = []
+        t_end = time.time() + timeout
+        while time.time() < t_end:
+            link = self.link
+            if link is None:  # port being reopened
+                time.sleep(0.05)
+                continue
+            ev = threading.Event()
+            box = []
 
-        def cb(res):
-            box.append(res)
-            ev.set()
-        self.link.request(mtype, payload, cb, urgent=(mtype == P.STOP))
-        if not ev.wait(timeout):
-            return P.Result(P.TIMEOUT_ST)
-        return box[0]
+            def cb(res, box=box, ev=ev):
+                box.append(res)
+                ev.set()
+            link.request(mtype, payload, cb, urgent=(mtype == P.STOP))
+            while not ev.wait(0.05):
+                if self.link is not link or time.time() >= t_end:
+                    break
+            if box:
+                return box[0]
+        return P.Result(P.TIMEOUT_ST)
 
     def read(self, key):
         o = O.BY_KEY[key]
@@ -1199,8 +1214,9 @@ class UsbSync:
     def events(self):
         """-> [(tok, code, vals)] queued since the last call"""
         out = []
-        while self.link.events:
-            out.append(self.link.events.popleft())
+        link = self.link
+        while link and link.events:
+            out.append(link.events.popleft())
         return out
 
 
