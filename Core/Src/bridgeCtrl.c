@@ -154,13 +154,18 @@ int32_t checkAndClearBridgeFault() {
 	if (!rearm_safe(now - off_since)) return BRIDGE_ERR_SPIN;
 
 	setDuty(0, 0, 0);
+	/* a trip in currentLoop() since the check above (the I2C read takes ~50 us) must win: check again with the
+	 * interrupts off, so the ISR cannot switch MOE off between that check and the enable */
+	const uint32_t pm = __get_PRIMASK();
+	__disable_irq();
+	if (g_trip_moe) {
+		__set_PRIMASK(pm);
+		return BRIDGE_ERR_TRIP;
+	}
 	TIM1->EGR = TIM_EGR_UG; // load zero duty now (also resets the counter)
 	__HAL_TIM_CLEAR_FLAG(&htim1, TIM_FLAG_BREAK | TIM_FLAG_BREAK2);
 	__HAL_TIM_MOE_ENABLE(&htim1);
+	__set_PRIMASK(pm);
 	g_lastFaultCleared = HAL_GetTick();
 	return 1;
-}
-
-void HAL_TIMEx_BreakCallback(TIM_HandleTypeDef* htim) {
-	HAL_I2C_Mem_Read(&hi2c3, 0x47 << 1, 0x80, 1, &fault_reg, 1, 10);
 }

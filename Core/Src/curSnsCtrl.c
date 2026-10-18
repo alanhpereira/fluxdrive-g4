@@ -94,17 +94,17 @@ HAL_StatusTypeDef initCS() {
 		disableCS();
 		return status;
 	}
-	HAL_OPAMP_Start(&hopamp1);
+	status = HAL_OPAMP_Start(&hopamp1);
 	if (status != HAL_OK) {
 		disableCS();
 		return status;
 	}
-	HAL_OPAMP_Start(&hopamp2);
+	status = HAL_OPAMP_Start(&hopamp2);
 	if (status != HAL_OK) {
 		disableCS();
 		return status;
 	}
-	HAL_OPAMP_Start(&hopamp3);
+	status = HAL_OPAMP_Start(&hopamp3);
 	if (status != HAL_OK) {
 		disableCS();
 		return status;
