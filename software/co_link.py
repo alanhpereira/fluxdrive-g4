@@ -1,5 +1,5 @@
 """
-CANopen master side for the drive (docs/canopen-pc-handoff.md), shared by the plotter's CANopen tab,
+CANopen master side for the drive (docs/design-notes.md, CANopen PC tool), shared by the plotter's CANopen tab,
 cotest.py and ad-hoc scripts. No Qt in here.
 
     CoBus      python-can bus + canopen.Network: raw frame tap, counters, PC heartbeat, software SYNC producer
@@ -140,7 +140,7 @@ def decode_sw(sw, mode=None):
 
 
 class Units:
-    """CAN units <-> engineering units (docs/canopen-handoff.md: Units)"""
+    """CAN units <-> engineering units (docs/user-manual-driver.md, section 9.4)"""
 
     def __init__(self, inc_rev=INC_REV, rated_ma=1000):
         self.inc_rev = inc_rev

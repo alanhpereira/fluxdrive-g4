@@ -697,7 +697,7 @@ static st_t run_cur(float id, float iq) {
 }
 
 /* ------------------------------------------------------------------ high-frequency injection */
-/* docs/hfi-handoff.md, hfi.c. Both routines commutate on the encoder and use it as the reference */
+/* docs/design-notes.md (HFI), hfi.c. Both routines commutate on the encoder and use it as the reference */
 #define HMAP_N 24		  /* injection angles over 360 deg electrical: 2*phi steps by 30 deg */
 #define HMAP_ACC 1000	  /* cycles summed per angle (40 ms) */
 #define HFI_SIG_MIN 0.03f /* A per informative cycle, ~2 LSB */
@@ -772,7 +772,7 @@ static st_t hfi_map_at(float bias, int store) {
 	return ST_OK;
 }
 
-/* saliency map (handoff step 1, the go/no-go). arg 0: biases 0, 0.25 and 0.5 x rated and hfi_id, stores
+/* saliency map (the go/no-go for HFI). arg 0: biases 0, 0.25 and 0.5 x rated and hfi_id, stores
  * hfi_sal from the hfi_id one. arg > 0: that bias only, nothing stored */
 static st_t cal_hfi_map(void) {
 	st_t e;
@@ -829,7 +829,7 @@ static st_t hfi_lock_and_pol(float* before, float* after) {
 	return ST_OK;
 }
 
-/* polarity check (handoff step 3: run it from many rotor positions, it must come out right every time).
+/* polarity check (run it from many rotor positions, it must come out right every time).
  * Encoder: the lock must be within 45 deg of d or -d, and the flip must land on d. Sensorless: the pulse
  * contrast must be clear enough to trust (the same bar as the sensorless start) */
 static st_t cal_hfi_pol(void) {

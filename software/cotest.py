@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CANopen test runner (docs/canopen-pc-handoff.md: Test sequences). The tests are plain functions in
+CANopen test runner (docs/design-notes.md, CANopen PC tool). The tests are plain functions in
 software/cotests/*.py, registered with @test; the plotter's CANopen tab runs the same Runner on a thread.
 
 Usage:

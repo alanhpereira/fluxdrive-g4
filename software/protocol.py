@@ -1,5 +1,5 @@
 """
-Binary config protocol (docs/config-gui-handoff.md). Keep in sync with Core/Inc/proto.h.
+Binary config protocol (docs/design-notes.md, config protocol). Keep in sync with Core/Inc/proto.h.
 
     A5 5C | type u8 | tok u8 | len u8 | payload[len] | crc u16
     crc = CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) over type..payload, little-endian

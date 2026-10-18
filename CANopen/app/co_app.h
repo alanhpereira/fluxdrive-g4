@@ -1,7 +1,7 @@
 #ifndef CO_APP_H
 #define CO_APP_H
 
-/* CANopen node (CANopenNode v4 on FDCAN1): docs/canopen-handoff.md.
+/* CANopen node (CANopenNode v4 on FDCAN1): docs/design-notes.md, CANopen drive.
  * CO_process(), SYNC, RPDO and TPDO run in the 1 kHz TIM7 tick at CO_IRQ_PRIO, so heartbeat and SDO keep going
  * while the main loop blocks (calibrations). Communication resets (NMT, new node ID or bit rate) are done by
  * co_app_poll() in the main loop, since HAL_FDCAN_Init() waits on HAL_GetTick() */

@@ -2,7 +2,7 @@
 #define HFI_H
 
 /* High-frequency injection: rotor angle from the inductance saliency at zero and low speed
- * (docs/hfi-handoff.md). Runs in currentLoop(), only in CTRL_RUN */
+ * (docs/design-notes.md, HFI). Runs in currentLoop(), only in CTRL_RUN */
 
 #include <stdint.h>
 

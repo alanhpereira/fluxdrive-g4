@@ -1,5 +1,5 @@
 """
-CANopen tab of the plotter (docs/canopen-pc-handoff.md): the bus, the CiA 402 state and controlword, a panel
+CANopen tab of the plotter (docs/design-notes.md, CANopen PC tool): the bus, the CiA 402 state and controlword, a panel
 per mode (PP / PV / HM, and the set-point streamer for CSP / CSV / CST), then sub-tabs: TPDO plots, the OD
 browser, PDO mapping, the frame trace, the EMCY log and the test runner (cotest.py).
 

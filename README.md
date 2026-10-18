@@ -15,7 +15,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | [docs/user-manual-driver.md](docs/user-manual-driver.md) | Using the driver: connections, flashing, commissioning a motor, run modes, protections, CANopen, parameter reference, troubleshooting |
 | [docs/user-manual-software.md](docs/user-manual-software.md) | Using the PC software: plotter (Scope, Config, CANopen tabs), test runner, helper scripts |
 | [CLAUDE.md](CLAUDE.md) | Developer overview: build system, CubeMX rules, architecture, execution model, conventions |
-| `docs/*-handoff.md` | Design notes and measurements per feature: [config protocol](docs/config-gui-handoff.md), [CANopen drive](docs/canopen-handoff.md), [CANopen PC tool](docs/canopen-pc-handoff.md), [HFI](docs/hfi-handoff.md), [sensorless tuning](docs/sensorless-optimization-handoff.md), [flash budget](docs/flash-optimization-handoff.md) |
+| [docs/design-notes.md](docs/design-notes.md) | Design decisions, bench measurements and open items: config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget |
 
 ## Repository layout
 
