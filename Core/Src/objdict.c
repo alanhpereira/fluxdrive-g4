@@ -186,6 +186,53 @@ static const obj_t* find(uint16_t index, uint8_t sub, uint32_t* err) {
 	return NULL;
 }
 
+/* one load/store of the object's own width: newlib-nano's memcpy() goes byte by byte, so a float or counter
+ * the control ISR (or the CANopen tick) shares could be read or written torn. The variables are naturally
+ * aligned; out/v are frame or SDO bytes and may not be */
+static void load_obj(const obj_t* o, uint8_t* out) {
+	switch (k_size[o->type]) {
+		case 1:
+			out[0] = *(volatile const uint8_t*)o->p;
+			break;
+		case 2: {
+			const uint16_t x = *(volatile const uint16_t*)o->p;
+			memcpy(out, &x, 2);
+			break;
+		}
+		case 4: {
+			const uint32_t x = *(volatile const uint32_t*)o->p;
+			memcpy(out, &x, 4);
+			break;
+		}
+		default:
+			memcpy(out, (const void*)o->p, k_size[o->type]);
+			break;
+	}
+}
+
+static void store_obj(const obj_t* o, const uint8_t* v) {
+	switch (k_size[o->type]) {
+		case 1:
+			*(volatile uint8_t*)o->p = v[0];
+			break;
+		case 2: {
+			uint16_t x;
+			memcpy(&x, v, 2);
+			*(volatile uint16_t*)o->p = x;
+			break;
+		}
+		case 4: {
+			uint32_t x;
+			memcpy(&x, v, 4);
+			*(volatile uint32_t*)o->p = x;
+			break;
+		}
+		default:
+			memcpy(o->p, v, k_size[o->type]);
+			break;
+	}
+}
+
 static void status_refresh(uint8_t sub, int slow_ok) {
 	s_st.mode = (uint8_t)g_mode;
 	s_st.loop = (uint8_t)g_loop;
@@ -214,7 +261,7 @@ static uint32_t read_obj(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len
 		s_can.err = co_app_can_state();
 	}
 	*len = k_size[o->type];
-	memcpy(out, (const void*)o->p, *len);
+	load_obj(o, out);
 	return 0;
 }
 
@@ -233,6 +280,8 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 	if (o->flags & OF_RO) return SDO_READ_ONLY;
 	if (len != k_size[o->type]) return SDO_BAD_LEN;
 	if ((o->flags & OF_NOTRUN) && g_mode != CTRL_OFF) return SDO_STATE;
+	/* a calibration measures and stores these: the USB side already answers ST_BUSY, this covers SDO */
+	if ((o->flags & (OF_STORED | OF_NOTRUN)) && g_busy) return SDO_STATE;
 
 	float x; /* range check in float: exact enough for these limits */
 	switch (o->type) {
@@ -274,7 +323,7 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 		return 0;
 	}
 
-	memcpy(o->p, v, len); /* aligned 1/2/4-byte stores: atomic for the ISR */
+	store_obj(o, v); /* one aligned 1/2/4-byte store: atomic for the ISR */
 	if (o->flags & OF_PI) pi_apply();
 	return 0;
 }
