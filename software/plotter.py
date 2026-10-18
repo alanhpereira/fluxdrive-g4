@@ -7,6 +7,7 @@ Telemetry frame (72 bytes, little-endian):
     sum = rotate-left-by-1-and-add over the first 17 words, seed 0x5A5AA5A5 (frame_sum() in motorCtrl.c,
     protocol.telem_ok() here)
 Config messages (A5 5C ..., protocol.py) share the link; the Config tab (config_tab.py) sends all commands.
+The CANopen tab (canopen_tab.py, co_link.py) is the CAN master side, over its own adapter (python-can).
 
 Usage:
     pip install pyserial numpy pyqtgraph PyQt6        (PyQt5 / PySide6 also work)
@@ -31,6 +32,7 @@ import serial.tools.list_ports
 from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
 import protocol as P
+from canopen_tab import CanopenTab
 from config_tab import ConfigTab, RunPanel
 
 NF = 16  # floats per frame
@@ -117,7 +119,10 @@ class Receiver(threading.Thread):
         self.last_raw = seq
         log = self.log
         if log:
-            log.write(frame)
+            try:
+                log.write(frame)
+            except (ValueError, OSError):  # closed by Stop rec meanwhile (or disk full): must not end this thread
+                pass
         with self.lock:
             k = self.head % self.cap
             self.data[k] = vals
@@ -166,6 +171,7 @@ class Main(QtWidgets.QMainWindow):
         self.settings = QtCore.QSettings("driverTCC", "plotter")
         self.ser = self.rx = self.tx = self.link = None
         self.config = ConfigTab(self)
+        self.canopen = CanopenTab(self)
         self.paused = False
         self.curves = []
         self.last_frames, self.last_t = 0, time.monotonic()
@@ -247,6 +253,7 @@ class Main(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self.glw, "Scope")
         self.tabs.addTab(self.config, "Config")
+        self.tabs.addTab(self.canopen, "CANopen")
         self.tabs.currentChanged.connect(self.tab_changed)
         hs = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)  # sidebar left of the tabs, whichever is shown
         hs.addWidget(scroll)
@@ -369,14 +376,12 @@ class Main(QtWidgets.QMainWindow):
         if rx:
             link = self.link
             if link:
-                link.drain()
-                while link.events:
-                    self.config.on_event(*link.events.popleft())
+                link.drain()  # results and events in arrival order (events -> config.on_event)
             if rx.error:
                 self.say(f"connection lost: {rx.error}", "#ff6060")
                 self.disconnect()
                 return
-            if not self.paused:
+            if not self.paused and self.glw.isVisible():  # hidden curves need no redraw (it costs the CAN threads GIL time)
                 d, s = rx.snapshot()
                 if len(s) >= 2:
                     d = np.where(np.isfinite(d), d, np.nan)  # NaN/Inf must not wreck the axes
@@ -422,6 +427,7 @@ class Main(QtWidgets.QMainWindow):
         self.rx = Receiver(self.ser, self.capacity())
         self.tx = Sender(self.ser)
         self.link = P.Link(self.tx.send_raw)
+        self.link.on_event = self.config.on_event
         self.rx.on_message = self.link.on_message
         self.rx.start()
         self.tx.start()
@@ -481,6 +487,7 @@ class Main(QtWidgets.QMainWindow):
         s.setValue("refresh", self.refresh.value())
         s.setValue("geometry", self.saveGeometry())
         s.setValue("tab", self.tabs.currentIndex())
+        self.canopen.shutdown()  # disable voltage over CAN, then the PC heartbeat stops
         self.disconnect()
         super().closeEvent(e)
 

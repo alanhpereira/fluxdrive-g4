@@ -38,6 +38,7 @@
 #include "motorCtrl.h"
 #include "calib.h"
 #include "params.h"
+#include "co_app.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -135,6 +136,7 @@ int main(void) {
 	}
 	pi_apply();
 	initMotor();
+	co_app_init(); /* CANopen on FDCAN1, 1 kHz tick on TIM7 */
 	/* USER CODE END 2 */
 
 	/* Infinite loop */

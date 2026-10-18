@@ -1,0 +1,18 @@
+(version 1)
+(rule "Same_Phase_IntraClass_Clearance1"
+   (constraint clearance (min 0.2mm))
+   (condition "A.hasNetClass('HS1') && B.hasNetClass('HS1')"))
+(rule "Same_Phase_IntraClass_Clearance2"
+   (constraint clearance (min 0.2mm))
+   (condition "A.hasNetClass('HS2') && B.hasNetClass('HS2')"))
+
+(rule "Same_Phase_IntraClass_Clearance3"
+   (constraint clearance (min 0.2mm))
+   (condition "A.hasNetClass('HS3') && B.hasNetClass('HS3')"))
+
+(rule "HV fanout"
+(constraint clearance (min 0.20mm))
+(condition "A.insideArea('HV Fanout') && A.NetClass == 'HV'"))
+(rule "HV fanout1"
+(constraint clearance (min 0.20mm))
+(condition "A.insideArea('HV Fanout_1') && A.NetClass == 'HV'"))

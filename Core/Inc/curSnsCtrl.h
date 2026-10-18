@@ -33,4 +33,6 @@ int cs_measure_offsets(int16_t out[3], int16_t spread[3]);
 void cs_set_offsets(const int16_t off[3]);
 /* boot: measure, and keep the result if it is close to the stored/default offsets */
 void cs_boot_offsets(void);
+/* the whole ADC1_2 interrupt: reads both injected sequences and runs currentLoop() */
+void cs_adc_irq(void);
 #endif

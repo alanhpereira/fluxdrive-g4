@@ -57,6 +57,7 @@ typedef struct {
 	volatile uint8_t status;	/* STATUS bits of the last good group */
 	uint8_t crc_check;			/* reject groups with a bad CRC; cleared automatically if every group fails */
 	uint8_t crc_fail_run;
+	uint8_t crc_seen; /* a group passed the CRC since MT6835_StartBurst(): the rule matches, keep checking */
 	volatile uint32_t samples, crc_errors, late, stalls; /* late: read not finished at the ADC; stalls: no read started */
 	uint8_t tx_zero;
 	__ALIGNED(4)

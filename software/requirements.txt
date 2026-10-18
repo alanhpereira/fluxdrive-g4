@@ -2,3 +2,5 @@ numpy
 pyqtgraph>=0.13
 pyserial
 PyQt6
+python-can>=4.6
+canopen>=2.4

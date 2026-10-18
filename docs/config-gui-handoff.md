@@ -31,7 +31,7 @@
 
 **Shaped for what comes later:**
 - **Transport:** **USB CDC** (phase 4), with the same frames as on USART1, which remains a build-time fallback.
-- **Addressing:** everything goes through **index:subindex objects**, like a CANopen object dictionary. That keeps it compatible with `docs/can-epos4-handoff.md`: the same table can later back the CANopen OD.
+- **Addressing:** everything goes through **index:subindex objects**, like a CANopen object dictionary. The same table backs the CANopen OD: SDO reads and writes of 0x4000–0x40FF go to it (`docs/canopen-handoff.md`).
 
 ## Why: what the text console costs today
 Measured from `build/release/calib.o` (`-Os`, after the flash work in `docs/flash-optimization-handoff.md`):

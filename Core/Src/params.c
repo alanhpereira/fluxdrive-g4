@@ -56,7 +56,7 @@ static const motor_params_t k_defaults = {
 	.hfi_pol_i = 1.0f,
 };
 
-static uint32_t crc32(const void* p, size_t n) {
+uint32_t flash_crc32(const void* p, size_t n) {
 	const uint8_t* b = (const uint8_t*)p;
 	uint32_t c = 0xFFFFFFFFu;
 	while (n--) {
@@ -73,7 +73,7 @@ static const motor_params_t* slotPtr(int i) {
 /* only the current layout is accepted: any other version or size loads the defaults */
 static int isValid(const motor_params_t* p) {
 	if (p->magic != PARAM_MAGIC || p->version != PARAM_VERSION || p->size != sizeof(motor_params_t)) return 0;
-	return p->crc == crc32(p, sizeof(motor_params_t) - sizeof(uint32_t));
+	return p->crc == flash_crc32(p, sizeof(motor_params_t) - sizeof(uint32_t));
 }
 
 int params_load(void) {
@@ -105,6 +105,42 @@ int params_dirty(void) {
 	return memcmp((const uint8_t*)&g_params + a, (const uint8_t*)slotPtr(g_active) + a, b - a) != 0;
 }
 
+static void get_mem(uint32_t off, uint8_t* dst, void* ctx) {
+	memcpy(dst, (const uint8_t*)ctx + off, 8);
+}
+
+HAL_StatusTypeDef flash_write_page(uint32_t page, const void* data, uint32_t len) {
+	return flash_write_page_from(page, len, get_mem, (void*)data);
+}
+
+HAL_StatusTypeDef flash_write_page_from(uint32_t page, uint32_t len, void (*get)(uint32_t off, uint8_t* dst8, void* ctx), void* ctx) {
+	if (TIM1->BDTR & TIM_BDTR_MOE) return HAL_BUSY; /* the erase stalls the CPU ~20 ms: never with the bridge live */
+	if (len % 8u || len > FLASH_PAGE_SIZE) return HAL_ERROR;
+	HAL_StatusTypeDef st = HAL_FLASH_Unlock();
+	if (st != HAL_OK) return st;
+	__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
+
+	FLASH_EraseInitTypeDef er = {
+		.TypeErase = FLASH_TYPEERASE_PAGES,
+		.Banks = FLASH_BANK_1,
+		.Page = page,
+		.NbPages = 1,
+	};
+	uint32_t page_err = 0;
+	st = HAL_FLASHEx_Erase(&er, &page_err);
+
+	const uint32_t addr = FLASH_BASE + page * FLASH_PAGE_SIZE;
+	for (uint32_t off = 0; st == HAL_OK && off < len; off += 8) {
+		uint8_t b[8];
+		uint64_t w;
+		get(off, b, ctx);
+		memcpy(&w, b, 8);
+		st = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, addr + off, w);
+	}
+	HAL_FLASH_Lock();
+	return st;
+}
+
 HAL_StatusTypeDef params_save(void) {
 	if (TIM1->BDTR & TIM_BDTR_MOE) return HAL_BUSY; /* never stall the CPU with the bridge live */
 
@@ -114,29 +150,11 @@ HAL_StatusTypeDef params_save(void) {
 	tmp.version = PARAM_VERSION;
 	tmp.size = sizeof(motor_params_t);
 	tmp.seq = (g_active >= 0) ? slotPtr(g_active)->seq + 1u : 1u;
-	tmp.crc = crc32(&tmp, sizeof(tmp) - sizeof(uint32_t));
+	tmp.crc = flash_crc32(&tmp, sizeof(tmp) - sizeof(uint32_t));
 
 	int target = (g_active == 0) ? 1 : 0; /* write the other slot, the old copy stays valid until we finish */
 
-	HAL_StatusTypeDef st = HAL_FLASH_Unlock();
-	if (st != HAL_OK) return st;
-	__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
-
-	FLASH_EraseInitTypeDef er = {
-		.TypeErase = FLASH_TYPEERASE_PAGES,
-		.Banks = FLASH_BANK_1,
-		.Page = SLOT_PAGE(target),
-		.NbPages = 1,
-	};
-	uint32_t page_err = 0;
-	st = HAL_FLASHEx_Erase(&er, &page_err);
-
-	for (uint32_t off = 0; st == HAL_OK && off < sizeof(tmp); off += 8) {
-		uint64_t w;
-		memcpy(&w, (const uint8_t*)&tmp + off, 8);
-		st = HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, SLOT_ADDR(target) + off, w);
-	}
-	HAL_FLASH_Lock();
+	HAL_StatusTypeDef st = flash_write_page(SLOT_PAGE(target), &tmp, sizeof(tmp));
 	if (st != HAL_OK) return st;
 
 	if (!isValid(slotPtr(target)) || memcmp(slotPtr(target), &tmp, sizeof(tmp)) != 0) return HAL_ERROR;

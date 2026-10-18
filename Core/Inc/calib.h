@@ -46,6 +46,10 @@ extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from curr
 #define SL_LOST_N 1250 /* sensorless: HFI not tracking for this many cycles (50 ms) stops the motor */
 #define SL_AGREE_MAX_TURNS 10.0f /* sensorless: above this speed (turn/s, ~600 rpm) HFI is not checked against the observer */
 extern volatile uint16_t g_sl_lost_n; /* consecutive such cycles, from currentLoop() */
+/* encoder modes: no fresh encoder angle (stream stalled, every group bad, MISO stuck) for this many cycles (10 ms)
+ * stops the motor with the bridge off, like a lost HFI angle */
+#define ENC_LOST_N 250
+extern volatile uint16_t g_enc_lost_n; /* consecutive cycles without a fresh angle, from currentLoop() */
 
 /* trips, detected in currentLoop(). In CTRL_RUN the ISR coasts at zero current (id = iq = 0, outer loops
  * held): no torque, no regen into the bus, no short-brake. Outside CTRL_RUN, or when the current keeps
@@ -77,7 +81,11 @@ extern volatile uint32_t g_ov_resumes; /* count of those resumes, object 0x4002:
 extern volatile float g_vel;		   /* turn/s, PLL estimate */
 extern volatile float g_pos;		   /* turns, display/telemetry only: the loop uses pos_q32_t */
 extern volatile float g_rpm;		   /* g_vel * 60 */
-extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position 0 */
+extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position g_home_pos */
+extern volatile int32_t g_home_pos;	 /* counts the present position gets at homing (0, or CANopen -0x607C) */
+extern volatile int32_t g_pos_cnt;	 /* encoder counts from home, motor direction (atomic copy of the position) */
+extern volatile int32_t g_pos_ref_cnt; /* the ISR's position reference, same counts (meaningful in LOOP_POS) */
+extern volatile uint8_t g_ramp_bypass; /* 1: the speed loop takes g_vel_ref as is, no acc_lim slew (CANopen modes) */
 
 /* implement in main.c:  uint32_t enc_angle21(void) { return hMT6835.angle; } */
 uint32_t enc_angle21(void);
@@ -87,6 +95,17 @@ static inline uint32_t elec_angle(uint32_t angle21) {
 	uint32_t m = (angle21 << 11) * (uint32_t)g_params.pole_pairs;
 	return (g_params.enc_dir > 0 ? m : 0u - m) + g_params.elec_offset;
 }
+
+/* ---- CiA 402 drive profile (CANopen/app/co402.c), main loop only ---- */
+#include "proto.h" /* st_t */
+extern volatile uint8_t g_can_owner;   /* 1 while the CANopen master has the motor: USB run/cal/home/save/reboot get
+										* ST_CAN_ACTIVE; a USB STOP clears it (local stop) */
+extern volatile uint8_t g_stop_reason; /* st_t of the last stop by the watchdogs, or ST_ABORTED for a local STOP.
+										* co402.c takes it (sets 0) */
+st_t drive_check(loop_t loop);		   /* could drive_enter() run now? Nothing is touched */
+st_t drive_enter(loop_t loop);		   /* CTRL_RUN in loop, bumpless from the present state (speed, current or position) */
+void drive_coast(void);				   /* zero current; CTRL_OFF once slow (never the zero vector at speed) */
+int drive_trip_reset(void);			   /* clears a latched trip once the coast has ended: 1 if none is latched now */
 
 void cmd_init(void); /* call once after MX_USART1_UART_Init() */
 void cmd_poll(void); /* call from the main loop */

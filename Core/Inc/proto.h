@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-#define PROTO_VERSION 4u
+#define PROTO_VERSION 5u
 #define PROTO_MAX_LEN 64u
 
 /* message types, host -> device; the reply is (type | MSG_REPLY) with the same tok */
@@ -94,6 +94,10 @@ typedef enum {
 	ST_VBUS_HIGH,	 /* bus voltage above vbus_max */
 	ST_TRIPPED,		 /* a trip is latched: STOP resets it once the motor has coasted down */
 	ST_CUR_OFF_BAD,	 /* current-sense offsets implausible (rotor turning? sense stage?) */
+	ST_CAN_ACTIVE,	 /* the CANopen master has the motor (CiA 402 operation enabled): STOP takes it back */
+	ST_CAN_LOST,	 /* CANopen master lost (heartbeat timeout or NMT left operational) while it had the motor */
+	ST_FOLLOWING_ERROR, /* position error above 0x6065 for longer than 0x6066 (CiA 402 position modes) */
+	ST_ENC_LOST,	 /* encoder: no valid angle for 10 ms (stream stalled, CRC failing, sensor not answering) */
 	ST_N
 } st_t;
 

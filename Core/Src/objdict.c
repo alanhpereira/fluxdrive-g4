@@ -5,6 +5,9 @@
 #include "bridgeCtrl.h" /* readBridgeStatus() */
 #include "main.h"		/* DRV_RDY pin */
 #include "calib.h"
+#include "co402.h"    /* 0x4042 */
+#include "co_app.h"   /* 0x4040/0x4041 */
+#include "co_store.h" /* co_store_dirty() */
 #include "hfi.h" /* HFI_HALF_MAX */
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "mt6835.h"
@@ -22,6 +25,11 @@ static struct {
 	uint32_t flags, seq;
 	float vin;
 } s_st;
+
+static struct {
+	uint8_t nmt, apply;
+	uint16_t err;
+} s_can;
 
 #define F(x) ((void*)&(x))
 #define NOLIM 0.0f, 0.0f
@@ -116,6 +124,23 @@ static const obj_t k_tab[] = {
 	{0x4031, 5, T_F32, OF_STORED, F(g_params.hfi_id), 0.0f, 50.0f},
 	{0x4031, 6, T_F32, OF_STORED, F(g_params.hfi_sal), -1.0f, 1.0f},
 	{0x4031, 7, T_F32, OF_STORED, F(g_params.hfi_pol_i), 0.0f, 50.0f},
+	/* 0x4040 CAN settings: comm record (co_store.c), saved by MSG_SAVE; used from the next communication reset */
+	{0x4040, 1, T_U8, OF_STORED, F(g_can_node_id), 1.0f, 127.0f},
+	{0x4040, 2, T_U16, OF_STORED, F(g_can_kbit), 20.0f, 1000.0f}, /* 20, 50, 125, 250, 500, 1000 */
+	{0x4040, 3, T_U8, OF_RO, F(g_can_node_id_act), NOLIM},
+	{0x4040, 4, T_U16, OF_RO, F(g_can_kbit_act), NOLIM},
+	{0x4040, 5, T_U8, OF_NOTRUN, F(s_can.apply), 1.0f, 1.0f}, /* write 1: communication reset with 0x4040:1/2 */
+	/* 0x4041 CAN status (refreshed on read) */
+	{0x4041, 1, T_U8, OF_RO, F(s_can.nmt), NOLIM}, /* 0 initializing, 4 stopped, 5 operational, 127 pre-operational */
+	{0x4041, 2, T_U16, OF_RO, F(s_can.err), NOLIM}, /* CO_CAN_ERR* bits */
+	{0x4041, 3, T_U32, 0, F(g_can_rx), 0.0f, 0.0f},
+	{0x4041, 4, T_U32, 0, F(g_can_tx), 0.0f, 0.0f},
+	{0x4041, 5, T_U32, 0, F(g_can_rx_lost), 0.0f, 0.0f},
+	/* 0x4042 CiA 402 drive profile */
+	{0x4042, 1, T_U8, OF_RO, F(g_co402_state), NOLIM},	/* FSA_* (co402.h) */
+	{0x4042, 2, T_U8, OF_RO, F(g_co402_refused), NOLIM}, /* st_t: why the last switch on / enable was refused */
+	{0x4042, 3, T_U8, OF_RO, F(g_co402_fault), NOLIM},	/* st_t of the fault in 0x603F */
+	{0x4042, 4, T_U8, OF_RO, F(g_can_owner), NOLIM},	/* 1: the CANopen master has the motor */
 };
 #define N_OBJ ((int)(sizeof k_tab / sizeof k_tab[0]))
 
@@ -161,7 +186,54 @@ static const obj_t* find(uint16_t index, uint8_t sub, uint32_t* err) {
 	return NULL;
 }
 
-static void status_refresh(uint8_t sub) {
+/* one load/store of the object's own width: newlib-nano's memcpy() goes byte by byte, so a float or counter
+ * the control ISR (or the CANopen tick) shares could be read or written torn. The variables are naturally
+ * aligned; out/v are frame or SDO bytes and may not be */
+static void load_obj(const obj_t* o, uint8_t* out) {
+	switch (k_size[o->type]) {
+		case 1:
+			out[0] = *(volatile const uint8_t*)o->p;
+			break;
+		case 2: {
+			const uint16_t x = *(volatile const uint16_t*)o->p;
+			memcpy(out, &x, 2);
+			break;
+		}
+		case 4: {
+			const uint32_t x = *(volatile const uint32_t*)o->p;
+			memcpy(out, &x, 4);
+			break;
+		}
+		default:
+			memcpy(out, (const void*)o->p, k_size[o->type]);
+			break;
+	}
+}
+
+static void store_obj(const obj_t* o, const uint8_t* v) {
+	switch (k_size[o->type]) {
+		case 1:
+			*(volatile uint8_t*)o->p = v[0];
+			break;
+		case 2: {
+			uint16_t x;
+			memcpy(&x, v, 2);
+			*(volatile uint16_t*)o->p = x;
+			break;
+		}
+		case 4: {
+			uint32_t x;
+			memcpy(&x, v, 4);
+			*(volatile uint32_t*)o->p = x;
+			break;
+		}
+		default:
+			memcpy(o->p, v, k_size[o->type]);
+			break;
+	}
+}
+
+static void status_refresh(uint8_t sub, int slow_ok) {
 	s_st.mode = (uint8_t)g_mode;
 	s_st.loop = (uint8_t)g_loop;
 	s_st.flags = g_params.flags;
@@ -169,24 +241,36 @@ static void status_refresh(uint8_t sub) {
 	s_st.nfault = (GPIOE->IDR & GPIO_PIN_15) ? 1 : 0; /* 1 = high = no fault */
 	s_st.vin = g_vin;
 	s_st.busy = g_busy;
-	s_st.dirty = (uint8_t)params_dirty();
+	s_st.dirty = (uint8_t)(params_dirty() || co_store_dirty());
 	s_st.seq = g_params.seq;
 	s_st.brk = (TIM1->SR & (TIM_SR_BIF | TIM_SR_B2IF)) ? 1 : 0; /* TIM1 break latched */
 	s_st.ready = (DRV_RDY_GPIO_Port->IDR & DRV_RDY_Pin) ? 1 : 0;
-	if (sub == 6) { /* I2C, ~100 us: only when asked */
+	if (sub == 6 && slow_ok) { /* I2C, ~100 us: only when asked, and never from the CANopen tick */
 		uint8_t b = 0;
 		s_st.drv = readBridgeStatus(&b) == HAL_OK ? b : 0x100;
 	}
 }
 
-uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+static uint32_t read_obj(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len, int slow_ok) {
 	uint32_t err;
 	const obj_t* o = find(index, sub, &err);
 	if (!o) return err;
-	if (index == 0x4001) status_refresh(sub);
+	if (index == 0x4001) status_refresh(sub, slow_ok);
+	if (index == 0x4041) {
+		s_can.nmt = co_app_nmt_state();
+		s_can.err = co_app_can_state();
+	}
 	*len = k_size[o->type];
-	memcpy(out, (const void*)o->p, *len);
+	load_obj(o, out);
 	return 0;
+}
+
+uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+	return read_obj(index, sub, out, len, 1);
+}
+
+uint32_t od_read_fast(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len) {
+	return read_obj(index, sub, out, len, 0);
 }
 
 uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
@@ -196,6 +280,8 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 	if (o->flags & OF_RO) return SDO_READ_ONLY;
 	if (len != k_size[o->type]) return SDO_BAD_LEN;
 	if ((o->flags & OF_NOTRUN) && g_mode != CTRL_OFF) return SDO_STATE;
+	/* a calibration measures and stores these: the USB side already answers ST_BUSY, this covers SDO */
+	if ((o->flags & (OF_STORED | OF_NOTRUN)) && g_busy) return SDO_STATE;
 
 	float x; /* range check in float: exact enough for these limits */
 	switch (o->type) {
@@ -231,8 +317,13 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 	}
 	if (!(x >= o->min && x <= o->max)) return SDO_RANGE; /* also NaN */
 	if (o->p == &g_params.enc_dir && x == 0.0f) return SDO_RANGE;
+	if (o->p == &g_can_kbit && !co_can_prescaler((uint16_t)x)) return SDO_RANGE;
+	if (o->p == &s_can.apply) { /* a command, not a value */
+		co_app_request_reset();
+		return 0;
+	}
 
-	memcpy(o->p, v, len); /* aligned 1/2/4-byte stores: atomic for the ISR */
+	store_obj(o, v); /* one aligned 1/2/4-byte store: atomic for the ISR */
 	if (o->flags & OF_PI) pi_apply();
 	return 0;
 }

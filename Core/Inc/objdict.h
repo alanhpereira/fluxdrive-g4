@@ -17,7 +17,7 @@ enum { T_U8 = 1,
 	   T_I16 };
 
 #define OF_RO 0x01	   /* read only */
-#define OF_STORED 0x02 /* lives in g_params, saved by MSG_SAVE */
+#define OF_STORED 0x02 /* saved by MSG_SAVE: g_params, or the CAN comm record (0x4040) */
 #define OF_PI 0x04	   /* pi_apply() after a write */
 #define OF_NOTRUN 0x08 /* refused unless g_mode == CTRL_OFF */
 
@@ -36,6 +36,8 @@ uint32_t objdict_build_id(void);
 
 /* value written to out (type-sized, little-endian); returns 0 or an SDO abort code, *len = bytes */
 uint32_t od_read(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len);
+/* same, but never blocks (0x4001:6, the gate-driver status over I2C, returns the last value): for the CANopen tick */
+uint32_t od_read_fast(uint16_t index, uint8_t sub, uint8_t* out, uint8_t* len);
 uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len);
 /* up to max entries from first, 5 bytes each (index, sub, type, flags); returns the count */
 int od_list(uint16_t first, uint8_t* out, int max);

@@ -22,6 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "curSnsCtrl.h"
 #include "link.h"
 /* USER CODE END Includes */
 
@@ -297,7 +298,8 @@ void DMA1_Channel3_IRQHandler(void)
 void ADC1_2_IRQHandler(void)
 {
   /* USER CODE BEGIN ADC1_2_IRQn 0 */
-
+  cs_adc_irq(); /* the HAL handlers below took ~3.6 us of the loop's budget */
+  return;
   /* USER CODE END ADC1_2_IRQn 0 */
   HAL_ADC_IRQHandler(&hadc1);
   HAL_ADC_IRQHandler(&hadc2);
@@ -313,7 +315,7 @@ void USB_LP_IRQHandler(void)
 {
   /* USER CODE BEGIN USB_LP_IRQn 0 */
 #if PROTO_LINK_USB
-  link_usb_pump(); /* producers pend this IRQ after queuing TX bytes */
+  link_irq(); /* deferred telemetry, then the TX pump: producers pend this IRQ */
 #endif
   /* USER CODE END USB_LP_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
@@ -356,7 +358,9 @@ void SPI1_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
-
+#if !PROTO_LINK_USB
+  link_irq(); /* deferred telemetry: link_defer() pends this IRQ */
+#endif
   /* USER CODE END USART1_IRQn 0 */
   HAL_UART_IRQHandler(&huart1);
   /* USER CODE BEGIN USART1_IRQn 1 */
