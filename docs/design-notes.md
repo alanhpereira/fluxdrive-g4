@@ -290,7 +290,7 @@ For motors with Hall sensors and no encoder. 3 uses the Halls alone (any motor);
 - **Crossfade** by Hall speed between `hyb_lo` and `hyb_hi`; the injection pauses once the Hall weight reaches 1 (hysteresis 0.9), like it does for the observer.
 
 ### Bench stand-in
-The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors, with the SPI angle still there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the six-edge averaging or the glitch filter; that needs a real Hall motor.
+The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors. `ZERO_POS` moves all outputs, so after 'e' `CAL_UVW` also puts the zero on electrical zero (`uvw_zero()`: 12-bit steps of 0.088° mech; `elec_offset` keeps the rounding, the Hall table is cleared) and the UVW edges sit like well-mounted Halls. The SPI angle stays there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the six-edge averaging or the glitch filter; that needs a real Hall motor.
 
 ### Open
 - Not yet run on hardware. Measure `currentLoop()` max (0x4002) in 3 and 4 with HFI injecting: `hall_update()` runs from flash (CCM full).

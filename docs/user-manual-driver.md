@@ -145,7 +145,7 @@ Then:
 Optional steps:
 - **z** Reset encoder zero: rewrites the MT6835's zero position into its own EEPROM (takes ~6 s). Run **e** again afterwards.
 - **h** and **p**: HFI saliency map and polarity test, only needed for sensorless operation (section 7). Hall + HFI needs **h** only.
-- **u** Encoder UVW outputs: sets the MT6835's U/V/W outputs to the pole pairs (argument; "default" uses `pp`) and saves them in its EEPROM (~6 s). For bench tests of the Hall angle sources without a Hall motor (section 7).
+- **u** Encoder UVW outputs: sets the MT6835's U/V/W outputs to the pole pairs (argument; "default" uses `pp`) and saves them in its EEPROM (~6 s). After **e**, and at `pp`, it also moves the encoder zero onto electrical zero, so the U/V/W edges sit where well-mounted Hall sensors would; `offset` is adjusted to the small rest (no need to rerun **e**), the Hall table is cleared, and the position must be homed again. **Save to flash** afterwards. For bench tests of the Hall angle sources without a Hall motor (section 7).
 
 ### 5.3 Prerequisites the driver enforces
 If something is missing, the command is refused with a status that names it, e.g. "run 'e' and 't' first", "set the speed gains first (vkp, vki)", "set the bandwidth first". The usual order is c → e → r → l → (q) → t → k; with Hall sensors and no encoder, c → `pp` → H → r → l → (q) → t → k.

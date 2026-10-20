@@ -164,7 +164,10 @@ EVENTS = {
                            f"(spread {v[3]:.0f} {v[4]:.0f} {v[5]:.0f})" + ("  [stored]" if v[6] else "  NOT stored")),
     EV_HALL: lambda v: ("Hall states begin at " + ", ".join(f"{s}: {a:.1f}" for s, a in zip(range(1, 7), v[:6]))
                         + f" deg elec (forward - backward up to {v[6]:.1f} deg)"),
-    EV_UVW: lambda v: f"encoder UVW outputs at {v[0]:.0f} pole pairs (register 0x00B = 0x{int(v[1]):02X})",
+    EV_UVW: lambda v: (f"encoder UVW outputs at {v[0]:.0f} pole pairs (register 0x00B = 0x{int(v[1]):02X})"
+                       + ("; zero not moved (run 'e' first, at the motor's pole pairs)" if len(v) < 5 or v[2] != v[2] else
+                          f"; encoder zero moved {v[2]:.2f} deg mech onto electrical zero, offset {v[3]:+.1f} -> {v[4]:+.2f} "
+                          f"deg elec. Run 'H' again, home, and save")),
 }
 
 

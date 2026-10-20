@@ -516,9 +516,38 @@ static st_t cal_hall(void) {
 	return ST_OK;
 }
 
+/* encoder zero on electrical zero (after 'e'): ZERO_POS moves every output, UVW included, so the UVW edges then sit
+ * where well-mounted Hall sensors would, and the electrical offset becomes the rounding left over. ZERO_POS[11:0] is
+ * 0x009 (bits 11:4) and the high nibble of 0x00A, in steps of 2^32 / 4096 = 2^20 (Q32 mechanical). The encoder
+ * angle becomes raw - ZERO_POS, so lowering it by n steps adds n steps to the angle; elec_offset loses that much.
+ * Returns the shift (Q32 mechanical) in *shift. Burst mode must be off */
+static st_t uvw_zero(uint32_t* shift) {
+	uint8_t zh, zl, rh, rl;
+	if (MT6835_ReadRegister(&hMT6835, MT6835_ADDR_ZERO_POS_H, &zh) != HAL_OK || MT6835_ReadRegister(&hMT6835, MT6835_ADDR_ZERO_POS_L, &zl) != HAL_OK)
+		return ST_UVW_FAIL;
+	const uint32_t pp = g_params.pole_pairs;
+	const uint32_t off = g_params.enc_dir > 0 ? g_params.elec_offset : 0u - g_params.elec_offset;
+	const uint32_t want = off / pp;					  /* Q32 mechanical: one of the pp positions where the angle is 0 */
+	const uint32_t steps = ((want >> 19) + 1u) >> 1; /* rounded to ZERO_POS steps (4096 is 0 again) */
+	const uint32_t z_old = ((uint32_t)zh << 4) | (zl >> 4);
+	const uint32_t z_new = (z_old - steps) & 0xFFFu;
+	const uint8_t wh = (uint8_t)(z_new >> 4), wl = (uint8_t)((zl & 0x0Fu) | ((z_new & 0x0Fu) << 4)); /* Z_EDGE, Z_PUL_WID kept */
+	if (MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ZERO_POS_H, wh) != HAL_OK || MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ZERO_POS_L, wl) != HAL_OK ||
+		MT6835_ReadRegister(&hMT6835, MT6835_ADDR_ZERO_POS_H, &rh) != HAL_OK || MT6835_ReadRegister(&hMT6835, MT6835_ADDR_ZERO_POS_L, &rl) != HAL_OK ||
+		rh != wh || rl != wl)
+		return ST_UVW_FAIL;
+	const uint32_t m = (steps & 0xFFFu) << 20;
+	const uint32_t de = m * pp; /* the electrical angle the encoder now reads more */
+	g_params.elec_offset -= g_params.enc_dir > 0 ? de : 0u - de;
+	*shift = m;
+	return ST_OK;
+}
+
 /* bench stand-in for Hall sensors: the MT6835's UVW outputs (wired to J13), at the motor's pole pairs. Register
  * 0x00B: Z_PHASE[7:6] kept, UVW_MUX (bit 5) 0 = UVW on the pins, UVW_OFF (bit 4) 0 = on, UVW_RES[3:0] = pp - 1.
- * Saved to the sensor's EEPROM (~6 s) so it survives a power cycle */
+ * After 'e' (and with pp as the UVW pole pairs) the encoder zero also moves to electrical zero (uvw_zero()): the
+ * Hall table then has to be measured again ('H'), and the position homed. Saved to the sensor's EEPROM (~6 s) so it
+ * survives a power cycle */
 static st_t cal_uvw(void) {
 	const int pp = s_cal_arg > 0.0f ? (int)(s_cal_arg + 0.5f) : (int)g_params.pole_pairs;
 	if (pp < 1 || pp > 16) return ST_BAD_ARG;
@@ -526,6 +555,10 @@ static st_t cal_uvw(void) {
 	MT6835_StopBurst(&hMT6835);
 	HAL_Delay(10);
 	uint8_t r = 0, rb = 0;
+	uint32_t shift = 0;
+	const uint32_t off0 = g_params.elec_offset;
+	/* the zero only means electrical zero at the motor's own pole pairs, and only once 'e' has measured the offset */
+	const int zero = (g_params.flags & PF_ELEC_OFFSET_VALID) && pp == (int)g_params.pole_pairs;
 	st_t e = ST_OK;
 	if (MT6835_ReadRegister(&hMT6835, MT6835_ADDR_UVW, &r) != HAL_OK)
 		e = ST_UVW_FAIL;
@@ -533,14 +566,20 @@ static st_t cal_uvw(void) {
 		const uint8_t w = (uint8_t)((r & 0xC0u) | (uint8_t)(pp - 1));
 		if (MT6835_WriteRegister(&hMT6835, MT6835_ADDR_UVW, w) != HAL_OK || MT6835_ReadRegister(&hMT6835, MT6835_ADDR_UVW, &rb) != HAL_OK || rb != w)
 			e = ST_UVW_FAIL;
-		else {
+		else if (zero && (e = uvw_zero(&shift)) == ST_OK) {
+			g_params.flags &= ~PF_HALL_VALID; /* the UVW edges have moved */
+			hall_table_apply();
+		}
+		if (e == ST_OK) {
 			MT6835_SaveEEPROM(&hMT6835);
 			EV(EV_EEPROM_WAIT, 6.0f);
 			HAL_Delay(6000);
 		}
 	}
 	MT6835_StartBurst(&hMT6835);
-	EV(EV_UVW, pp, rb);
+	const float to_deg = 360.0f / 4294967296.0f;
+	EV(EV_UVW, pp, rb, zero ? (float)shift * to_deg : NAN, zero ? (float)(int32_t)off0 * to_deg : NAN,
+	   zero ? (float)(int32_t)g_params.elec_offset * to_deg : NAN);
 	return e;
 }
 

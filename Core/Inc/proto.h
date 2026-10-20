@@ -143,7 +143,7 @@ enum {
 	EV_HFI_START,	 /* sensorless start (tok 0) or sensorless polarity test: contrast, flipped (0/1), HFI - encoder (deg elec) */
 	EV_CUR_OFF,		 /* offset a, b, c (counts from 2048), spread a, b, c (counts), stored (0/1) */
 	EV_HALL,		 /* where states 1..6 begin (6 x deg elec), largest forward - backward difference (deg) */
-	EV_UVW,			 /* pole pairs, UVW register read back */
+	EV_UVW,			 /* pole pairs, UVW register read back, encoder zero moved by (deg mech), electrical offset before, after (deg elec); NaN: zero not moved */
 };
 
 void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() and MX_USB_Device_Init() */

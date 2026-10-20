@@ -44,7 +44,8 @@ STEPS = [
      "The electrical offset must be recalibrated ('e') afterwards."),
     ("u", P.CAL_UVW, "Encoder UVW outputs as Halls (bench)", None, "pp",
      "Sets the MT6835's U/V/W outputs to the pole pairs and saves them to its EEPROM (about 6 s).\n"
-     "Wire U, V, W to J13 HALL1..3 to use them as Hall sensors. Then run 'H'."),
+     "After 'e' it also moves the encoder zero onto electrical zero (the offset is adjusted; the Hall table is cleared).\n"
+     "Wire U, V, W to J13 HALL1..3 to use them as Hall sensors. Then run 'H', home, and save."),
     ("h", P.CAL_HFI_MAP, "HFI saliency map (go/no-go)", "hsal", True,
      "Injects at 24 angles around the rotor with a d bias and iq = 0 (audible whine).\n"
      "The rotor should stay still; the encoder is the reference."),
