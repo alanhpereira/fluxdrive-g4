@@ -41,6 +41,8 @@ enum {
 	CAL_HFI_MAP, /* HFI saliency map, arg = id bias A, 0 = 0/0.25/0.5 x rated and hfi_id, stores hfi_sal */
 	CAL_HFI_POL, /* HFI lock from a random angle + polarity check, compared with the encoder */
 	CAL_CUR_OFF, /* current-sense zero offsets, rotor still; stores cur_off */
+	CAL_HALL,	 /* Hall table: forced-angle sweep both ways; stores hall_edge */
+	CAL_UVW,	 /* MT6835 UVW outputs as Hall sensors (bench): arg = pole pairs, 0 = pp; written to its EEPROM */
 	CAL_N
 };
 
@@ -98,6 +100,11 @@ typedef enum {
 	ST_CAN_LOST,	 /* CANopen master lost (heartbeat timeout or NMT left operational) while it had the motor */
 	ST_FOLLOWING_ERROR, /* position error above 0x6065 for longer than 0x6066 (CiA 402 position modes) */
 	ST_ENC_LOST,	 /* encoder: no valid angle for 10 ms (stream stalled, CRC failing, sensor not answering) */
+	ST_HALL_LOST,	 /* Hall sources: invalid Hall state (000/111) for 10 ms (sensor unplugged or unpowered) */
+	ST_HALL_SEQ,	 /* Hall calibration: invalid state, missing state, or an order that does not repeat */
+	ST_HALL_SPACING, /* Hall calibration: a sector is not 60 +- 25 deg electrical (pole pairs wrong?) */
+	ST_NEED_HALL,	 /* run the Hall calibration first */
+	ST_UVW_FAIL,	 /* encoder UVW register not written (encoder not answering) */
 	ST_N
 } st_t;
 
@@ -135,6 +142,8 @@ enum {
 	EV_HFI_POL,		 /* error before (deg elec, HFI - encoder), error after, flipped (0/1), contrast */
 	EV_HFI_START,	 /* sensorless start (tok 0) or sensorless polarity test: contrast, flipped (0/1), HFI - encoder (deg elec) */
 	EV_CUR_OFF,		 /* offset a, b, c (counts from 2048), spread a, b, c (counts), stored (0/1) */
+	EV_HALL,		 /* where states 1..6 begin (6 x deg elec), largest forward - backward difference (deg) */
+	EV_UVW,			 /* pole pairs, UVW register read back */
 };
 
 void proto_init(void); /* starts RX; call once after MX_USART1_UART_Init() and MX_USB_Device_Init() */

@@ -138,13 +138,40 @@ static __attribute__((noinline)) hfi_out_t pol_step(float i_a, float i_b, float*
 	return HFI_HOLD;
 }
 
-hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b) {
+/* injection starts: once per run, so it stays out of CCM. acq: the sensorless start (lock from wherever, then
+ * the polarity pulses; the PIs wait). Otherwise the estimate starts at th0: the reference for an autostart
+ * (the encoder, or the Hall angle, +-30 deg: the right polarity), g_hfi_theta0 for a calibration */
+static __attribute__((noinline)) void start(uint8_t want, int acq, uint32_t th0, float i_a, float i_b) {
+	uint8_t h = g_params.hfi_half;
+	s_half = h < 2 ? 2 : h > HFI_HALF_MAX ? HFI_HALF_MAX
+										  : h;
+	s_gain = (float)s_half / (float)(s_half - 1);
+	s_inv_n = 0.5f / (float)s_half;
+	wave_restart(i_a, i_b);
+	s_vel = 0.0f;
+	s_amp = 0.0f;
+	g_hfi_err_f = NAN; /* set from the first tracking cycle */
+	if (acq) {
+		s_ph = 0;
+		s_acq = 0;
+		s_state = S_ACQ;
+	}
+	else {
+		s_ph = th0;
+		s_state = (want == HFI_MAP) ? HFI_MAP : HFI_TRACK;
+	}
+}
+
+hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_ref, float* v_a, float* v_b) {
 	*v_a = *v_b = 0.0f;
 	uint8_t want = HFI_OFF;
 	int autostart = 0;
 	if (run) {
 		want = g_hfi_cmd;
-		if (want == HFI_OFF && (sensorless || g_params.hfi_mode >= 1) && !g_busy && ready()) {
+		/* autostart: sensorless and Hall + HFI always; hfi_mode 1 only in the encoder modes */
+		const uint8_t src = g_params.ang_src;
+		const int auto_on = sensorless || src == ANG_HALL_HFI || (src <= ANG_ENC_OBS && g_params.hfi_mode >= 1);
+		if (want == HFI_OFF && auto_on && !g_busy && ready()) {
 			want = HFI_TRACK;
 			autostart = 1;
 		}
@@ -154,27 +181,7 @@ hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, flo
 		return HFI_IDLE;
 	}
 
-	if (s_state == HFI_OFF) {
-		uint8_t h = g_params.hfi_half;
-		s_half = h < 2 ? 2 : h > HFI_HALF_MAX ? HFI_HALF_MAX
-											  : h;
-		s_gain = (float)s_half / (float)(s_half - 1);
-		s_inv_n = 0.5f / (float)s_half;
-		wave_restart(i_a, i_b);
-		s_vel = 0.0f;
-		s_amp = 0.0f;
-		g_hfi_err_f = NAN; /* set from the first tracking cycle */
-		if (autostart && sensorless) {
-			/* sensorless start: lock from wherever, then the polarity pulses; the PIs wait */
-			s_ph = 0;
-			s_acq = 0;
-			s_state = S_ACQ;
-		}
-		else {
-			s_ph = autostart ? th_enc : g_hfi_theta0; /* encoder modes start on the encoder */
-			s_state = (want == HFI_MAP) ? HFI_MAP : HFI_TRACK;
-		}
-	}
+	if (s_state == HFI_OFF) start(want, autostart && sensorless, autostart ? th_ref : g_hfi_theta0, i_a, i_b);
 	if (s_state == S_ACQ && ++s_acq >= ACQ_N) {
 		s_pt = 0;
 		s_sp = s_sn = 0.0f;
@@ -240,7 +247,7 @@ hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, flo
 		s_vel += wb * wb * TS * g * e;
 		s_ph += (uint32_t)(int32_t)((s_vel + 2.0f * wb * g * e) * (TS * Q32));
 
-		float err = (float)(int32_t)(s_ph - th_enc) * (1.0f / Q32);
+		float err = (float)(int32_t)(s_ph - th_ref) * (1.0f / Q32);
 		g_hfi_err = err;
 		g_hfi_rpm = s_vel * 60.0f / (float)g_params.pole_pairs;
 		if (s_report && s_state == HFI_TRACK) {
@@ -279,6 +286,12 @@ hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, flo
 	*v_a = vh * cs;
 	*v_b = vh * sn;
 	return (s_state == S_ACQ) ? HFI_HOLD : HFI_INJECT;
+}
+
+void hfi_reseed(uint32_t th, float vel) {
+	if (s_state != HFI_TRACK) return;
+	s_ph = th;
+	s_vel = vel * (float)g_params.pole_pairs;
 }
 
 int hfi_estimate(uint32_t* th, float* vel) {

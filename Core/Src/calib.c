@@ -9,6 +9,7 @@
 #include "co_app.h"
 #include "co_store.h"
 #include "tim.h"
+#include "hall.h"
 #include "hfi.h"
 #include "mt6835.h"
 #include "motorCtrl.h" /* g_loop_cyc */
@@ -134,7 +135,13 @@ static st_t sl_lost(void) {
 
 /* encoder modes: ST_ENC_LOST once no valid angle has come for ENC_LOST_N cycles. Checked by chk() and the watchdog */
 static st_t enc_lost(void) {
-	return (g_params.ang_src != ANG_SENSORLESS && g_enc_lost_n >= ENC_LOST_N) ? ST_ENC_LOST : ST_OK;
+	return (g_params.ang_src <= ANG_ENC_OBS && g_enc_lost_n >= ENC_LOST_N) ? ST_ENC_LOST : ST_OK;
+}
+
+/* Hall sources: ST_HALL_LOST once the state has been invalid for HALL_LOST_N cycles. A lost HFI angle in Hall + HFI
+ * is not a stop: the Halls carry on */
+static st_t hall_lost(void) {
+	return (g_params.ang_src >= ANG_HALL && g_hall_bad_n >= HALL_LOST_N) ? ST_HALL_LOST : ST_OK;
 }
 
 /* returns ST_OK, or why the routine must stop. Serves the protocol in busy mode: READ works, ABORT and
@@ -147,6 +154,7 @@ static st_t chk(void) {
 	if (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) return ST_VBUS_HIGH;
 	if (sl_lost() != ST_OK) return ST_HFI_LOST;
 	if (enc_lost() != ST_OK) return ST_ENC_LOST;
+	if (hall_lost() != ST_OK) return ST_HALL_LOST;
 	return ST_OK;
 }
 
@@ -423,6 +431,119 @@ static st_t cal_encoder(void) {
 	return ST_OK;
 }
 
+/* ------------------------------------------------------------------ Hall table */
+#define HALL_F_E 2.0f		/* electrical Hz of the sweep */
+#define HALL_REVS 4			/* electrical revolutions measured each way, after one more to let the lag build up */
+#define HALL_SPAN_TOL 25.0f /* deg electrical: each sector must be 60 +- this */
+
+/* forced-angle sweep forward then back, like 'e'. Each crossing is logged at the commanded angle: forward that
+ * leads the rotor by the lag, backward it trails by as much, and a sensor's hysteresis is the same both ways,
+ * so the mean of the two is where the state really begins. Needs pole_pairs (set by hand without an encoder) */
+static st_t cal_hall(void) {
+	st_t e;
+	float v;
+	if ((e = precheck())) return e;
+
+	g_mode = CTRL_CAL;
+	g_theta_cmd = 0;
+	g_vd_cmd = g_vq_cmd = 0;
+	EV0(EV_ALIGN);
+	if ((e = ramp_d_to_current(0.5f * g_params.rated_current, &v))) return e;
+	HAL_Delay(700);
+
+	EV(EV_SWEEP, HALL_REVS);
+	const uint32_t inc = (uint32_t)(HALL_F_E / 1000.0f * 4294967296.0f); /* per 1 ms */
+	const int rev_steps = (int)(1000.0f / HALL_F_E);
+	uint8_t next[8] = {0};	 /* forward order, from the forward pass */
+	uint32_t ref[8];		 /* first crossing seen, per state: the others are averaged as differences from it */
+	int64_t acc[2][8] = {0}; /* [forward, backward][state]: crossings where the state begins */
+	uint16_t n[2][8] = {0};
+	int changes = 0, bad = 0;
+	uint32_t theta = 0;
+	for (int pass = 0; pass < 2; pass++) {
+		uint8_t prev = g_hall_state;
+		for (int s = 0; s < (HALL_REVS + 1) * rev_steps; s++) { /* whole revolutions: ends back on theta = 0 */
+			theta += pass ? (0u - inc) : inc;
+			g_theta_cmd = theta;
+			HAL_Delay(1);
+			if ((e = chk())) return e;
+			const uint8_t st = g_hall_state;
+			if (st == prev) continue;
+			changes++;
+			if (st < 1 || st > 6) bad = 1;
+			else if (s >= rev_steps && prev >= 1 && prev <= 6) {
+				/* forward, prev -> st crosses where st begins; backward, where prev begins */
+				const uint8_t b = pass ? prev : st;
+				if (!pass) {
+					if (next[prev] && next[prev] != st) return ST_HALL_SEQ;
+					next[prev] = st;
+				}
+				else if (next[st] != prev)
+					return ST_HALL_SEQ; /* backward must retrace the forward order */
+				if (!n[0][b] && !n[1][b]) ref[b] = theta;
+				acc[pass][b] += (int32_t)(theta - ref[b]);
+				n[pass][b]++;
+			}
+			prev = st;
+		}
+	}
+	g_theta_cmd = theta;
+	if (changes == 0) return ST_NO_FOLLOW;
+	if (bad) return ST_HALL_SEQ;
+
+	const float to_deg = 360.0f / 4294967296.0f;
+	uint32_t begin[8] = {0};
+	float hyst = 0.0f;
+	for (int b = 1; b <= 6; b++) {
+		if (!n[0][b] || !n[1][b]) return ST_HALL_SEQ; /* a state never seen both ways */
+		const int32_t fw = (int32_t)(acc[0][b] / n[0][b]), bw = (int32_t)(acc[1][b] / n[1][b]);
+		begin[b] = ref[b] + (uint32_t)(int32_t)(((int64_t)fw + bw) / 2);
+		const float h = fabsf((float)(fw - bw) * to_deg);
+		if (h > hyst) hyst = h;
+	}
+	/* each sector, from where it begins to where its successor begins, must be near 60 deg */
+	for (int b = 1; b <= 6; b++) {
+		const float span = (float)(begin[next[b]] - begin[b]) * to_deg;
+		if (!(fabsf(span - 60.0f) <= HALL_SPAN_TOL)) {
+			EV(EV_HALL, begin[1] * to_deg, begin[2] * to_deg, begin[3] * to_deg, begin[4] * to_deg, begin[5] * to_deg, begin[6] * to_deg, hyst);
+			return ST_HALL_SPACING;
+		}
+	}
+	for (int b = 1; b <= 6; b++) g_params.hall_edge[b] = (uint16_t)((begin[b] + 0x8000u) >> 16);
+	g_params.flags |= PF_HALL_VALID;
+	hall_table_apply();
+	EV(EV_HALL, begin[1] * to_deg, begin[2] * to_deg, begin[3] * to_deg, begin[4] * to_deg, begin[5] * to_deg, begin[6] * to_deg, hyst);
+	return ST_OK;
+}
+
+/* bench stand-in for Hall sensors: the MT6835's UVW outputs (wired to J13), at the motor's pole pairs. Register
+ * 0x00B: Z_PHASE[7:6] kept, UVW_MUX (bit 5) 0 = UVW on the pins, UVW_OFF (bit 4) 0 = on, UVW_RES[3:0] = pp - 1.
+ * Saved to the sensor's EEPROM (~6 s) so it survives a power cycle */
+static st_t cal_uvw(void) {
+	const int pp = s_cal_arg > 0.0f ? (int)(s_cal_arg + 0.5f) : (int)g_params.pole_pairs;
+	if (pp < 1 || pp > 16) return ST_BAD_ARG;
+	if (g_mode != CTRL_OFF) return ST_RUNNING;
+	MT6835_StopBurst(&hMT6835);
+	HAL_Delay(10);
+	uint8_t r = 0, rb = 0;
+	st_t e = ST_OK;
+	if (MT6835_ReadRegister(&hMT6835, MT6835_ADDR_UVW, &r) != HAL_OK)
+		e = ST_UVW_FAIL;
+	else {
+		const uint8_t w = (uint8_t)((r & 0xC0u) | (uint8_t)(pp - 1));
+		if (MT6835_WriteRegister(&hMT6835, MT6835_ADDR_UVW, w) != HAL_OK || MT6835_ReadRegister(&hMT6835, MT6835_ADDR_UVW, &rb) != HAL_OK || rb != w)
+			e = ST_UVW_FAIL;
+		else {
+			MT6835_SaveEEPROM(&hMT6835);
+			EV(EV_EEPROM_WAIT, 6.0f);
+			HAL_Delay(6000);
+		}
+	}
+	MT6835_StartBurst(&hMT6835);
+	EV(EV_UVW, pp, rb);
+	return e;
+}
+
 /* ------------------------------------------------------------------ current PI autotune */
 /* pole-zero cancellation: zero at R/L cancels the winding pole, closed loop becomes first order at wc */
 static st_t pi_autotune(void) {
@@ -465,6 +586,8 @@ static float spd_update(spd_t* s) {
 		const float r = g_hfi_rpm;
 		return (r == r) ? r * (2.0f * (float)M_PI / 60.0f) * (float)g_params.pole_pairs : 0.0f;
 	}
+	if (g_params.ang_src >= ANG_HALL) /* the Hall speed (mechanical turn/s) */
+		return g_vel * (2.0f * (float)M_PI) * (float)g_params.pole_pairs;
 	uint32_t a = hMT6835.angle, t = TIM2->CNT;
 	int32_t d = enc_delta(a, s->ang);
 	float dt = (float)(t - s->us) * 1e-6f;
@@ -485,6 +608,7 @@ static st_t kv_coast(spd_t* s, float w_ref) {
 		w = spd_update(s);
 		if (fabsf(g_id) > g_params.max_current || fabsf(g_iq) > g_params.max_current) return ST_OVERCURRENT;
 		if (sl_lost() != ST_OK) return ST_HFI_LOST;
+		if (hall_lost() != ST_OK) return ST_HALL_LOST;
 	}
 	return ST_OK;
 }
@@ -497,6 +621,11 @@ static st_t cal_kv(void) {
 	if (sl) {
 		if ((e = hfi_check())) return e;
 		if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+	}
+	else if (g_params.ang_src >= ANG_HALL) { /* commutates on the Halls (HFI does not start during a calibration) */
+		if (!(g_params.flags & PF_HALL_VALID)) return ST_NEED_HALL;
+		if (!(g_params.flags & PF_R_VALID)) return ST_NEED_R;
+		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
 	}
 	else {
 		const uint32_t need = PF_ELEC_OFFSET_VALID | PF_PI_VALID | PF_R_VALID;
@@ -610,9 +739,21 @@ static st_t cal_enter(void) {
 }
 
 /* what the chosen angle source needs before a run (speed/position too when outer). Encoder modes need the
- * electrical offset from 'e'; sensorless needs no encoder at all, but R, L, the PI, kv, the saliency map and hv */
+ * electrical offset from 'e'; sensorless needs no encoder at all, but R, L, the PI, kv, the saliency map and hv.
+ * Hall: the Hall table and the PI. Hall + HFI: also R, L, the saliency map and hv (the Halls give the polarity) */
 static st_t run_prereq(int outer) {
-	if (g_params.ang_src == ANG_SENSORLESS) {
+	const uint8_t src = g_params.ang_src;
+	if (src >= ANG_HALL) {
+		if (!(g_params.flags & PF_HALL_VALID)) return ST_NEED_HALL;
+		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
+		if (src == ANG_HALL_HFI) {
+			const uint32_t rl = PF_R_VALID | PF_L_VALID;
+			if ((g_params.flags & rl) != rl) return ST_NEED_RL;
+			if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
+			if (!(g_params.hfi_v > 0.0f)) return ST_NEED_HV;
+		}
+	}
+	else if (src == ANG_SENSORLESS) {
 		const uint32_t rl = PF_R_VALID | PF_L_VALID;
 		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
 		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
@@ -635,9 +776,11 @@ static st_t run_enter(int outer) {
 	return e ? e : cal_enter();
 }
 
-/* d-axis current under the speed/position loops: the HFI bias while HFI runs (always when sensorless) */
+/* d-axis current under the speed/position loops: the HFI bias while HFI runs (always when sensorless and in
+ * Hall + HFI, with hfi_mode in the encoder modes, never with the Halls alone) */
 static float id_bias(void) {
-	const int hfi_on = g_params.ang_src == ANG_SENSORLESS || g_params.hfi_mode >= 1;
+	const uint8_t src = g_params.ang_src;
+	const int hfi_on = src == ANG_SENSORLESS || src == ANG_HALL_HFI || (src <= ANG_ENC_OBS && g_params.hfi_mode >= 1);
 	return (hfi_on && g_params.hfi_sal != 0.0f) ? g_params.hfi_id : 0.0f;
 }
 
@@ -703,7 +846,13 @@ static st_t run_cur(float id, float iq) {
 #define HFI_SIG_MIN 0.03f /* A per informative cycle, ~2 LSB */
 
 static st_t hfi_check(void) {
-	if (g_params.ang_src == ANG_SENSORLESS) {
+	if (g_params.ang_src >= ANG_HALL) { /* the Hall angle is the reference: +-30 deg at standstill */
+		if (!(g_params.flags & PF_HALL_VALID)) return ST_NEED_HALL;
+		const uint32_t rl = PF_R_VALID | PF_L_VALID;
+		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
+		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
+	}
+	else if (g_params.ang_src == ANG_SENSORLESS) {
 		const uint32_t rl = PF_R_VALID | PF_L_VALID; /* no encoder offset needed */
 		if ((g_params.flags & rl) != rl) return ST_NEED_RL;
 		if (!(g_params.flags & PF_PI_VALID)) return ST_NEED_TUNE;
@@ -834,6 +983,7 @@ static st_t hfi_lock_and_pol(float* before, float* after) {
  * contrast must be clear enough to trust (the same bar as the sensorless start) */
 static st_t cal_hfi_pol(void) {
 	st_t e;
+	if (g_params.ang_src >= ANG_HALL) return ST_BAD_ARG; /* the Halls give the polarity: nothing to check */
 	if ((e = hfi_check())) return e;
 	if (g_params.hfi_sal == 0.0f) return ST_NEED_HMAP;
 	if (!(g_params.hfi_pol_i > 0.0f)) return ST_I_LOW;
@@ -912,6 +1062,7 @@ static void run_watchdog(void) {
 	else if (g_params.vel_lim > 0.0f && fabsf(g_vel) > 1.5f * g_params.vel_lim) e = ST_OVERSPEED;
 	else if (sl_lost() != ST_OK) e = ST_HFI_LOST; /* sensorless: HFI stopped tracking */
 	else if (enc_lost() != ST_OK) e = ST_ENC_LOST; /* encoder modes: no valid angle */
+	else if (hall_lost() != ST_OK) e = ST_HALL_LOST; /* Hall sources: sensor gone */
 	if (g_coasting && (e == ST_VBUS_LOW || e == ST_OVERSPEED)) e = ST_OK; /* the coast already is the reaction */
 	if (!e) {
 		if (g_coasting && fabsf(g_vel) < COAST_END_TURNS) {
@@ -923,7 +1074,7 @@ static void run_watchdog(void) {
 
 	/* immediately, no ramp: the outer loops are not in control any more */
 	g_hfi_cmd = HFI_OFF;
-	if (e == ST_HFI_LOST || e == ST_ENC_LOST) TIM1->BDTR &= ~TIM_BDTR_MOE; /* no angle for the current loop: bridge off, it coasts */
+	if (e == ST_HFI_LOST || e == ST_ENC_LOST || e == ST_HALL_LOST) TIM1->BDTR &= ~TIM_BDTR_MOE; /* no angle for the current loop: bridge off, it coasts */
 	if (TIM1->BDTR & TIM_BDTR_MOE)
 		coast_or_off();
 	else { /* off already: checkAndClearBridgeFault() re-arms it once the zero vector is harmless */
@@ -1067,6 +1218,8 @@ static st_t (*const k_cal[CAL_N])(void) = {
 	[CAL_HFI_MAP] = cal_hfi_map,
 	[CAL_HFI_POL] = cal_hfi_pol,
 	[CAL_CUR_OFF] = cal_cur_off,
+	[CAL_HALL] = cal_hall,
+	[CAL_UVW] = cal_uvw,
 };
 
 /* ACK first, then the routine blocks here (chk() keeps serving READ/ABORT/STOP), EV_DONE at the end */
@@ -1176,6 +1329,7 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 static void enc_recover(void) {
 	static uint32_t last;
 	if (g_mode != CTRL_OFF || g_enc_lost_n < ENC_LOST_N) return; /* also after a StartBurst that timed out */
+	if (g_params.ang_src >= ANG_HALL) return;					  /* the Hall sources do without one */
 	const uint32_t now = HAL_GetTick();
 	if (now - last < ENC_RETRY_MS) return;
 	last = now;

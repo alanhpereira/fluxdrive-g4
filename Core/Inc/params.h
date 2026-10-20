@@ -11,14 +11,17 @@
 #define PF_R_VALID (1u << 2)
 #define PF_L_VALID (1u << 3)
 #define PF_PI_VALID (1u << 4) /* current PI gains set by autotune ('t') */
+#define PF_HALL_VALID (1u << 5) /* Hall table (hall_edge) from CAL_HALL */
 
 /* angle source (ang_src): what commutation, speed and the observer's references come from */
 #define ANG_ENCODER 0u   /* encoder only; the observer and HFI run and log, nothing blends in */
 #define ANG_ENC_OBS 1u   /* encoder, with the observer blended in above obs_lo_v (obs_blend) */
 #define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo_v; no encoder in the loop, position mode refused */
+#define ANG_HALL 3u		  /* Hall sensors (interpolated), with the observer above obs_lo_v (obs_blend); no encoder */
+#define ANG_HALL_HFI 4u	  /* HFI at low speed, guarded and started by the Halls; Halls from hyb_lo..hyb_hi up; observer above obs_lo_v */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 7u /* bump when the struct layout changes: older copies are rejected, defaults load */
+#define PARAM_VERSION 8u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -77,6 +80,10 @@ typedef struct {
 	float hfi_id;	 /* d-axis bias current for HFI (saturation saliency), A */
 	float hfi_sal;	 /* saliency (Lq-Ld)/(Lq+Ld) at hfi_id, from the saliency map; 0 = not measured */
 	float hfi_pol_i; /* polarity check pulse current, A */
+
+	/* Hall sensors (hall.c) */
+	uint16_t hall_edge[8]; /* Q16 electrical angle where state s (1..6) begins going forward; [0], [7] unused */
+	float hyb_lo, hyb_hi;  /* rpm: Hall + HFI hands over from HFI to the Halls between these speeds */
 
 	uint32_t crc; /* CRC32 of everything above; keep last */
 } motor_params_t;

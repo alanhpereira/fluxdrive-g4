@@ -83,7 +83,6 @@ extern volatile float g_pos;		   /* turns, display/telemetry only: the loop uses
 extern volatile float g_rpm;		   /* g_vel * 60 */
 extern volatile uint8_t g_home_req; /* set to 1: currentLoop() makes the present position g_home_pos */
 /* position counts for thread and tick code: Q16.16 turns, the CANopen increments (0x608F: 2^16 per turn) */
-#define POS_CNT_SHIFT 5				 /* encoder counts (2^21 per turn) >> this = position counts */
 extern volatile int32_t g_home_pos;	 /* position counts the present position gets at homing (0, or CANopen -0x607C) */
 extern volatile int32_t g_pos_cnt;	 /* position counts from home, motor direction (atomic copy of the position) */
 extern volatile int32_t g_pos_ref_cnt; /* the ISR's position reference, same counts (meaningful in LOOP_POS) */

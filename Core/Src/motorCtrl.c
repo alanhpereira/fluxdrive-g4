@@ -10,6 +10,7 @@
 #include "i2c.h"
 #include "link.h"
 #include "cordicMgr.h"
+#include "hall.h"
 #include "hfi.h"
 #include "mt6835.h"
 #include "params.h"
@@ -87,6 +88,7 @@ HAL_StatusTypeDef initMotor() {
 	dc_float = g_max_duty_cycle * INV_SQRT3;
 	center_f = (float)g_half_duty_cycle + 0.5f;
 	MT6835_StartBurst(&hMT6835);
+	hall_init();
 	telemetry.sync[0] = 0xA5;
 	telemetry.sync[1] = 0x5A;
 	control_enabled = 1;
@@ -139,7 +141,7 @@ int SVPWM(float alpha, float beta) {
 #define PLL_KP (2.0f * PLL_BW)
 #define PLL_KI_TS (PLL_BW * PLL_BW / CTRL_FS_HZ)
 
-static int64_t s_home;		/* encoder counts, motor direction */
+static pos_q32_t s_home;	/* raw position at home, motor direction */
 static pos_q32_t s_pos;		/* from home, motor direction */
 static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
 static int64_t s_pos_ff_q;	/* CSP interpolation: added to s_pos_ref every cycle (Q32.32 turns per cycle) */
@@ -158,14 +160,13 @@ static uint8_t s_pll_init;
 static float s_vel;				  /* turn/s, encoder PLL blended with the observer PLL: what the loops use */
 static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
 
-/* age_s: how long ago the sensor sampled ang. fresh = 0 when there was no new sample (stream stalled,
- * CRC): the PLL then only predicts */
-static void motion_update(uint32_t ang, int fresh, float age_s) {
-	/* turns and angle are only written by MT6835_Sample(), earlier in this same ISR */
-	int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
-	int64_t p = (g_params.enc_dir > 0) ? raw : -raw;
+/* p: raw position from the angle source, motor direction: the encoder, or the accumulated Hall / Hall + HFI
+ * angle (hall_pos()). ph: encoder phase (Q32 = one turn, motor direction) for the encoder PLL. age_s: how long
+ * ago the sensor sampled it. fresh = 0 when there was no new sample (stream stalled, CRC): the PLL then only
+ * predicts */
+static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
 	if (g_home_req) {
-		s_home = p - ((int64_t)g_home_pos << POS_CNT_SHIFT);
+		s_home = p - ((pos_q32_t)g_home_pos << 16); /* g_home_pos: Q16.16 turns */
 		g_home_req = 0;
 	}
 	if (g_pos_ref_req) {
@@ -214,7 +215,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		s_pos_ref += s_pos_ff_q;
 		if (--s_pos_ff_hold == 0) s_pos_ff = 0.0f;
 	}
-	s_pos = (p - s_home) * 2048; /* counts -> Q32.32 */
+	s_pos = p - s_home;
 	if (g_pos_here_req) {
 		s_pos_ref = s_pos;
 		s_pos_ff_n = 0;
@@ -226,7 +227,6 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 	g_pos_ref_cnt = (int32_t)(s_pos_ref >> 16); /* CANopen 0x6062 / following error: the interpolated reference */
 	g_pos = q32_to_f(s_pos);
 
-	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */
 	if (!s_pll_init) {
 		if (!fresh) return; /* no encoder frame yet: nothing to lock onto */
 		s_pll_ph = ph;
@@ -518,6 +518,10 @@ static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
 	return 1;
 }
 
+/* Hall angle sources, for the telemetry (set in currentLoop()) */
+static float s_hall_err = NAN; /* Hall - encoder, electrical turns (ang_src 3) */
+static float s_hall_vel;	   /* Hall speed, turn/s */
+
 /* telemetry, once every 10 cycles. The ISR only fills in the values; tlm_finish() adds the sum and queues the
  * frame from the link IRQ (priority 1). Doing all of it here made these the longest cycles. In flash, like
  * tlm_finish(): CCM is nearly full, and these cycles have room (the outer loops never run in them). s_tlm_full hands
@@ -538,7 +542,8 @@ static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, flo
 	telemetry.seq = seq;
 	telemetry.v[0] = (float)ang * (360.0f / 2097152.0f);
 	telemetry.v[1] = g_vin;
-	telemetry.v[2] = g_hfi_err * 360.0f; /* HFI - encoder, deg electrical; NaN unless HFI tracks */
+	/* HFI - reference (encoder; Hall in Hall + HFI), deg electrical, NaN unless HFI tracks. Hall: Hall - encoder */
+	telemetry.v[2] = (g_params.ang_src == ANG_HALL ? s_hall_err : g_hfi_err) * 360.0f;
 	telemetry.v[3] = g_hfi_rpm;			  /* HFI PLL speed; NaN unless HFI tracks */
 	telemetry.v[4] = g_hfi_amp;			  /* HF current step along the injection axis, A; NaN with HFI off */
 	telemetry.v[5] = id;				  /* with HFI on: the fundamental, what the PIs see */
@@ -551,10 +556,48 @@ static __attribute__((noinline)) void send_telemetry(uint32_t ang, float id, flo
 	telemetry.v[12] = s_obs_ratio;		  /* |rotor flux| / lambda, 1 when converged */
 	telemetry.v[13] = s_obs_w;			  /* observer weight in the commutation angle and the speed */
 	telemetry.v[14] = s_obs_vel * 60.0f;  /* rpm from the observer PLL alone; NaN without the observer */
-	telemetry.v[15] = s_pll_vel * 60.0f;  /* rpm from the encoder PLL alone (v[7] is the blend) */
+	telemetry.v[15] = (g_params.ang_src >= ANG_HALL ? s_hall_vel : s_pll_vel) * 60.0f; /* rpm from the encoder PLL alone (Hall sources: the Halls); v[7] is the blend */
 	s_tlm_full = 1;
 	link_defer(tlm_finish);
 }
+/* ------------------------------------------------------------------ Hall angle sources (ang_src 3, 4) */
+/* Hall + HFI: HFI may stray this far outside the Hall sector (sensor placement, its own error) before it counts
+ * as slipped; after HYB_SLIP_N such cycles it is put back on the Hall angle. That only costs accuracy, it never
+ * stops the motor: the Hall angle is always there */
+#define HYB_MARGIN ((uint32_t)(20.0 / 360.0 * 4294967296.0))
+#define HYB_SLIP_N 50 /* 2 ms */
+volatile uint32_t g_hyb_reseeds; /* those re-seeds, diagnostics */
+static pos_q32_t s_hall_pos;	 /* the base angle accumulated, mechanical Q32.32 turns, motor direction */
+static uint32_t s_hall_th_prev;
+static int32_t s_hall_rem; /* electrical Q32 not yet carried into s_hall_pos (below one pole pair) */
+static uint8_t s_hall_pos_on;
+
+/* the position of the Hall sources: advances with the base angle, electrical -> mechanical with int32
+ * maths only. Starts where the position was, so switching the source does not move it */
+static inline void hall_pos_step(uint32_t th) {
+	if (!s_hall_pos_on) {
+		s_hall_pos = s_pos + s_home;
+		s_hall_th_prev = th;
+		s_hall_rem = 0;
+		s_hall_pos_on = 1;
+		return;
+	}
+	const int32_t pp = g_params.pole_pairs ? g_params.pole_pairs : 1;
+	const int32_t d = (int32_t)(th - s_hall_th_prev) + s_hall_rem;
+	s_hall_th_prev = th;
+	const int32_t q = d / pp; /* one electrical turn (2^32) is 2^32 / pp of a mechanical one */
+	s_hall_rem = d - q * pp;
+	s_hall_pos += q;
+}
+
+/* Hall + HFI: weight of the Hall angle against HFI, by speed (mechanical turn/s) */
+static inline float hyb_weight(float vel) {
+	const float r = fabsf(vel) * 60.0f, lo = g_params.hyb_lo, hi = g_params.hyb_hi;
+	if (r <= lo) return 0.0f;
+	if (r >= hi) return 1.0f;
+	return (r - lo) / (hi - lo);
+}
+
 void currentLoop(void) {
 	static float age_cur; /* encoder sample -> current sample */
 	uint32_t c0 = DWT->CYCCNT;
@@ -565,8 +608,16 @@ void currentLoop(void) {
 		g_enc_lost_n = 0;
 	else if (g_enc_lost_n < UINT16_MAX)
 		g_enc_lost_n++;
-	uint32_t ang = hMT6835.angle;								   /* one snapshot for the whole cycle */
-	motion_update(ang, fresh, age_cur + since_current_sample_s()); /* the PLL works in "now" time */
+	uint32_t ang = hMT6835.angle; /* one snapshot for the whole cycle */
+	/* turns and angle are only written by MT6835_Sample(), earlier in this same ISR */
+	const int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
+	const int64_t pe = (g_params.enc_dir > 0) ? raw : -raw; /* encoder counts, motor direction */
+	const uint8_t src = g_params.ang_src;
+	const int hl = src >= ANG_HALL; /* Hall or Hall + HFI */
+	const int hyb = src == ANG_HALL_HFI;
+	/* the Hall sources' position is the one accumulated last cycle (the base angle comes further down) */
+	motion_update((hl && s_hall_pos_on) ? s_hall_pos : pe * 2048, (uint32_t)pe << 11, fresh,
+				  age_cur + since_current_sample_s()); /* the PLL works in "now" time */
 
 	float i_alpha, i_beta, id, iq;
 	clarke(g_cur[0], g_cur[1], g_cur[2], &i_alpha, &i_beta);
@@ -575,11 +626,16 @@ void currentLoop(void) {
 
 	/* angle source (ang_src). Sensorless: HFI is the base for commutation, speed and the observer's references
 	 * (seed speed, back-EMF level, agreement check); the encoder is only logged. Encoder modes: the encoder is
-	 * the base, and the observer blends in only in ANG_ENC_OBS. Position always comes from the encoder */
-	const int sl = g_params.ang_src == ANG_SENSORLESS;
+	 * the base, and the observer blends in only in ANG_ENC_OBS. Hall: the interpolated Hall angle. Hall + HFI:
+	 * HFI below hyb_lo, crossfading to the Halls by hyb_hi. Position comes from the encoder, or from the base
+	 * angle accumulated in the Hall sources */
+	const int sl = src == ANG_SENSORLESS;
 	uint32_t th_hfi;
 	float vel_hfi;
 	const int hfi_ok = hfi_estimate(&th_hfi, &vel_hfi); /* always fills both, valid or not */
+	uint32_t th_hall;
+	float vel_hall;
+	hall_update(&th_hall, &vel_hall); /* in every mode: the state and the speed stay live (calibration, re-arm) */
 
 	/* encoder angle, advanced by the known delays to the current sample. Blended with the observer by
 	 * speed, it gives theta_m = rotor angle when the currents were sampled (Park); theta_o = rotor angle
@@ -590,20 +646,53 @@ void currentLoop(void) {
 #if ANGLE_COMP
 	th_enc += (uint32_t)(int32_t)(we_enc * age_cur);
 #endif
-	const uint32_t th_base = sl ? th_hfi : th_enc;
-	const float vel_base = sl ? vel_hfi : s_pll_vel;
+	uint32_t th_base = th_enc;
+	float vel_base = s_pll_vel;
+	float hw = 0.0f; /* Hall + HFI: weight of the Hall angle */
+	if (sl) {
+		th_base = th_hfi;
+		vel_base = vel_hfi;
+	}
+	else if (hl) {
+		th_base = th_hall;
+		vel_base = vel_hall;
+		if (hyb) {
+			hw = hyb_weight(vel_hall);
+			if (hfi_ok && hw < 1.0f) {
+				/* guard: HFI must stay in the Hall sector (it locks on d or -d, only the Halls tell them apart) */
+				static uint16_t out_n;
+				if (hall_in_sector(th_hfi, HYB_MARGIN))
+					out_n = 0;
+				else if (++out_n >= HYB_SLIP_N) {
+					hfi_reseed(th_hall, vel_hall);
+					g_hyb_reseeds++;
+					out_n = 0;
+					th_hfi = th_hall;
+					vel_hfi = vel_hall;
+				}
+				th_base = th_hfi + (uint32_t)(int32_t)(hw * (float)(int32_t)(th_hall - th_hfi)); /* shortest way round */
+				vel_base = vel_hfi + hw * (vel_hall - vel_hfi);
+			}
+		}
+		hall_pos_step(th_base);
+	}
+	else
+		s_hall_pos_on = 0;
+	s_hall_vel = vel_hall;
+	s_hall_err = (src == ANG_HALL && g_enc_lost_n < ENC_LOST_N) ? (float)(int32_t)(th_hall - th_enc) * (1.0f / 4294967296.0f) : NAN;
 	const float we = vel_base * pp * 4294967296.0f; /* electrical Q32 per second, of the base */
 	obs_pll(obs, th_obs, vel_base);
 	/* sensorless always blends the observer in (HFI alone cannot reach full speed); ENCODER never does */
-	const int blend = sl || (g_params.ang_src == ANG_ENC_OBS && g_params.obs_blend);
-	/* the observer's agreement check and back-EMF level use the base: HFI when sensorless, else the encoder */
+	const int blend = sl || ((src == ANG_ENC_OBS || hl) && g_params.obs_blend);
+	/* the observer's agreement check and back-EMF level use the base: HFI when sensorless, else the encoder or the Halls */
 	const int agree = !sl || fabsf(vel_base) < SL_AGREE_MAX_TURNS; /* sensorless: HFI is wrong at speed */
 	float w = obs_weight(obs, th_obs - th_base, we, blend, agree);
-	/* injection off once the observer has it all, back on below 90 % (hysteresis: w is noisy at the edge) */
+	/* injection off once the observer (Hall + HFI: or the Halls) has it all, back on below 90 % (hysteresis: w is
+	 * noisy at the edge) */
 	static uint8_t hfi_pause;
-	if (w >= 1.0f)
+	if (w >= 1.0f || hw >= 1.0f)
 		hfi_pause = 1;
-	else if (w < 0.9f)
+	else if (w < 0.9f && hw < 0.9f)
 		hfi_pause = 0;
 	s_vel = (w > 0.0f) ? vel_base + w * (s_obs_vel - vel_base) : vel_base; /* s_obs_vel is NaN when invalid */
 	g_vel = s_vel;
@@ -642,7 +731,7 @@ void currentLoop(void) {
 
 	/* high-frequency injection: voltage to add, and the PIs get the fundamental only */
 	float inj_a, inj_b;
-	hfi_out_t hf = hfi_step(mode == CTRL_RUN, sl, hfi_pause, s_vel, i_alpha, i_beta, theta_m, th_enc, &inj_a, &inj_b);
+	hfi_out_t hf = hfi_step(mode == CTRL_RUN, sl, hfi_pause, s_vel, i_alpha, i_beta, theta_m, hyb ? th_hall : th_enc, &inj_a, &inj_b);
 	if (hf == HFI_INJECT) hfi_filter(&id, &iq);
 	const int hold = hf == HFI_HOLD; /* polarity pulses / sensorless start: PIs and outer loops wait */
 	/* sensorless: count the cycles HFI is not tracking (the watchdog stops the motor after SL_LOST_N). The

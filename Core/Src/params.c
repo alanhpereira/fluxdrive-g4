@@ -54,6 +54,9 @@ static const motor_params_t k_defaults = {
 	.hfi_id = 0.0f,
 	.hfi_sal = 0.0f, /* measure it: HFI saliency map */
 	.hfi_pol_i = 1.0f,
+	.hall_edge = {0}, /* measure it: CAL_HALL */
+	.hyb_lo = 150.0f,
+	.hyb_hi = 400.0f,
 };
 
 uint32_t flash_crc32(const void* p, size_t n) {

@@ -35,16 +35,21 @@ extern volatile float g_hfi_acc_par, g_hfi_acc_perp;
 extern volatile uint8_t g_hfi_pol_flip;		  /* last HFI_POL: 1 if the estimate was turned by 180 deg */
 extern volatile float g_hfi_pol_contrast;	  /* (peak+ - peak-) / (peak+ + peak-) before any flip */
 extern volatile uint8_t g_hfi_start_done;	  /* sensorless start finished (set by the ISR, cleared by main) */
-extern volatile float g_hfi_err, g_hfi_err_f; /* HFI - encoder, electrical turns, raw / ~4 ms low-pass; NaN when not tracking */
+extern volatile float g_hfi_err, g_hfi_err_f; /* HFI - reference (encoder, or Hall), electrical turns, raw / ~4 ms low-pass; NaN when not tracking */
 extern volatile float g_hfi_rpm;			  /* HFI PLL speed, mechanical rpm; NaN when not tracking */
 extern volatile float g_hfi_amp;			  /* demodulated HF current step along the injection axis, A; NaN when off */
 
 /* once per cycle, after Clarke/Park. run: CTRL_RUN. sensorless: the sensorless start runs when HFI starts
- * (lock, then polarity pulses). pause: the observer has full weight, stop injecting and follow th_m at vel
- * (mechanical turn/s, the speed in use). i_a, i_b: currents just sampled. th_m: commutation angle at the
- * sample, th_enc: encoder angle at the sample (logging only). Returns what to do; *v_a, *v_b is the voltage
- * to add (alpha-beta, volts) */
-hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_enc, float* v_a, float* v_b);
+ * (lock, then polarity pulses). pause: the observer (or, Hall + HFI, the Hall angle) has full weight, stop
+ * injecting and follow th_m at vel (mechanical turn/s, the speed in use). i_a, i_b: currents just sampled.
+ * th_m: commutation angle at the sample. th_ref: reference angle at the sample, the encoder (the Hall angle
+ * in Hall + HFI): the autostart begins on it, and g_hfi_err is measured against it. Returns what to do;
+ * *v_a, *v_b is the voltage to add (alpha-beta, volts) */
+hfi_out_t hfi_step(int run, int sensorless, int pause, float vel, float i_a, float i_b, uint32_t th_m, uint32_t th_ref, float* v_a, float* v_b);
+
+/* Hall + HFI: puts a tracking estimate back on th (Q32 electrical) at vel (mechanical turn/s), when it has
+ * slipped out of the Hall sector. Nothing otherwise. ISR only */
+void hfi_reseed(uint32_t th, float vel);
 
 /* HFI angle for this cycle's sample (Q32 electrical, predicted by the last hfi_step()) and mechanical speed
  * (turn/s). Always fills both, even when not valid; returns 1 when HFI is tracking with a usable signal or

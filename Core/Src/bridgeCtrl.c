@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "calib.h" /* g_vel, COAST_END_TURNS, SL_REARM_MS */
+#include "hall.h"  /* g_hall_bad_n */
 
 static uint8_t fault_reg;
 int32_t g_pwm_res;
@@ -120,8 +121,11 @@ uint32_t bridge_fault_info(void) {
 
 static int rearm_safe(uint32_t off_ms) {
 	if (!s_was_on) return 1;
-	/* without a valid encoder angle g_vel decays to zero while the rotor may still turn: wait, like sensorless */
-	if (g_params.ang_src == ANG_SENSORLESS || g_enc_lost_n >= ENC_LOST_N) return off_ms >= SL_REARM_MS;
+	/* without a valid angle g_vel decays to zero while the rotor may still turn: wait, like sensorless. The Halls
+	 * see the speed with the bridge off, the encoder does too */
+	const uint8_t src = g_params.ang_src;
+	if (src == ANG_SENSORLESS || (src <= ANG_ENC_OBS && g_enc_lost_n >= ENC_LOST_N) || (src >= ANG_HALL && g_hall_bad_n >= HALL_LOST_N))
+		return off_ms >= SL_REARM_MS;
 	return fabsf(g_vel) < COAST_END_TURNS;
 }
 
