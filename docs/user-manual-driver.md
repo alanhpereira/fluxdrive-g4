@@ -246,14 +246,14 @@ Halt (bit 8) ramps to zero and holds (PV, CSV, HM, CSP), pauses the profile (PP)
 ### 9.4 Units on the CAN side
 | Quantity | Unit |
 |---|---|
-| Position | increments, 2²¹ per turn (wraps at ±1024 turns) |
-| Velocity | inc/s (1 rpm = 34 953 inc/s) |
+| Position | increments, 2¹⁶ per turn: Q16.16 turns (wraps at ±32 768 turns; the encoder itself resolves 2²¹) |
+| Velocity | inc/s (1 rpm = 1 092.27 inc/s; 65 536 inc/s = 1 turn/s) |
 | Acceleration | inc/s² |
 | Torque / current | ‰ of rated current |
 | Rated current 6075 / rated torque 6076 | mA / mNm |
 | DC link 6079 | mV |
 
-0x606D (velocity window) and 0x606F (velocity threshold) are UNSIGNED32 instead of the standard's UNSIGNED16, because at 2²¹ inc/turn a 16-bit window is below 2 rpm.
+0x606D (velocity window) and 0x606F (velocity threshold) are UNSIGNED32 instead of the standard's UNSIGNED16, because at 2¹⁶ inc/turn a 16-bit window is at most 60 rpm.
 
 ### 9.5 Default PDOs
 | PDO | COB-ID | Content | Sent |

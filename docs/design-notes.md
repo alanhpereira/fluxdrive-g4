@@ -86,7 +86,7 @@ New native objects go in three places with the same index, sub and type: `k_tab`
 - **Faults:** a trip is a fault in any FSA state; only a fault reset clears it over CAN. A communication reset re-reports an active fault.
 - **Heartbeat loss** sends the drive to pre-operational (`NMT_CONTROL` has no `ERR_TO_STOPPED`), so TPDOs stop.
 - **Identity 0x1018:** vendor 0, product 1, revision `PROTO_VERSION << 16 | PARAM_VERSION`, serial = hash of the STM32 UID.
-- **0x606D / 0x606F are UNSIGNED32** (a deliberate departure: a 16-bit window at 2²¹ inc/rev is under 2 rpm, below the speed ripple of ±10–14 rpm at 60 rpm). Defaults 10 rpm / 1 rpm.
+- **0x606D / 0x606F are UNSIGNED32** (a deliberate departure: kept from the 2²¹ inc/rev era, when a 16-bit window was under 2 rpm; at 2¹⁶ inc/rev it would reach 60 rpm). Defaults 10 rpm / 1 rpm.
 
 ### Persistence
 - Motor parameters: pages 62–63 (`params.c`). CANopen record: pages 60–61 (`co_store.c`), A/B slots with seq and CRC32, holding node ID, bit rate, a copy of `OD_PERSIST_COMM` (reapplied at every communication reset) and `OD_PERSIST_APP` (applied once at boot), and the OD layout signature. Defaults come from the `.data` load image.
@@ -112,7 +112,7 @@ New native objects go in three places with the same index, sub and type: `k_tab`
 - 60B1 is not used in CSP (feed-forward comes from the target steps).
 - SYNC and RPDO timeouts don't stop the motor; master loss is detected through the heartbeat consumer and the NMT state only.
 - Homing: methods 35/37 only (no limit switches or index on this hardware).
-- Position wraps at ±1024 turns on the CAN side (unwrapped internally).
+- CAN-side position is Q16.16 turns (0x608F = 2¹⁶ inc/rev; the encoder's 2²¹ is truncated by 5 bits) and wraps at ±32 768 turns (unwrapped internally).
 - Not implemented: LSS, SDO client, TIME, node guarding, SRDO, GFC.
 - Not run yet: ROS (`ros2_canopen` with `driverTCC.eds` + `bus.yml`, CSP at 1 kHz SYNC).
 

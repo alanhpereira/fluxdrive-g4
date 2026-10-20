@@ -139,7 +139,7 @@ int SVPWM(float alpha, float beta) {
 #define PLL_KP (2.0f * PLL_BW)
 #define PLL_KI_TS (PLL_BW * PLL_BW / CTRL_FS_HZ)
 
-static int64_t s_home;		/* counts, motor direction */
+static int64_t s_home;		/* encoder counts, motor direction */
 static pos_q32_t s_pos;		/* from home, motor direction */
 static pos_q32_t s_pos_ref; /* latched from g_pos_ref_new */
 static int64_t s_pos_ff_q;	/* CSP interpolation: added to s_pos_ref every cycle (Q32.32 turns per cycle) */
@@ -165,7 +165,7 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 	int64_t raw = (int64_t)hMT6835.turns * 2097152 + (int64_t)ang;
 	int64_t p = (g_params.enc_dir > 0) ? raw : -raw;
 	if (g_home_req) {
-		s_home = p - g_home_pos;
+		s_home = p - ((int64_t)g_home_pos << POS_CNT_SHIFT);
 		g_home_req = 0;
 	}
 	if (g_pos_ref_req) {
@@ -222,8 +222,8 @@ static void motion_update(uint32_t ang, int fresh, float age_s) {
 		s_pos_ff = 0.0f;
 		g_pos_here_req = 0;
 	}
-	g_pos_cnt = (int32_t)(p - s_home); /* CANopen 0x6064: wraps at +-1024 turns */
-	g_pos_ref_cnt = (int32_t)(s_pos_ref >> 11); /* CANopen 0x6062 / following error: the interpolated reference */
+	g_pos_cnt = (int32_t)(s_pos >> 16); /* Q16.16 turns, CANopen 0x6064: wraps at +-32768 turns */
+	g_pos_ref_cnt = (int32_t)(s_pos_ref >> 16); /* CANopen 0x6062 / following error: the interpolated reference */
 	g_pos = q32_to_f(s_pos);
 
 	uint32_t ph = (uint32_t)p << 11; /* low 21 bits as a Q32 phase */

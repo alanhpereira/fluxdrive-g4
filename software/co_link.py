@@ -35,7 +35,7 @@ import protocol as P
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDS = os.path.join(HERE, "driverTCC.eds")
 PC_HB_ID = 0x7F
-INC_REV = 1 << 21  # 0x608F default; DriveNode reads the real one
+INC_REV = 1 << 16  # 0x608F default (Q16.16 turns); DriveNode reads the real one
 
 # ---------------------------------------------------------------------------------------------- texts
 ABORTS = {

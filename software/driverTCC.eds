@@ -8,7 +8,7 @@ Description=
 CreationTime=8:00AM
 CreationDate=10-17-2026
 CreatedBy=Hahn03
-ModificationTime=4:25PM
+ModificationTime=4:53PM
 ModificationDate=10-17-2026
 ModifiedBy=Hahn03
 
@@ -1911,7 +1911,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=524288
+DefaultValue=16384
 PDOMapping=0
 
 [6066]
@@ -1929,7 +1929,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=2048
+DefaultValue=64
 PDOMapping=0
 
 [6068]
@@ -1965,7 +1965,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=349525
+DefaultValue=10923
 PDOMapping=0
 
 [606E]
@@ -1983,7 +1983,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=34953
+DefaultValue=1092
 PDOMapping=0
 
 [6070]
@@ -2133,7 +2133,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=209715200
+DefaultValue=6553600
 PDOMapping=0
 
 [6080]
@@ -2142,7 +2142,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=rw
-DefaultValue=20971520
+DefaultValue=655360
 PDOMapping=0
 
 [6081]
@@ -2151,7 +2151,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=20971520
+DefaultValue=655360
 PDOMapping=1
 
 [6083]
@@ -2160,7 +2160,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=209715200
+DefaultValue=6553600
 PDOMapping=1
 
 [6084]
@@ -2169,7 +2169,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=209715200
+DefaultValue=6553600
 PDOMapping=1
 
 [6085]
@@ -2178,7 +2178,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=1048576000
+DefaultValue=32768000
 PDOMapping=0
 
 [6086]
@@ -2211,7 +2211,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=const
-DefaultValue=2097152
+DefaultValue=65536
 PDOMapping=0
 
 [608Fsub2]
@@ -2253,7 +2253,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=rw
-DefaultValue=2097152
+DefaultValue=65536
 PDOMapping=0
 
 [6099sub2]
@@ -2262,7 +2262,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=rw
-DefaultValue=209715
+DefaultValue=6554
 PDOMapping=0
 
 [609A]
@@ -2271,7 +2271,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_APP
 DataType=0x0007
 AccessType=rw
-DefaultValue=209715200
+DefaultValue=6553600
 PDOMapping=0
 
 [60B1]

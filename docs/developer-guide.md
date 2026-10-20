@@ -102,7 +102,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
   - Write the reference first, then switch the mode/loop.
   - The 64-bit position ref goes through `g_pos_ref_new` + the `g_pos_ref_req` handshake (64-bit writes are not atomic on the M4). The same handshake carries the CSP/PP interpolation: `g_pos_ff_new` (turn/s feed-forward), `g_pos_ff_q_new` (Q32.32 step added each cycle) and `g_pos_ff_n_new` (for that many cycles); `run_pos` sends n = 0. `g_pos_here_req` makes the reference the present position (bumpless switch into `LOOP_POS`).
   - Homing uses `g_home_req`; the present position becomes `g_home_pos` (0 from USB HOME, −0x607C from CANopen homing).
-  - `g_pos_cnt` (int32 encoder counts from home) is the atomic copy of the position for thread and tick code. `g_ramp_bypass` = 1 (CANopen modes) skips the `acc_lim` slew.
+  - `g_pos_cnt` (int32 Q16.16 turns from home, the CANopen increments; `POS_CNT_SHIFT` from encoder counts) is the atomic copy of the position for thread and tick code. `g_ramp_bypass` = 1 (CANopen modes) skips the `acc_lim` slew.
 - CANopen owns the motor from enable operation until it is off again (`g_can_owner`): USB RUN_*/CAL/HOME/SAVE/REBOOT then get `ST_CAN_ACTIVE`. USB STOP always works; the CANopen side then faults with 0xFF01.
 
 ### Units / fixed-point conventions

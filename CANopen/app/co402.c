@@ -10,7 +10,8 @@
 #include "objdict.h" /* od_write(): the parameter views go through the same checks as the USB protocol */
 #include "pi_ctrl.h" /* g_vel_ref, g_iq_ref */
 
-#define INC_PER_TURN 2097152.0f /* 0x608F: 2^21 increments per motor revolution */
+#define INC_PER_TURN 65536.0f /* 0x608F: 2^16 increments per motor revolution, Q16.16 turns (g_pos_cnt) */
+#define INC_TO_Q32 65536	  /* increments -> Q32.32 turns */
 #define TICK_S 0.001f
 #define STOP_WAIT_MS 1000 /* after a stop ramp reached zero: coast anyway if the motor is not slow by then */
 
@@ -421,12 +422,12 @@ static float interp_period(void) {
  * last one yet (try again next tick) */
 static int pos_step(int32_t dc, float T, uint8_t* lim) {
 	if (g_pos_ref_req) return 0;
-	g_pos_ref_new = (s_tgt64 + dc) * 2048; /* the segment's end, counts -> Q32.32 */
+	g_pos_ref_new = (s_tgt64 + dc) * INC_TO_Q32; /* the segment's end, counts -> Q32.32 */
 	const uint16_t n = (uint16_t)(T * CTRL_FS_HZ + 0.5f);
 	const float ff = (float)dc * (1.0f / INC_PER_TURN) / T;
 	if (fabsf(ff) > g_params.vel_lim * 1.001f) *lim = 1; /* the speed loop clamps it to vlim */
 	g_pos_ff_new = ff;
-	g_pos_ff_q_new = (int64_t)dc * 2048 / n; /* per cycle; the ISR recomputes it from where its reference is */
+	g_pos_ff_q_new = (int64_t)dc * INC_TO_Q32 / n; /* per cycle; the ISR recomputes it from where its reference is */
 	g_pos_ff_n_new = n;
 	g_pos_ref_req = 1;
 	s_tgt64 += dc;
@@ -493,7 +494,7 @@ void co402_tick(void) {
 	/* actual values */
 	const int32_t cnt = g_pos_cnt;
 	const int32_t ref = g_pos_ref_cnt; /* read together: at most one ISR cycle apart */
-	s_act64 += (int32_t)((uint32_t)cnt - (uint32_t)s_cnt_prev); /* int32 delta: unwraps past +-1024 turns */
+	s_act64 += (int32_t)((uint32_t)cnt - (uint32_t)s_cnt_prev); /* int32 delta: unwraps past +-32768 turns */
 	s_cnt_prev = cnt;
 	OD_RAM.x6064_positionActualValue = cnt;
 	OD_RAM.x606C_velocityActualValue = (int32_t)(g_vel * INC_PER_TURN);
@@ -804,7 +805,7 @@ void co402_init(void) {
 	OD_extension_init(OD_ENTRY_H6080, &s_ext_param[3]);
 	OD_extension_init(OD_ENTRY_H6041, &s_ext_sw);
 	OD_extension_init(OD_ENTRY_H607A, &s_ext_607A);
-	s_cnt_prev = g_pos_cnt; /* the unwrapped position starts where the encoder is (within +-1024 turns of home) */
+	s_cnt_prev = g_pos_cnt; /* the unwrapped position starts where the encoder is (within +-32768 turns of home) */
 	s_act64 = s_cnt_prev;
 	g_co402_state = FSA_SWITCH_ON_DISABLED;
 }

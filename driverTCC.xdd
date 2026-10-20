@@ -3571,19 +3571,19 @@
             <q1:property name="CO_flagsPDO" value="true" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6062">
-            <description lang="en">inc (2^21 per revolution)</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns)</description>
             <DINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6064">
-            <description lang="en">inc (2^21 per revolution), from home</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns), from home</description>
             <DINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6065" access="readWrite">
-            <description lang="en">inc (2^21 per revolution); 0xFFFFFFFF = off. Default a quarter turn</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns); 0xFFFFFFFF = off. Default a quarter turn</description>
             <UDINT />
-            <q1:defaultValue value="524288" />
+            <q1:defaultValue value="16384" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6066" access="readWrite">
@@ -3593,9 +3593,9 @@
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6067" access="readWrite">
-            <description lang="en">inc (2^21 per revolution); target reached band</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns); target reached band</description>
             <UDINT />
-            <q1:defaultValue value="2048" />
+            <q1:defaultValue value="64" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6068" access="readWrite">
@@ -3615,9 +3615,9 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606D" access="readWrite">
-            <description lang="en">inc/s (default 10 rpm); PV target reached band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 1.9 rpm with 2^21 inc/rev)</description>
+            <description lang="en">inc/s (default 10 rpm); PV target reached band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 60 rpm with 2^16 inc/rev)</description>
             <UDINT />
-            <q1:defaultValue value="349525" />
+            <q1:defaultValue value="10923" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606E" access="readWrite">
@@ -3627,9 +3627,9 @@
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_606F" access="readWrite">
-            <description lang="en">inc/s (default ~1 rpm); PV speed = 0 band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 1.9 rpm with 2^21 inc/rev)</description>
+            <description lang="en">inc/s (default ~1 rpm); PV speed = 0 band. UNSIGNED32 here (CiA 402: UNSIGNED16, at most 60 rpm with 2^16 inc/rev)</description>
             <UDINT />
-            <q1:defaultValue value="34953" />
+            <q1:defaultValue value="1092" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6070" access="readWrite">
@@ -3685,18 +3685,18 @@
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_607A" access="readWrite">
-            <description lang="en">inc (2^21 per revolution)</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns)</description>
             <DINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_607C" access="readWrite">
-            <description lang="en">inc (2^21 per revolution); position after homing</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns); position after homing</description>
             <DINT />
             <q1:defaultValue value="0" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_607D">
-            <description lang="en">inc (2^21 per revolution); PP and CSP targets are clamped to this range</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns); PP and CSP targets are clamped to this range</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_ARR_607D" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
@@ -3718,36 +3718,36 @@
           <q1:parameter uniqueID="UID_OBJ_607F" access="readWrite">
             <description lang="en">inc/s (default 100 rev/s)</description>
             <UDINT />
-            <q1:defaultValue value="209715200" />
+            <q1:defaultValue value="6553600" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6080" access="readWrite">
-            <description lang="en">inc/s; the motor parameter vlim (0x4021:4, turn/s x 2^21)</description>
+            <description lang="en">inc/s; the motor parameter vlim (0x4021:4, turn/s x 2^16)</description>
             <UDINT />
-            <q1:defaultValue value="20971520" />
+            <q1:defaultValue value="655360" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6081" access="readWrite">
             <description lang="en">inc/s (default 10 rev/s)</description>
             <UDINT />
-            <q1:defaultValue value="20971520" />
+            <q1:defaultValue value="655360" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6083" access="readWrite">
             <description lang="en">inc/s^2 (default 100 rev/s^2)</description>
             <UDINT />
-            <q1:defaultValue value="209715200" />
+            <q1:defaultValue value="6553600" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6084" access="readWrite">
             <description lang="en">inc/s^2</description>
             <UDINT />
-            <q1:defaultValue value="209715200" />
+            <q1:defaultValue value="6553600" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6085" access="readWrite">
             <description lang="en">inc/s^2 (default 500 rev/s^2)</description>
             <UDINT />
-            <q1:defaultValue value="1048576000" />
+            <q1:defaultValue value="32768000" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_6086" access="readWrite">
@@ -3757,7 +3757,7 @@
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_608F">
-            <description lang="en">2^21 increments per motor revolution (MT6835)</description>
+            <description lang="en">2^16 increments per motor revolution (Q16.16 turns; the MT6835 has 2^21)</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_608F" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_608F00">
@@ -3768,7 +3768,7 @@
           <q1:parameter uniqueID="UID_SUB_608F01" access="const">
             <label lang="en">Encoder increments</label>
             <UDINT />
-            <q1:defaultValue value="2097152" />
+            <q1:defaultValue value="65536" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_608F02" access="const">
             <label lang="en">Motor revolutions</label>
@@ -3794,17 +3794,17 @@
           <q1:parameter uniqueID="UID_SUB_609901" access="readWrite">
             <label lang="en">Speed during search for switch</label>
             <UDINT />
-            <q1:defaultValue value="2097152" />
+            <q1:defaultValue value="65536" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_609902" access="readWrite">
             <label lang="en">Speed during search for zero</label>
             <UDINT />
-            <q1:defaultValue value="209715" />
+            <q1:defaultValue value="6554" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_609A" access="readWrite">
             <description lang="en">inc/s^2</description>
             <UDINT />
-            <q1:defaultValue value="209715200" />
+            <q1:defaultValue value="6553600" />
             <q1:property name="CO_storageGroup" value="PERSIST_APP" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_60B1" access="readWrite">
@@ -3838,7 +3838,7 @@
             <q1:defaultValue value="-3" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_60F4">
-            <description lang="en">inc (2^21 per revolution)</description>
+            <description lang="en">inc (2^16 per revolution: Q16.16 turns)</description>
             <DINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
