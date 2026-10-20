@@ -75,6 +75,37 @@ def same(o, a, b):
         return False
 
 
+class ChoiceDelegate(QtWidgets.QStyledItemDelegate):
+    """Value column: a drop-down for objects with named choices (angsrc, hmode...), the plain line edit otherwise"""
+
+    def _obj(self, index):
+        key = index.siblingAtColumn(0).data(QtCore.Qt.ItemDataRole.UserRole)
+        return O.BY_KEY.get(key) if key else None
+
+    def createEditor(self, parent, option, index):
+        o = self._obj(index)
+        if not (o and o.choices):
+            return super().createEditor(parent, option, index)
+        cb = QtWidgets.QComboBox(parent)
+        cb.addItems(list(o.choices.values()))
+        cb.activated.connect(lambda _: (self.commitData.emit(cb), self.closeEditor.emit(cb)))
+        return cb
+
+    def setEditorData(self, editor, index):
+        if isinstance(editor, QtWidgets.QComboBox):
+            i = editor.findText(index.data())
+            editor.setCurrentIndex(max(i, 0))
+            editor.showPopup()
+        else:
+            super().setEditorData(editor, index)
+
+    def setModelData(self, editor, model, index):
+        if isinstance(editor, QtWidgets.QComboBox):
+            model.setData(index, editor.currentText())
+        else:
+            super().setModelData(editor, model, index)
+
+
 class ConfigTab(QtWidgets.QWidget):
     def __init__(self, main):
         super().__init__()
@@ -158,6 +189,7 @@ class ConfigTab(QtWidgets.QWidget):
         t.setHeaderLabels(["Parameter", "Value", "Unit", "Device", "Key"])
         t.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         t.setAlternatingRowColors(True)
+        t.setItemDelegateForColumn(1, ChoiceDelegate(t))
         t.itemDoubleClicked.connect(self._begin_edit)
         t.itemChanged.connect(self._item_changed)
         for g in O.PARAM_GROUPS:
@@ -172,7 +204,9 @@ class ConfigTab(QtWidgets.QWidget):
                 it = QtWidgets.QTreeWidgetItem([o.label, "", o.unit, "", o.key])
                 it.setData(0, QtCore.Qt.ItemDataRole.UserRole, o.key)
                 rng = ""
-                if o.lo is not None:
+                if o.choices:
+                    rng = "\n" + o.choices_text()
+                elif o.lo is not None:
                     rng = f"\nrange {o.fmt(o.lo)} … {o.fmt(o.hi)} {o.unit}"
                 flags = []
                 if o.flags & O.NOTRUN:
@@ -433,8 +467,12 @@ class ConfigTab(QtWidgets.QWidget):
             return
         o = O.BY_KEY[key]
         text = it.text(1).strip()
+        names = {n: k for k, n in (o.choices or {}).items()}
         try:
-            d = float(int(text, 0)) if o.type != P.T_F32 and text.lower().startswith("0x") else float(text)
+            if text in names:
+                d = float(names[text])
+            else:
+                d = float(int(text, 0)) if o.type != P.T_F32 and text.lower().startswith("0x") else float(text)
             v = o.from_display(d)
         except ValueError:
             self.log(f"{key}: '{text}' is not a number", RED)

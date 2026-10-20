@@ -10,7 +10,7 @@ RO, STORED, PI, NOTRUN = 0x01, 0x02, 0x04, 0x08
 
 class Obj:
     def __init__(self, index, sub, t, flags, key, label, unit="", scale=1.0, lo=None, hi=None, group="", help="",
-                 decimals=4):
+                 decimals=4, choices=None):
         self.index, self.sub, self.type, self.flags = index, sub, t, flags
         self.key = key  # the old 's <key>' name, also the JSON key
         self.label = label
@@ -20,6 +20,7 @@ class Obj:
         self.group = group
         self.help = help
         self.decimals = 0 if t != T_F32 else decimals
+        self.choices = choices  # {device value: name}: shown and edited by name (a drop-down)
 
     @property
     def ro(self):
@@ -38,23 +39,27 @@ class Obj:
     def fmt(self, v):
         if v is None:
             return ""
+        if self.choices and v in self.choices:
+            return self.choices[v]
         if self.type != T_F32:
             return f"0x{v:02X}" if self.key in ("flags", "st_flags") else str(v)
         d = self.to_display(v)
         return f"{d:.{self.decimals}f}" if abs(d) < 1e7 else f"{d:.4g}"
 
+    def choices_text(self):
+        """'0 = encoder, 1 = ...'; just the values when the names are the numbers themselves (dir, can_kbit)"""
+        return ", ".join(n if n.lstrip("+") == str(k) else f"{k} = {n}" for k, n in self.choices.items())
+
     def check(self, v):
         """None if v (device units) is acceptable, else a reason"""
         if v != v:
             return "not a number"
+        if self.choices:
+            return None if v in self.choices else "must be one of " + self.choices_text()
         if self.lo is not None and v < self.lo:
             return f"below {self.fmt(self.lo)} {self.unit}".strip()
         if self.hi is not None and v > self.hi:
             return f"above {self.fmt(self.hi)} {self.unit}".strip()
-        if self.key == "dir" and v == 0:
-            return "must be +1 or -1"
-        if self.key == "can_kbit" and v not in CAN_KBIT:
-            return "must be one of " + ", ".join(map(str, CAN_KBIT))
         return None
 
 
@@ -111,7 +116,8 @@ OBJECTS = [
     Obj(0x4010, 1, T_F32, STORED, "kv", "kv", "rpm/V", lo=0, hi=1e5, group=G_MOTOR, decimals=1,
         help="back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it"),
     Obj(0x4010, 2, T_U8, STORED | NOTRUN, "pp", "Pole pairs", lo=1, hi=64, group=G_MOTOR, help="measured by 'e'"),
-    Obj(0x4010, 3, T_I8, STORED | NOTRUN, "dir", "Encoder direction", lo=-1, hi=1, group=G_MOTOR, help="+1 or -1, measured by 'e'"),
+    Obj(0x4010, 3, T_I8, STORED | NOTRUN, "dir", "Encoder direction", lo=-1, hi=1, group=G_MOTOR, help="+1 or -1, measured by 'e'",
+        choices={1: "+1", -1: "-1"}),
     Obj(0x4010, 4, T_U32, STORED | NOTRUN, "offset", "Electrical offset", "2^32=360°", lo=0, hi=2**32 - 1, group=G_MOTOR,
         help="electrical angle offset, measured by 'e'"),
     Obj(0x4010, 5, T_F32, STORED, "rd", "Rd", "mΩ", 1e3, 0, 100, G_MOTOR, "phase resistance, measured by 'r'", 2),
@@ -128,7 +134,8 @@ OBJECTS = [
     Obj(0x4011, 1, T_U8, STORED | NOTRUN, "angsrc", "Angle source", lo=0, hi=2, group=G_MOTOR,
         help="0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the "
              "observer, no encoder in the loop (position mode refused, the encoder is only logged). "
-             "Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)"),
+             "Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)",
+        choices={0: "encoder", 1: "encoder + observer", 2: "sensorless"}),
     # 0x4020 current loop
     Obj(0x4020, 1, T_F32, STORED | PI, "kpd", "Kp d", "V/A", lo=0, hi=1e6, group=G_CUR),
     Obj(0x4020, 2, T_F32, STORED | PI, "kid", "Ki d", "V/(A·s)", lo=0, hi=1e6, group=G_CUR, decimals=2),
@@ -168,7 +175,8 @@ OBJECTS = [
     Obj(0x4023, 7, T_U8, RO, "coff_src", "Offsets from", group=G_DIAG, help="0 default, 1 stored, 2 measured at boot"),
     # 0x4030 observer
     Obj(0x4030, 1, T_U8, STORED, "oblend", "Blend observer", lo=0, hi=1, group=G_OBS,
-        help="1: blend into angle and speed above olo; 0: run and log it only"),
+        help="1: blend into angle and speed above olo; 0: run and log it only",
+        choices={0: "log only", 1: "blend"}),
     Obj(0x4030, 2, T_F32, STORED, "ogain", "Flux correction gain", "rad/s", lo=0, hi=1e6, group=G_OBS, decimals=0),
     Obj(0x4030, 3, T_F32, STORED, "olo", "Blend start", "V", lo=0, hi=100, group=G_OBS, decimals=2,
         help="peak back-EMF where the observer starts to get weight"),
@@ -179,7 +187,8 @@ OBJECTS = [
     # 0x4031 high-frequency injection
     Obj(0x4031, 1, T_U8, STORED | NOTRUN, "hmode", "HFI mode", lo=0, hi=1, group=G_HFI,
         help="0 off; 1 track and log while running (not during calibrations), in the encoder angle sources only. "
-             "Sensorless (angsrc 2) always injects. Injection adds hid in speed/position mode"),
+             "Sensorless (angsrc 2) always injects. Injection adds hid in speed/position mode",
+        choices={0: "off", 1: "track and log"}),
     Obj(0x4031, 2, T_U8, STORED | NOTRUN, "hhalf", "Half wave", "PWM periods", lo=2, hi=8, group=G_HFI,
         help="injection flips every hhalf periods (2 = 6.25 kHz square wave). 1 cannot work: "
              "the samples would sit on the midpoints of the current triangle"),
@@ -196,7 +205,8 @@ OBJECTS = [
     Obj(0x4040, 1, T_U8, STORED, "can_id", "Node ID", lo=1, hi=127, group=G_CAN,
         help="CANopen node ID. Takes effect at the next communication reset: 'Apply CAN settings', NMT reset, or reboot"),
     Obj(0x4040, 2, T_U16, STORED, "can_kbit", "Bit rate", "kbit/s", lo=20, hi=1000, group=G_CAN,
-        help="20, 50, 125, 250, 500 or 1000. Takes effect at the next communication reset"),
+        help="20, 50, 125, 250, 500 or 1000. Takes effect at the next communication reset",
+        choices={k: str(k) for k in CAN_KBIT}),
     Obj(0x4040, 3, T_U8, RO, "can_id_act", "Node ID in use", group=G_DIAG),
     Obj(0x4040, 4, T_U16, RO, "can_kbit_act", "Bit rate in use", "kbit/s", group=G_DIAG),
     Obj(0x4040, 5, T_U8, NOTRUN, "can_apply", "Apply CAN settings", lo=1, hi=1, group=G_DIAG,

@@ -127,7 +127,7 @@ Three areas: the parameter grid (left), the calibration panel and the log (right
 Parameters are grouped (Motor, Current loop, Speed / position, Limits, Current sensing, Observer, HF injection, CAN). Columns: name, value, unit, the value on the device, and the short key. Hover a row for its help text, object address, allowed range, and whether it can only be changed while stopped.
 
 Editing works in two steps:
-1. **Double-click** a value and type the new one. The GUI checks it against the range. A pending edit is shown bold, with a yellow background and `*` after the name.
+1. **Double-click** a value and type the new one. The GUI checks it against the range. Objects with named settings (angle source, encoder direction, observer blend, HFI mode, CAN bit rate) show the name and open a drop-down instead; the number is in the tooltip and is what the JSON export holds. A pending edit is shown bold, with a yellow background and `*` after the name.
 2. **Write changed** sends all pending edits to the device's RAM and reads them back. A refused write turns red; the reason is in the log.
 
 | Button | Action |
