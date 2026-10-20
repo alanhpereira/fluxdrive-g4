@@ -16,9 +16,9 @@ A field-oriented-control (FOC) driver for 3-phase permanent-magnet motors (BLDC/
 | Bridge | 3-phase bridge of six 100 V MOSFETs (DI100N10PQ), 25 kHz center-aligned PWM |
 | Current sensing | 3 low-side shunts, 2 mΩ, internal op-amps with gain 16 (about 12.6 mA per ADC count) |
 | Bus voltage sensing | 270 kΩ / 10 kΩ divider |
-| Position sensor | MT6835 21-bit magnetic encoder (2 097 152 counts per turn) over SPI |
+| Position sensor | MT6835 21-bit magnetic encoder (2 097 152 counts per turn) over SPI, or Hall sensors |
 | Control loops | current loop at 25 kHz; speed and position loops at 2.5 kHz |
-| Angle sources | encoder; encoder with a back-EMF flux observer blended in at speed; sensorless (high-frequency injection at low speed, observer at speed) |
+| Angle sources | encoder; encoder with a back-EMF flux observer blended in at speed; sensorless (high-frequency injection at low speed, observer at speed); Hall sensors; Hall sensors with high-frequency injection at low speed |
 | PC link | USB full-speed virtual COM port (ST VID/PID 0483:5740). UART at 2 Mbaud as a build-time alternative |
 | Field bus | CANopen on FDCAN1: CiA 301 node, CiA 402 drive profile (PP, PV, HM, CSP, CSV, CST), 20 kbit/s – 1 Mbit/s |
 | Parameter storage | internal flash, two redundant copies with CRC |
@@ -66,7 +66,7 @@ The logic supply (+5 V, +3.3 V) comes from the STSPIN32G4's internal buck regula
 |---|---|---|---|
 | J9 | JST PH 6-pin | 1 +3.3 V, 2 GND, 3 SPI1_NSS, 4 SPI1_SCK, 5 SPI1_MISO, 6 SPI1_MOSI | **MT6835 encoder (required for the encoder angle sources).** Mount the magnet centered on the shaft and the sensor rigidly: mount play shows up as angle error under load. |
 | J8 | JST PH 5-pin | 1 +3.3 V, 2 GND, 3 ENC_A, 4 ENC_B, 5 ENC_I | Incremental (ABI) encoder input. Not used. |
-| J13 | JST PH 5-pin | 1 +3.3 V, 2 GND, 3 HALL1, 4 HALL2, 5 HALL3 | Hall sensors. Not used. |
+| J13 | JST PH 5-pin | 1 +3.3 V, 2 GND, 3 HALL1, 4 HALL2, 5 HALL3 | Hall sensors (angle sources 3 and 4). 3.3 V logic; the inputs have internal pull-ups, so open-collector sensors work. The MT6835's U/V/W outputs can stand in for them on the bench (**u**, section 7). |
 | J12 | JST PH 2-pin | 1 +3.3 V, 2 M_TEMP | Motor temperature sensor (to a 10 kΩ divider). Not used yet. |
 | J11 | JST PH 3-pin | 1 +3.3 V, 2 GND, 3 DO1 | Spare digital I/O (PB10). Not used. |
 | J10 | JST PH 4-pin | 1 +3.3 V, 2 GND, 3 DO2, 4 DO3 | Spare digital I/O (PC15, PC14). Not used. |
@@ -120,7 +120,8 @@ In the parameter grid, set and **Write changed**:
 | Max current | `imax` | Peak current (A), above `rated`. Exceeding it trips the drive. |
 | Bus min / max | `vmin`, `vmax` | Undervoltage stop and overvoltage trip (V). |
 | Bandwidth | `bw` | Current-loop bandwidth for the autotune (Hz). At most 1250 Hz (fs/20); 500–1000 Hz is a usual start. |
-| Angle source | `angsrc` | Leave at 1 (encoder + observer) or 0 (encoder only) for commissioning. |
+| Angle source | `angsrc` | Leave at 1 (encoder + observer) or 0 (encoder only) for commissioning with an encoder. Without one, see section 7 (Hall). |
+| Pole pairs | `pp` | Only without an encoder (**e** measures them): the motor's pole pairs, before **H**. |
 
 ### 5.2 Calibration sequence
 Run each with **Run** in the Calibration panel. Results appear in the log and in the parameter grid. A calibration can be stopped at any time with **Abort** or **STOP**.
@@ -133,7 +134,8 @@ Run each with **Run** in the Calibration panel. Results appear in the log and in
 | **l** Inductance d | Decay of a 0.4 × rated d-axis current; also prints an L-vs-current curve. With an explicit test current it measures that point only and stores nothing. | Still | `ld` (and `lq` = `ld`) |
 | **q** Inductance q *(optional)* | Same on the q axis. **Hold the shaft**; a 5 s countdown shows before it applies torque. | Held | `lq` |
 | **t** PI autotune | Computes the current-loop gains from R, L and `bw` (pole-zero cancellation). | — | `kpd`, `kid`, `kpq`, `kiq` |
-| **k** kv | Spins up at 0.25 × rated, then coasts and measures the back-EMF. **Unload the shaft**; it starts after a 2 s countdown. Needs e, r, t. | **Spins fast** | `kv` (the observer derives the flux from it) |
+| **H** Hall table | Aligns the rotor at 0.5 × rated, then sweeps 5 electrical turns forward and 5 back and notes where each Hall state begins; the mean of the two directions cancels the rotor lag and the sensor hysteresis. Fails on a missing or invalid state ("order does not repeat") or a sector far from 60° ("pole pairs wrong?"). Needs `pp`; only for the Hall angle sources. | **Turns slowly**, shaft free | `hall1`…`hall6`, flag "Hall table" |
+| **k** kv | Spins up at 0.25 × rated, then coasts and measures the back-EMF. **Unload the shaft**; it starts after a 2 s countdown. Needs e (Hall sources: H), r, t. | **Spins fast** | `kv` (the observer derives the flux from it) |
 
 Then:
 - **Speed and position gains** (group "Speed / position"): set `vkp` (A per turn/s) and `vki` (A per turn), check `vlim` (speed limit, default 600 rpm) and `acc` (acceleration limit), and `pkp` for position mode (default 20 /s). Speed mode refuses to start while `vkp` = 0. Start with a small `vkp`, increase until the speed follows without ringing, then add `vki`.
@@ -142,10 +144,11 @@ Then:
 
 Optional steps:
 - **z** Reset encoder zero: rewrites the MT6835's zero position into its own EEPROM (takes ~6 s). Run **e** again afterwards.
-- **h** and **p**: HFI saliency map and polarity test, only needed for sensorless operation (section 7).
+- **h** and **p**: HFI saliency map and polarity test, only needed for sensorless operation (section 7). Hall + HFI needs **h** only.
+- **u** Encoder UVW outputs: sets the MT6835's U/V/W outputs to the pole pairs (argument; "default" uses `pp`) and saves them in its EEPROM (~6 s). For bench tests of the Hall angle sources without a Hall motor (section 7).
 
 ### 5.3 Prerequisites the driver enforces
-If something is missing, the command is refused with a status that names it, e.g. "run 'e' and 't' first", "set the speed gains first (vkp, vki)", "set the bandwidth first". The usual order is c → e → r → l → (q) → t → k.
+If something is missing, the command is refused with a status that names it, e.g. "run 'e' and 't' first", "set the speed gains first (vkp, vki)", "set the bandwidth first". The usual order is c → e → r → l → (q) → t → k; with Hall sensors and no encoder, c → `pp` → H → r → l → (q) → t → k.
 
 ---
 
@@ -157,7 +160,7 @@ All from the Run panel in the left sidebar of the PC program. Pressing Enter in 
 |---|---|---|
 | **Current** | id, iq (A) | Closed-loop current (torque) control. The vector is scaled down to `rated` if larger. iq produces torque; id is normally 0. With no load the motor accelerates until something limits it — use with care. |
 | **Speed** | rpm | Speed loop. The setpoint is limited to `vlim` and ramped at `acc` (rpm/s). |
-| **Position** | turns from home | Position loop (P) feeding the speed loop, limited to `vlim`. Exact to about 1e-9 turn. Encoder angle sources only. |
+| **Position** | turns from home | Position loop (P) feeding the speed loop, limited to `vlim`. Exact to about 1e-9 turn with the encoder; with the Halls only as good as their angle (section 7). Refused in sensorless mode. |
 | **Home** | — | Makes the present position 0 (stops first if running). |
 | **STOP** | — | Speed/position: ramps to zero, then coasts. Current mode: coasts at zero current. Below 30 rpm the bridge then applies zero volts (motor off). |
 
@@ -172,6 +175,7 @@ While running, the driver stops by itself (and reports why in the log and the Ru
 - overspeed: |speed| > 1.5 × `vlim`,
 - encoder lost: no valid angle for 10 ms (cable, supply, CRC errors) — the bridge is switched off and the motor coasts,
 - sensorless: HFI lost for 50 ms, or a polarity result too weak to trust,
+- Hall sensors lost: an invalid state (000 or 111: unplugged, no supply) for 10 ms — the bridge is switched off and the motor coasts,
 - the trips in section 8.
 
 ---
@@ -185,6 +189,8 @@ Set with `angsrc` (only while stopped), then save.
 | 0 | Encoder only | Simplest. The observer and HFI still run for logging if enabled, but do not affect control. |
 | 1 | Encoder + observer *(default)* | Below `olo` of back-EMF the encoder is used; between `olo` and `ohi` the observer's angle and speed are blended in (with `oblend` = 1), once it has passed its flux check and agreed with the encoder. Position always comes from the encoder. Gives a cleaner speed estimate at high speed. |
 | 2 | Sensorless | HFI (high-frequency injection) at standstill and low speed, the observer above `olo`. The encoder is not used for control (only logged). **Position mode is refused.** |
+| 3 | Hall | The Hall sensors on J13, interpolated between their edges with the speed measured over the last electrical turn; the observer blends in above `olo` (with `oblend` = 1). No encoder needed. At standstill the angle sits in the middle of the Hall sector (up to 30° electrical off: about 87 % of the torque for the current). Position counts the angle: coarse at low speed (6 × `pp` steps per turn). Works on any motor. |
+| 4 | Hall + HFI | HFI at standstill and low speed, started on the Hall angle (so no polarity pulses) and kept inside the Hall sector: if it strays out for 2 ms it is put back on the Hall angle (counted in "HFI re-seeds"), never a stop. Between `hyblo` and `hybhi` the Hall angle fades in and the injection pauses above it; the observer blends in above `olo`. Full torque and fine position at standstill. Needs a salient motor (the **h** map) and the Hall sensors. |
 
 ### Sensorless commissioning
 Sensorless needs, in addition to r, l, t and k:
@@ -196,6 +202,16 @@ Sensorless needs, in addition to r, l, t and k:
 Starting while the motor is already spinning fast is not supported in sensorless mode. With the encoder fitted, the plotter's "HFI − encoder" and "Observer − encoder" plots show the estimation error.
 
 `hmode` = 1 runs HFI as an estimate only (logged, not used) in the encoder angle sources, for tuning.
+
+### Hall commissioning
+1. Wire the sensors to J13 (HALL1..3, 3.3 V, GND). Turn the shaft by hand: "Hall state" in the Status box must step through 1…6 (all six, 0 or 7 never), 6 × `pp` steps per mechanical turn.
+2. Without an encoder, set `pp` by hand.
+3. Run **c**, then **H**, **r**, **l**, **t** and **k** (section 5). With the Halls the observer needs `kv` like with the encoder.
+4. Set `angsrc` = 3 (or 4, after **h** and `hv`, `hid` as for sensorless), save.
+
+The order of the wires does not matter: **H** learns which state is where. Swapping two motor phases does, so rerun **H** after rewiring.
+
+**Bench test without a Hall motor:** the MT6835 has U/V/W outputs that act as ideal Hall sensors. Wire them to J13 HALL1..3 (with the encoder's GND), run **e** (for `pp`), then **u**, then **H** in `angsrc` 1. In `angsrc` 3 the "HFI / Hall error" plot then shows Hall − encoder, and in 4 HFI − Hall. Being ideal, these signals do not exercise the sensor-placement averaging and the glitch filter that a real Hall motor needs.
 
 ---
 
@@ -209,7 +225,8 @@ Starting while the motor is already spinning fast is not supported in sensorless
 | Undervoltage | bus < `vmin` | Stop. Calibrations and runs are refused below it. | Raise the supply. |
 | Overspeed | \|speed\| > 1.5 × `vlim` | Stop (coast). | — |
 | Encoder lost | no valid angle for 10 ms (encoder modes) | Bridge off, motor coasts. The driver re-sends the encoder setup every 100 ms while stopped, so a sensor that lost power comes back. | Home again if absolute position matters. |
-| Gate driver fault | nFAULT / break input | Bridge off by hardware. The STOPPED message gives the bus voltage and the driver's reason: VCC UVLO (the supply sagged, often a bench supply's current limit), thermal shutdown, VDS protection (MOSFET overcurrent) or driver reset. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless: after 3 s). |
+| Hall lost | Hall state 000 or 111 for 10 ms (Hall modes) | Bridge off, motor coasts. | Reconnect; home again if absolute position matters. |
+| Gate driver fault | nFAULT / break input | Bridge off by hardware. The STOPPED message gives the bus voltage and the driver's reason: VCC UVLO (the supply sagged, often a bench supply's current limit), thermal shutdown, VDS protection (MOSFET overcurrent) or driver reset. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless, or a lost encoder or Halls: after 3 s). |
 
 While a trip is latched, every command except STOP and REBOOT is refused with "a trip is latched". The Status box shows the trip and whether the bridge was switched off.
 
@@ -274,6 +291,7 @@ The mapping can be changed by the master and stored with 0x1010:2.
 | DC link over / under voltage | 0x3210 / 0x3220 |
 | Gate driver fault / break | 0x5400 |
 | Encoder lost | 0x7305 |
+| Hall sensors lost | 0x7306 |
 | Sensorless angle lost / polarity weak | 0x7300 |
 | Overspeed | 0x8400 |
 | Following error (PP, CSP: 6065 / 6066) | 0x8611 |
@@ -313,8 +331,11 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | `ld`, `lq` | Inductance | µH | 500 | From **l** / **q**. |
 | `rated` | Rated current | A | 1.0 | Calibration currents and current-command limit. |
 | `imax` | Max current | A | 1.5 | Overcurrent trip level. |
-| `flags` | Calibration flags | bits | 0 | 1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned. Restored by JSON import. |
-| `angsrc` | Angle source | 0/1/2 | 1 | Section 7. Stopped. |
+| `flags` | Calibration flags | bits | 0 | 1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned, 32 Hall table. Restored by JSON import. |
+| `angsrc` | Angle source | 0–4 | 1 | Section 7. Stopped. |
+| `hall1`…`hall6` | Hall state *n* begins | 2¹⁶ = 360° elec | 0 | From **H**. Stopped. |
+| `hall_state` | Hall state | 0–7 | — | Live, read only: HALL1 = 1, HALL2 = 2, HALL3 = 4. |
+| `hyblo`, `hybhi` | Hall + HFI handover | rpm | 150, 400 | `angsrc` 4: HFI alone below `hyblo`, the Halls alone above `hybhi`. |
 
 ### Current loop
 | Key | Name | Unit | Default | Notes |
@@ -388,6 +409,10 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | "current-sense offsets implausible" | The rotor turned during **c**, or a sense channel is faulty. |
 | "a trip is latched" | Press STOP after the motor has coasted down. |
 | "encoder: no valid angle for 10 ms" | Check the encoder cable and supply; the Statistics box shows CRC errors, stalls and the sensor status (weak field = magnet too far). |
+| "Hall sensors lost" | Check J13 and the sensor supply: the Hall state must never read 0 or 7. |
+| "Hall calibration: … order does not repeat" | A state is missing or a sensor glitches: turn by hand and watch the Hall state; check the wiring and the shaft is free. |
+| "Hall calibration: a sector is not 60 ± 25 deg" | `pp` is wrong, or the rotor did not follow the sweep (raise `rated`, unload). |
+| "HFI re-seeds" counting up in `angsrc` 4 | HFI loses the angle under load or at speed: raise `hv`, check `hsal`, or lower `hyblo`/`hybhi`. |
 | "not allowed while the motor runs: stop first" | Saving, rebooting and calibrating need the motor off. |
 | "the CANopen master has the motor" | Disable the drive on the CAN side, or press STOP. |
 | Loop time max red (≥ 19 µs), or encoder "late" growing | Firmware timing problem; report it with the diagnostics. |

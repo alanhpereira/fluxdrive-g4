@@ -243,14 +243,20 @@ flowchart TD
     FR -- no --> LI["g_enc_lost_n++"]
     LZ --> MU
     LI --> MU
-    MU["motion_update()<br/>encoder PLL: speed, multi-turn position"] --> CLK["clarke(ia, ib, ic) → iα, iβ"]
+    MU["motion_update()<br/>encoder PLL: speed;<br/>position from the encoder,<br/>or (ang_src 3/4) last cycle's Hall position"] --> CLK["clarke(ia, ib, ic) → iα, iβ"]
     CLK --> OBS["obs_update()<br/>flux observer (every mode)"]
     OBS --> HE["hfi_estimate()<br/>HFI angle + speed"]
-    HE --> SRC{"ang_src"}
+    HE --> HU["hall_update() (flash)<br/>Hall state, interpolated angle + speed"]
+    HU --> SRC{"ang_src"}
     SRC -- "0/1 encoder" --> BASE_E["base = encoder angle,<br/>advanced by speed × age"]
     SRC -- "2 sensorless" --> BASE_H["base = HFI angle"]
+    SRC -- "3 Hall" --> BASE_L["base = Hall angle"]
+    SRC -- "4 Hall + HFI" --> BASE_Y["guard: HFI outside the Hall sector<br/>for 2 ms → hfi_reseed()<br/>base = HFI → Hall by speed<br/>(hyb_lo..hyb_hi)"]
+    BASE_L --> HP2["hall_pos_step()<br/>position += Δbase / pp"]
+    BASE_Y --> HP2
     BASE_E --> OPLL
     BASE_H --> OPLL
+    HP2 --> OPLL
     OPLL["obs_pll()<br/>observer speed"] --> WGT["obs_weight()<br/>blend weight w (0..1)<br/>lock / drop checks"]
     WGT --> VEL["s_vel = blend(base speed, observer speed, w)"]
     VEL --> MODE{"g_mode"}
@@ -282,7 +288,7 @@ flowchart TD
 Notes:
 - The outer loops and the telemetry fill never run in the same cycle, which keeps the worst-case loop time down.
 - `trip_check()` can force a coast (id = iq = 0) or switch MOE off; see [section 11](#11-stops-trips-and-faults).
-- Everything in this chart runs from CCM SRAM except `send_telemetry()`.
+- Everything in this chart runs from CCM SRAM except `send_telemetry()` and `hall_update()` (CCM is full).
 
 ---
 
@@ -293,29 +299,37 @@ flowchart LR
     subgraph SRCS["Sources"]
         E["Encoder<br/>MT6835, 21 bit"]
         H["HFI<br/>(saliency, low speed)"]
+        L["Hall sensors<br/>(J13, 6 states per electrical turn)"]
         O["Flux observer<br/>(back-EMF, speed)"]
     end
 
     E --> EP["encoder PLL<br/>motion_update()"]
     H --> HP["HFI PLL"]
     O --> OP["observer PLL<br/>obs_pll()"]
+    L --> LI["hall_update()<br/>edge + speed × time, clamped to the sector"]
 
     EP --> SEL{"ang_src"}
     HP --> SEL
     SEL -- "0: encoder" --> BASE["base angle + speed"]
     SEL -- "1: encoder + obs" --> BASE
     SEL -- "2: sensorless" --> BASE
+    LI --> SEL
+    SEL -- "3: Hall" --> BASE
+    SEL -- "4: Hall + HFI" --> BASE
 
     BASE --> BL["blend with weight w<br/>w = 0 below obs_lo_v,<br/>1 at obs_hi_v,<br/>only after lock"]
     OP --> BL
     BL --> TH["commutation angle θm, θo"]
     BL --> SV["s_vel → speed loop,<br/>g_vel, output advance"]
-    EP --> POS["position (always encoder)<br/>→ position loop, g_pos_cnt"]
+    EP --> POS["position: encoder (0-2),<br/>accumulated base angle (3, 4)<br/>→ position loop, g_pos_cnt"]
+    BASE --> POS
 ```
 
 - `ang_src` 0: encoder only (w is computed but forced to 0).
 - `ang_src` 1: blends the observer in when `obs_blend` = 1.
 - `ang_src` 2: HFI is the base, the observer always blends in above `obs_lo_v`; the encoder is only logged and position mode is refused.
+- `ang_src` 3: the interpolated Hall angle is the base; the observer blends in with `obs_blend` = 1.
+- `ang_src` 4: HFI, started on the Hall angle and kept in the Hall sector, crossfades to the Hall angle between `hyb_lo` and `hyb_hi` (the injection pauses above); the observer blends in with `obs_blend` = 1. In 3 and 4 the position is the base angle accumulated.
 
 ---
 
@@ -519,7 +533,7 @@ The same test runner works from the command line (`cotest.py`) and from the CANo
 
 ```mermaid
 flowchart TB
-    P0["Priority 0 (cannot preempt each other)<br/>ADC1_2 → cs_adc_irq → currentLoop<br/>TIM1_UP (encoder DMA start)<br/>TIM1_BRK (nFAULT break)<br/>EXTI0-2 (Hall, unused)"]
+    P0["Priority 0 (cannot preempt each other)<br/>ADC1_2 → cs_adc_irq → currentLoop<br/>TIM1_UP (encoder DMA start)<br/>TIM1_BRK (nFAULT break)<br/>(EXTI0-2: disabled, the Halls are polled)"]
     P1["Priority 1<br/>USB_LP (or USART1): link RX/TX,<br/>deferred telemetry"]
     P2["Priority 2 (CO_IRQ_PRIO)<br/>FDCAN1_IT0, TIM7 1 kHz CANopen tick"]
     P15["Priority 15<br/>SysTick (HAL_GetTick)"]

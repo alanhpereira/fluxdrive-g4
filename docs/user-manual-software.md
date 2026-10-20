@@ -54,7 +54,7 @@ On the USB page the left sidebar is shared by the Scope and Config tabs:
 | **Connection** | Port, baud, Connect/Disconnect. |
 | **Run** | Motor commands over USB (below). |
 | **Status / faults** | State (off / calibration / run, loop, coasting, running calibration), bridge enabled or disabled with nFAULT / break / READY warnings, latched trip, gate-driver status bits, bus voltage, flash state (saved or unsaved changes, save count). |
-| **Statistics** | Control-loop time and its max (red at ≥ 19 µs), encoder reads and CRC / late / stall counters and sensor status, current offsets in use and their source, link timeouts and device RX errors, CAN node state, frame counters and the CiA 402 state. **Clear max / counters** resets them. **Apply CAN settings** makes a new node ID / bit rate take effect. |
+| **Statistics** | Control-loop time and its max (red at ≥ 19 µs), encoder reads and CRC / late / stall counters and sensor status, the Hall state with its bad-state and HFI re-seed counters, current offsets in use and their source, link timeouts and device RX errors, CAN node state, frame counters and the CiA 402 state. **Clear max / counters** resets them. **Apply CAN settings** makes a new node ID / bit rate take effect. |
 | **Display**, **Plots** | Only with the Scope tab (section 4). |
 
 Status is polled 4 times per second while connected.
@@ -85,14 +85,14 @@ Tick the plots to show in the **Plots** box:
 |---|---|
 | Angle (deg) | Electrical angle. |
 | Bus voltage (V) | |
-| HFI − encoder (deg elec) | HFI angle error (NaN with HFI off). |
+| HFI / Hall error (deg elec) | HFI − encoder (NaN with HFI off); with `angsrc` 3 Hall − encoder (NaN without an encoder), with 4 HFI − Hall. |
 | Id / Iq (A) *(default)* | Measured d/q currents. |
 | Speed (rpm) *(default)* | Speed and its reference. |
 | Position (turns) *(default)* | Position and its reference. |
 | Observer − encoder (deg elec) | Observer angle error. |
 | Observer flux / blend | \|flux\|/λ and the blend weight (0–1). |
-| Speed sources (rpm) | Speed used by the loop, observer speed, encoder speed. |
-| HFI speed (rpm) | HFI and encoder speed. |
+| Speed sources (rpm) | Speed used by the loop, observer speed, encoder speed (Hall speed with `angsrc` 3 and 4). |
+| HFI speed (rpm) | HFI and encoder (or Hall) speed. |
 | HFI signal (A) | HF current step (size the injection voltage with it). |
 
 All plots share the time axis. Drag to pan, wheel to zoom, double-click (or **Auto-scale**) to return to the full window with automatic vertical scale.
@@ -115,7 +115,7 @@ frames = np.fromfile("run1.bin", dtype=dt)
 v = frames["v"]            # v[:, 5] = id, v[:, 6] = iq, v[:, 7] = rpm, v[:, 9] = position ...
 t = np.arange(len(v)) / 2500.0
 ```
-The 16 values per frame are: 0 angle, 1 bus voltage, 2 HFI − encoder, 3 HFI rpm, 4 HFI step, 5 id, 6 iq, 7 rpm, 8 rpm reference, 9 position, 10 position reference, 11 observer − encoder, 12 \|flux\|/λ, 13 blend weight, 14 observer rpm, 15 encoder rpm.
+The 16 values per frame are: 0 angle, 1 bus voltage, 2 HFI − encoder (Hall − encoder with `angsrc` 3, HFI − Hall with 4), 3 HFI rpm, 4 HFI step, 5 id, 6 iq, 7 rpm, 8 rpm reference, 9 position, 10 position reference, 11 observer − encoder, 12 \|flux\|/λ, 13 blend weight, 14 observer rpm, 15 encoder rpm (Hall rpm with `angsrc` 3 and 4).
 
 ---
 
@@ -150,6 +150,7 @@ One row per calibration step, with its state (**done** / **missing** / **running
 |---|---|
 | c | Current-sense offsets (rotor still) |
 | e | Encoder: direction, pole pairs, offset (rotor turns) |
+| H | Hall table (rotor turns; set `pp` first without an encoder) |
 | r | Resistance |
 | l | Inductance d |
 | q | Inductance q (optional, hold the shaft) |
@@ -158,8 +159,10 @@ One row per calibration step, with its state (**done** / **missing** / **running
 | z | Reset encoder zero (EEPROM) |
 | h | HFI saliency map |
 | p | HFI lock + polarity test |
+| u | Encoder UVW outputs as Hall sensors (bench; pole-pairs field) |
 
 - Steps that move the motor or need the shaft held ask for confirmation first.
+- **u** has a pole-pairs field: "default" (0) uses `pp`.
 - **l**, **q** and **h** have a current field. "default" (0) measures at the standard current and stores the result; an explicit current measures that point only and stores nothing (for an L-vs-current curve or a saliency check at one bias).
 - During a step, a countdown shows in large red text when the driver is about to apply torque or spin ("HOLD THE SHAFT: q test starts in …", "motor spins in …").
 - **Abort** (or STOP) ends a running step. The motor is switched off at the end of every step, successful or not.
