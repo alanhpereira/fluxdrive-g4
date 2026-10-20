@@ -78,14 +78,16 @@ HAL_StatusTypeDef MT6835_ReadAngle(MT6835_HandleTypeDef* hMT6835) {
 	return HAL_OK;
 }
 
+/* ZERO_POS[11:0] = 0: bits 11:4 are all of 0x009, bits 3:0 the high nibble of 0x00A (its low nibble is Z_EDGE and
+ * Z_PUL_WID, kept) */
 HAL_StatusTypeDef MT6835_ResetZero(MT6835_HandleTypeDef* hMT6835) {
 	HAL_StatusTypeDef status;
 	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, 0x00);
 	if (status != HAL_OK) return status;
 	uint8_t tmp;
-	status = MT6835_ReadRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, &tmp);
+	status = MT6835_ReadRegister(hMT6835, MT6835_ADDR_ZERO_POS_L, &tmp);
 	if (status != HAL_OK) return status;
-	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_H, tmp & 0x0f);
+	status = MT6835_WriteRegister(hMT6835, MT6835_ADDR_ZERO_POS_L, tmp & 0x0f);
 	return status;
 }
 
