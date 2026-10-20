@@ -8,6 +8,7 @@
 #include "co402.h"    /* 0x4042 */
 #include "co_app.h"   /* 0x4040/0x4041 */
 #include "co_store.h" /* co_store_dirty() */
+#include "hall.h"
 #include "hfi.h" /* HFI_HALF_MAX */
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "mt6835.h"
@@ -69,6 +70,8 @@ static const obj_t k_tab[] = {
 	{0x4002, 9, T_U32, 0, F(g_proto_err), 0.0f, 0.0f},
 	{0x4002, 10, T_U32, 0, F(g_tlm_drop), 0.0f, 0.0f},
 	{0x4002, 11, T_U32, 0, F(g_ov_resumes), 0.0f, 0.0f},
+	{0x4002, 12, T_U32, 0, F(g_hall_bad_total), 0.0f, 0.0f},
+	{0x4002, 13, T_U32, 0, F(g_hyb_reseeds), 0.0f, 0.0f},
 	/* 0x4010 motor */
 	{0x4010, 1, T_F32, OF_STORED, F(g_params.kv), 0.0f, 1.0e5f},
 	{0x4010, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.pole_pairs), 1.0f, 64.0f},
@@ -82,7 +85,17 @@ static const obj_t k_tab[] = {
 	{0x4010, 10, T_F32, OF_STORED, F(g_params.max_current), 0.0f, 50.0f},
 	{0x4010, 11, T_U32, OF_STORED | OF_NOTRUN, F(g_params.flags), 0.0f, 255.0f},
 	/* 0x4011 angle source */
-	{0x4011, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.ang_src), 0.0f, 2.0f},
+	{0x4011, 1, T_U8, OF_STORED | OF_NOTRUN, F(g_params.ang_src), 0.0f, 4.0f},
+	/* Hall table (CAL_HALL): where states 1..6 begin, Q16 electrical */
+	{0x4011, 2, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[1]), 0.0f, 65535.0f},
+	{0x4011, 3, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[2]), 0.0f, 65535.0f},
+	{0x4011, 4, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[3]), 0.0f, 65535.0f},
+	{0x4011, 5, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[4]), 0.0f, 65535.0f},
+	{0x4011, 6, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[5]), 0.0f, 65535.0f},
+	{0x4011, 7, T_U16, OF_STORED | OF_NOTRUN, F(g_params.hall_edge[6]), 0.0f, 65535.0f},
+	{0x4011, 8, T_U8, OF_RO, F(g_hall_state), NOLIM},
+	{0x4011, 9, T_F32, OF_STORED, F(g_params.hyb_lo), 0.0f, 1.0e5f},
+	{0x4011, 10, T_F32, OF_STORED, F(g_params.hyb_hi), 0.0f, 1.0e5f},
 	/* 0x4020 current loop */
 	{0x4020, 1, T_F32, OF_STORED | OF_PI, F(g_params.kp_d), 0.0f, 1.0e6f},
 	{0x4020, 2, T_F32, OF_STORED | OF_PI, F(g_params.ki_d), 0.0f, 1.0e6f},
@@ -325,6 +338,8 @@ uint32_t od_write(uint16_t index, uint8_t sub, const uint8_t* v, uint8_t len) {
 
 	store_obj(o, v); /* one aligned 1/2/4-byte store: atomic for the ISR */
 	if (o->flags & OF_PI) pi_apply();
+	/* the Hall table, or the flag that says it is valid (both NOTRUN: the motor is off) */
+	if (o->p == &g_params.flags || (o->p >= (void*)&g_params.hall_edge[1] && o->p <= (void*)&g_params.hall_edge[6])) hall_table_apply();
 	return 0;
 }
 

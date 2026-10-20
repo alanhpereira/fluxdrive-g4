@@ -22,12 +22,16 @@ CAN_BITS = [(0x0004, "BUS-OFF"), (0x0002, "TX passive"), (0x0001, "TX warning"),
 CPU_MHZ = 170.0
 C_LOCALE = QtCore.QLocale.c()  # '.' decimals whatever the OS locale: with ',' locales "0.75" was read as 75 / 7
 
-# calibration steps: (key, CAL which, label, done flag (None: optional), takes a test current, safety prompt)
+# calibration steps: (key, CAL which, label, done flag (None: optional), argument (False none, True a test current,
+# "pp" pole pairs), safety prompt)
 STEPS = [
     ("c", P.CAL_CUR_OFF, "Current-sense offsets (rotor still)", O.PF_CUR_CAL_VALID, False, None),
     ("e", P.CAL_ENC, "Encoder: dir, pole pairs, offset", O.PF_ELEC_OFFSET_VALID, False,
      "The rotor turns slowly under a forced field (about 20 electrical turns, then one mechanical turn each way).\n"
      "The shaft must be free to turn."),
+    ("H", P.CAL_HALL, "Hall table (set pp first without an encoder)", O.PF_HALL_VALID, False,
+     "The rotor turns slowly under a forced field: 5 electrical turns forward, then 5 back.\n"
+     "The shaft must be free to turn. Pole pairs (pp) must be right: 'e' measures them, else set them by hand."),
     ("r", P.CAL_R, "Resistance", O.PF_R_VALID, False, None),
     ("l", P.CAL_LD, "Inductance d", O.PF_L_VALID, True, None),
     ("q", P.CAL_LQ, "Inductance q (optional, hold shaft)", None, True,
@@ -38,6 +42,9 @@ STEPS = [
     ("z", P.CAL_ZERO, "Reset encoder zero (EEPROM)", None, False,
      "Resets the MT6835 zero position and saves it to the encoder EEPROM.\n"
      "The electrical offset must be recalibrated ('e') afterwards."),
+    ("u", P.CAL_UVW, "Encoder UVW outputs as Halls (bench)", None, "pp",
+     "Sets the MT6835's U/V/W outputs to the pole pairs and saves them to its EEPROM (about 6 s).\n"
+     "Wire U, V, W to J13 HALL1..3 to use them as Hall sensors. Then run 'H'."),
     ("h", P.CAL_HFI_MAP, "HFI saliency map (go/no-go)", "hsal", True,
      "Injects at 24 angles around the rotor with a d bias and iq = 0 (audible whine).\n"
      "The rotor should stay still; the encoder is the reference."),
@@ -47,6 +54,7 @@ STEPS = [
 ]
 
 ARG_TIPS = {
+    "u": "UVW pole pairs, 1..16. 'default' (0) uses pp",
     "h": "d-axis bias. 'default' (0) maps at 0, 0.25 and 0.5 x rated and at hid, and stores hsal from the hid one;\n"
          "an explicit current maps that bias only and stores nothing",
 }
@@ -54,13 +62,13 @@ ARG_TIPS = {
 STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "trip", "trip_moe", "coasting", "vin", "busy",
                "dirty", "seq"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
-             "enc_crc_check", "proto_err", "ov_resumes", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src",
+             "enc_crc_check", "proto_err", "ov_resumes", "hall_state", "hall_bad", "hyb_reseeds", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src",
              "can_id_act", "can_kbit_act", "can_nmt", "can_err", "can_rx", "can_tx", "can_lost", "fsa", "fsa_refused",
              "fsa_fault", "can_owner"]
 TRIPS = {1: "bus overvoltage", 2: "overcurrent"}
 COFF_SRC = {0: "default", 1: "stored", 2: "measured at boot"}
 CLEAR_KEYS = ["loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "proto_err", "ov_resumes", "can_rx", "can_tx",
-              "can_lost"]
+              "can_lost", "hall_bad", "hyb_reseeds"]
 
 
 def bits(v, table):
@@ -245,8 +253,11 @@ class ConfigTab(QtWidgets.QWidget):
                 lb.setToolTip(prompt)
             grid.addWidget(lb, r, 0)
             grid.addWidget(done, r, 1)
-            if arg:
+            if arg == "pp":
+                sp = QtWidgets.QDoubleSpinBox(decimals=0, minimum=0.0, maximum=16.0, singleStep=1.0, suffix=" pp")
+            elif arg:
                 sp = QtWidgets.QDoubleSpinBox(decimals=2, minimum=0.0, maximum=50.0, singleStep=0.5, suffix=" A")
+            if arg:
                 sp.setLocale(C_LOCALE)
                 sp.setSpecialValueText("default")
                 sp.setToolTip(ARG_TIPS.get(key, "Test current. 'default' (0) uses 0.4 x rated and stores the result;\n"
@@ -641,7 +652,7 @@ class ConfigTab(QtWidgets.QWidget):
             if r != QtWidgets.QMessageBox.StandardButton.Ok:
                 return
         a = self.step_arg[key].value() if arg else 0.0
-        self.log(f"> {key}: {label}" + (f" at {a:.2f} A" if a else ""), BLUE)
+        self.log(f"> {key}: {label}" + ((f" at {a:.0f} pp" if arg == "pp" else f" at {a:.2f} A") if a else ""), BLUE)
 
         def cb(res):
             if res.ok:
@@ -819,7 +830,9 @@ class ConfigTab(QtWidgets.QWidget):
             def n(k):
                 return f"<span style='color:{RED}'>{g(k)}</span>" if g(k) else "0"
             self.st_lbl["enc"].setText(f"{g('enc_samples'):,} reads<br>CRC {n('enc_crc')}, late {n('enc_late')}, "
-                                       f"stalls {n('enc_stalls')}<br>status {bits(es, ENC_BITS)}{crc}")
+                                       f"stalls {n('enc_stalls')}<br>status {bits(es, ENC_BITS)}{crc}"
+                                       + (f"<br>Hall state {g('hall_state')}, bad {n('hall_bad')}, HFI re-seeds {n('hyb_reseeds')}"
+                                          if "hall_state" in s else ""))
 
     def _show_can(self):
         s, g = self.st, self.st.get

@@ -24,10 +24,12 @@ REBOOT_RESET, REBOOT_DFU = 0, 1
 REPLY, EVENT = 0x80, 0x7F  # EVENT has no REPLY bit: it must never equal (request | REPLY)
 
 # CAL which
-CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO, CAL_HFI_MAP, CAL_HFI_POL, CAL_CUR_OFF = range(1, 11)
+CAL_ENC, CAL_R, CAL_LD, CAL_LQ, CAL_TUNE, CAL_KV, CAL_ZERO, CAL_HFI_MAP, CAL_HFI_POL, CAL_CUR_OFF, CAL_HALL, \
+    CAL_UVW = range(1, 13)
 CAL_NAMES = {CAL_ENC: "encoder", CAL_R: "resistance", CAL_LD: "inductance d", CAL_LQ: "inductance q",
              CAL_TUNE: "PI autotune", CAL_KV: "kv", CAL_ZERO: "encoder zero reset", CAL_HFI_MAP: "HFI saliency map",
-             CAL_HFI_POL: "HFI polarity", CAL_CUR_OFF: "current-sense offsets"}
+             CAL_HFI_POL: "HFI polarity", CAL_CUR_OFF: "current-sense offsets", CAL_HALL: "Hall table",
+             CAL_UVW: "encoder UVW outputs"}
 
 # command status (st_t), then CANopen SDO abort codes for object access
 STATUS = [
@@ -58,9 +60,15 @@ STATUS = [
     "CANopen master lost (heartbeat timeout or NMT left operational)",
     "following error (position error above 0x6065 for longer than 0x6066)",
     "encoder lost: no valid angle for 10 ms (stream stalled, CRC failing, sensor not answering)",
+    "Hall sensors lost: invalid state (000/111) for 10 ms (unplugged? no supply?)",
+    "Hall calibration: invalid or missing state, or the order does not repeat (wiring? glitches?)",
+    "Hall calibration: a sector is not 60 ± 25 deg electrical (pole pairs wrong?)",
+    "run the Hall calibration first",
+    "encoder UVW register not written (encoder not answering?)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 ST_NEED_VGAINS, ST_RUNNING, ST_CAN_ACTIVE, ST_CAN_LOST, ST_FOLLOWING_ERROR = 13, 34, 48, 49, 50
+ST_HALL_LOST = 52
 SDO = {
     0x06020000: "object does not exist",
     0x06090011: "subindex does not exist",
@@ -90,7 +98,7 @@ def _fmt_l(v):
 EV_DONE, EV_STOPPED, EV_RPM_LIMITED, EV_CUR_LIMITED, EV_RESUMED = 1, 2, 3, 4, 5
 EV_ALIGN, EV_SWEEP, EV_OFFSET_AVG, EV_HOLD_SHAFT, EV_UNLOAD_SHAFT, EV_EEPROM_WAIT, EV_BW_CLAMPED = range(0x10, 0x17)
 EV_R, EV_LCURVE, EV_LCURVE_PT, EV_L, EV_PP_BAD, EV_ENC, EV_TUNE, EV_KV, EV_HFI_PT, EV_HFI_FIT, EV_HFI_POL, \
-    EV_HFI_START, EV_CUR_OFF = range(0x20, 0x2D)
+    EV_HFI_START, EV_CUR_OFF, EV_HALL, EV_UVW = range(0x20, 0x2F)
 
 
 def hfi_fit(a0, a2, b2):
@@ -154,6 +162,9 @@ EVENTS = {
                              f"({'flipped' if v[1] else 'kept'}), HFI - encoder {v[2]:+.1f} deg"),
     EV_CUR_OFF: lambda v: (f"current-sense offsets {v[0]:+.0f} {v[1]:+.0f} {v[2]:+.0f} counts from 2048 "
                            f"(spread {v[3]:.0f} {v[4]:.0f} {v[5]:.0f})" + ("  [stored]" if v[6] else "  NOT stored")),
+    EV_HALL: lambda v: ("Hall states begin at " + ", ".join(f"{s}: {a:.1f}" for s, a in zip(range(1, 7), v[:6]))
+                        + f" deg elec (forward - backward up to {v[6]:.1f} deg)"),
+    EV_UVW: lambda v: f"encoder UVW outputs at {v[0]:.0f} pole pairs (register 0x00B = 0x{int(v[1]):02X})",
 }
 
 

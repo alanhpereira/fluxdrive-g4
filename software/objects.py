@@ -112,6 +112,10 @@ OBJECTS = [
         help="frames that found the link queue full (USB host not reading fast enough)"),
     Obj(0x4002, 11, T_U32, 0, "ov_resumes", "Overvoltage resumes", lo=0, hi=0, group=G_DIAG,
         help="overvoltage coasts that ended by themselves once the bus came back down"),
+    Obj(0x4002, 12, T_U32, 0, "hall_bad", "Hall bad states", lo=0, hi=0, group=G_DIAG,
+        help="invalid Hall states (000/111) and jumps over a sector since boot"),
+    Obj(0x4002, 13, T_U32, 0, "hyb_reseeds", "Hall + HFI re-seeds", lo=0, hi=0, group=G_DIAG,
+        help="times HFI left the Hall sector and was put back on the Hall angle (angsrc 4); 0 in normal running"),
     # 0x4010 motor
     Obj(0x4010, 1, T_F32, STORED, "kv", "kv", "rpm/V", lo=0, hi=1e5, group=G_MOTOR, decimals=1,
         help="back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it"),
@@ -129,13 +133,34 @@ OBJECTS = [
     Obj(0x4010, 10, T_F32, STORED, "imax", "Max current", "A", lo=0, hi=50, group=G_MOTOR, decimals=2,
         help="trip after 120 µs above it: zero-current coast; bridge off if the current keeps rising (1.5x, or 5 ms)"),
     Obj(0x4010, 11, T_U32, STORED | NOTRUN, "flags", "Calibration flags", lo=0, hi=255, group=G_MOTOR,
-        help="1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned. Restored by JSON import"),
+        help="1 offset, 2 current cal, 4 R, 8 L, 16 PI tuned, 32 Hall table. Restored by JSON import"),
     # 0x4011 angle source
-    Obj(0x4011, 1, T_U8, STORED | NOTRUN, "angsrc", "Angle source", lo=0, hi=2, group=G_MOTOR,
+    Obj(0x4011, 1, T_U8, STORED | NOTRUN, "angsrc", "Angle source", lo=0, hi=4, group=G_MOTOR,
         help="0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the "
-             "observer, no encoder in the loop (position mode refused, the encoder is only logged). "
-             "Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)",
-        choices={0: "encoder", 1: "encoder + observer", 2: "sensorless"}),
+             "observer, no encoder in the loop (position mode refused, the encoder is only logged); "
+             "3 Hall sensors, observer above olo (oblend); 4 Hall + HFI: HFI at low speed, the Halls from "
+             "hyblo to hybhi up, observer above olo. 3 and 4 need no encoder; position comes from them. "
+             "Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity; "
+             "Hall: Hall table, t; Hall + HFI: also R, L, saliency map)",
+        choices={0: "encoder", 1: "encoder + observer", 2: "sensorless", 3: "Hall", 4: "Hall + HFI"}),
+    Obj(0x4011, 2, T_U16, STORED | NOTRUN, "hall1", "Hall state 1 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 1 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 3, T_U16, STORED | NOTRUN, "hall2", "Hall state 2 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 2 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 4, T_U16, STORED | NOTRUN, "hall3", "Hall state 3 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 3 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 5, T_U16, STORED | NOTRUN, "hall4", "Hall state 4 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 4 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 6, T_U16, STORED | NOTRUN, "hall5", "Hall state 5 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 5 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 7, T_U16, STORED | NOTRUN, "hall6", "Hall state 6 begins", "2^16=360°", lo=0, hi=65535,
+        group=G_MOTOR, help="electrical angle where Hall state 6 begins going forward, measured by the Hall calibration"),
+    Obj(0x4011, 8, T_U8, RO, "hall_state", "Hall state", group=G_MOTOR,
+        help="live: HALL1 = 1, HALL2 = 2, HALL3 = 4; 0 or 7 = no sensor (unplugged, unpowered)"),
+    Obj(0x4011, 9, T_F32, STORED, "hyblo", "Hall + HFI handover start", "rpm", lo=0, hi=1e5, group=G_MOTOR, decimals=0,
+        help="angsrc 4: below this HFI alone gives the angle; above it the Hall angle fades in"),
+    Obj(0x4011, 10, T_F32, STORED, "hybhi", "Hall + HFI handover end", "rpm", lo=0, hi=1e5, group=G_MOTOR, decimals=0,
+        help="angsrc 4: from here up the Halls alone (and the observer), the injection pauses"),
     # 0x4020 current loop
     Obj(0x4020, 1, T_F32, STORED | PI, "kpd", "Kp d", "V/A", lo=0, hi=1e6, group=G_CUR),
     Obj(0x4020, 2, T_F32, STORED | PI, "kid", "Ki d", "V/(A·s)", lo=0, hi=1e6, group=G_CUR, decimals=2),
@@ -230,7 +255,7 @@ BY_ADDR = {(o.index, o.sub): o for o in OBJECTS}
 PARAM_GROUPS = [G_MOTOR, G_CUR, G_OUTER, G_LIM, G_SENSE, G_OBS, G_HFI, G_CAN]
 
 # PF_* in params.h
-PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID = 1, 2, 4, 8, 16
+PF_ELEC_OFFSET_VALID, PF_CUR_CAL_VALID, PF_R_VALID, PF_L_VALID, PF_PI_VALID, PF_HALL_VALID = 1, 2, 4, 8, 16, 32
 
 
 def table_hash(objs=OBJECTS):

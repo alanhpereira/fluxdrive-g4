@@ -41,14 +41,16 @@ NF = 16  # floats per frame
 PLOTS = [
     ("Angle (deg)", [(0, "theta", "#e0e0e0")], False),
     ("Bus voltage (V)", [(1, "Vin", "#f0c040")], False),
-    ("HFI - encoder (deg elec)", [(2, "err", "#ff5555")], False),
+    # angsrc 0-2: HFI - encoder; 3: Hall - encoder; 4: HFI - Hall
+    ("HFI / Hall error (deg elec)", [(2, "err", "#ff5555")], False),
     ("Id / Iq (A)", [(5, "Id", "#ff55ff"), (6, "Iq", "#f0f0f0")], True),
     ("Speed (rpm)", [(7, "rpm", "#f0c040"), (8, "ref", "#ff5555")], True),
     ("Position (turns)", [(9, "pos", "#40d0e0"), (10, "ref", "#ff5555")], True),
     ("Observer - encoder (deg elec)", [(11, "err", "#ff9040")], False),
     ("Observer flux / blend", [(12, "|flux|/lambda", "#40d0e0"), (13, "weight", "#f0c040")], False),
-    ("Speed sources (rpm)", [(7, "used", "#f0f0f0"), (14, "observer", "#ff9040"), (15, "encoder", "#40d0e0")], False),
-    ("HFI speed (rpm)", [(3, "HFI", "#55dd55"), (15, "encoder", "#40d0e0")], False),
+    # v[15]: the encoder PLL, or the Halls in angsrc 3 and 4
+    ("Speed sources (rpm)", [(7, "used", "#f0f0f0"), (14, "observer", "#ff9040"), (15, "encoder/Hall", "#40d0e0")], False),
+    ("HFI speed (rpm)", [(3, "HFI", "#55dd55"), (15, "encoder/Hall", "#40d0e0")], False),
     ("HFI signal (A)", [(4, "HF step", "#55aaff")], False),
 ]
 

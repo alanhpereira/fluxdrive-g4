@@ -736,6 +736,12 @@
             <q1:varDeclaration name="Overvoltage resumes" uniqueID="UID_RECSUB_40020B">
               <UDINT />
             </q1:varDeclaration>
+            <q1:varDeclaration name="Hall bad states" uniqueID="UID_RECSUB_40020C">
+              <UDINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall HFI reseeds" uniqueID="UID_RECSUB_40020D">
+              <UDINT />
+            </q1:varDeclaration>
           </q1:struct>
           <q1:struct name="Motor" uniqueID="UID_REC_4010">
             <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_401000">
@@ -781,6 +787,33 @@
             </q1:varDeclaration>
             <q1:varDeclaration name="Angle source" uniqueID="UID_RECSUB_401101">
               <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 1 begins" uniqueID="UID_RECSUB_401102">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 2 begins" uniqueID="UID_RECSUB_401103">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 3 begins" uniqueID="UID_RECSUB_401104">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 4 begins" uniqueID="UID_RECSUB_401105">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 5 begins" uniqueID="UID_RECSUB_401106">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state 6 begins" uniqueID="UID_RECSUB_401107">
+              <UINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall state" uniqueID="UID_RECSUB_401108">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall HFI handover start" uniqueID="UID_RECSUB_401109">
+              <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Hall HFI handover end" uniqueID="UID_RECSUB_40110A">
+              <REAL />
             </q1:varDeclaration>
           </q1:struct>
           <q1:struct name="Current loop" uniqueID="UID_REC_4020">
@@ -2769,7 +2802,7 @@
           <q1:parameter uniqueID="UID_SUB_400200">
             <label lang="en">Highest sub-index supported</label>
             <USINT />
-            <q1:defaultValue value="0x0B" />
+            <q1:defaultValue value="0x0D" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_400201">
             <description lang="en">[cycles]</description>
@@ -2823,6 +2856,16 @@
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_40020B" access="readWrite">
             <description lang="en">overvoltage coasts that ended by themselves once the bus came back down</description>
+            <UDINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_40020C" access="readWrite">
+            <description lang="en">invalid Hall states (000/111) and jumps over a sector since boot</description>
+            <UDINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_40020D" access="readWrite">
+            <description lang="en">times HFI left the Hall sector and was put back on the Hall angle (angsrc 4); 0 in normal running</description>
             <UDINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
@@ -2963,16 +3006,109 @@
           <q1:parameter uniqueID="UID_SUB_401100">
             <label lang="en">Highest sub-index supported</label>
             <USINT />
-            <q1:defaultValue value="0x01" />
+            <q1:defaultValue value="0x0A" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_401101" access="readWrite">
-            <description lang="en">0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the observer, no encoder in the loop (position mode refused, the encoder is only logged). Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity)</description>
+            <description lang="en">0 encoder only; 1 encoder, observer blended in above olo (oblend); 2 sensorless: HFI and the observer, no encoder in the loop (position mode refused, the encoder is only logged); 3 Hall sensors, observer above olo (oblend); 4 Hall + HFI: HFI at low speed, the Halls from hyblo to hybhi up, observer above olo. 3 and 4 need no encoder; position comes from them. Needs the calibrations for that source (sensorless: R, L, t, kv, saliency map, polarity; Hall: Hall table, t; Hall + HFI: also R, L, saliency map)</description>
             <USINT />
             <q1:defaultValue value="0" />
             <q1:allowedValues>
               <q1:range>
                 <minValue value="0" />
-                <maxValue value="2" />
+                <maxValue value="4" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401102" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 1 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401103" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 2 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401104" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 3 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401105" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 4 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401106" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 5 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401107" access="readWrite">
+            <description lang="en">[2^16=360°] electrical angle where Hall state 6 begins going forward, measured by the Hall calibration</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="65535" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401108">
+            <description lang="en">live: HALL1 = 1, HALL2 = 2, HALL3 = 4; 0 or 7 = no sensor (unplugged, unpowered)</description>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_401109" access="readWrite">
+            <description lang="en">[rpm] angsrc 4: below this HFI alone gives the angle; above it the Hall angle fades in</description>
+            <REAL />
+            <q1:defaultValue value="150.0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100000" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_40110A" access="readWrite">
+            <description lang="en">[rpm] angsrc 4: from here up the Halls alone (and the observer), the injection pauses</description>
+            <REAL />
+            <q1:defaultValue value="400.0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="100000" />
               </q1:range>
             </q1:allowedValues>
           </q1:parameter>
@@ -4208,7 +4344,7 @@
             <CANopenSubObject subIndex="0E" name="Trip switched the bridge off" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40010E" />
             <CANopenSubObject subIndex="0F" name="Coasting to a stop" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40010F" />
           </CANopenObject>
-          <CANopenObject index="4002" name="Diagnostics" objectType="9" uniqueIDRef="UID_OBJ_4002" subNumber="12">
+          <CANopenObject index="4002" name="Diagnostics" objectType="9" uniqueIDRef="UID_OBJ_4002" subNumber="14">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400200" />
             <CANopenSubObject subIndex="01" name="currentLoop() time" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400201" />
             <CANopenSubObject subIndex="02" name="currentLoop() max" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400202" />
@@ -4221,6 +4357,8 @@
             <CANopenSubObject subIndex="09" name="Protocol RX errors" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400209" />
             <CANopenSubObject subIndex="0A" name="Telemetry drops" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020A" />
             <CANopenSubObject subIndex="0B" name="Overvoltage resumes" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020B" />
+            <CANopenSubObject subIndex="0C" name="Hall bad states" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020C" />
+            <CANopenSubObject subIndex="0D" name="Hall HFI reseeds" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020D" />
           </CANopenObject>
           <CANopenObject index="4010" name="Motor" objectType="9" uniqueIDRef="UID_OBJ_4010" subNumber="12">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401000" />
@@ -4236,9 +4374,18 @@
             <CANopenSubObject subIndex="0A" name="Max current" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40100A" />
             <CANopenSubObject subIndex="0B" name="Calibration flags" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40100B" />
           </CANopenObject>
-          <CANopenObject index="4011" name="Angle source" objectType="9" uniqueIDRef="UID_OBJ_4011" subNumber="2">
+          <CANopenObject index="4011" name="Angle source" objectType="9" uniqueIDRef="UID_OBJ_4011" subNumber="11">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401100" />
             <CANopenSubObject subIndex="01" name="Angle source" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401101" />
+            <CANopenSubObject subIndex="02" name="Hall state 1 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401102" />
+            <CANopenSubObject subIndex="03" name="Hall state 2 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401103" />
+            <CANopenSubObject subIndex="04" name="Hall state 3 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401104" />
+            <CANopenSubObject subIndex="05" name="Hall state 4 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401105" />
+            <CANopenSubObject subIndex="06" name="Hall state 5 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401106" />
+            <CANopenSubObject subIndex="07" name="Hall state 6 begins" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401107" />
+            <CANopenSubObject subIndex="08" name="Hall state" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401108" />
+            <CANopenSubObject subIndex="09" name="Hall HFI handover start" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401109" />
+            <CANopenSubObject subIndex="0A" name="Hall HFI handover end" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40110A" />
           </CANopenObject>
           <CANopenObject index="4020" name="Current loop" objectType="9" uniqueIDRef="UID_OBJ_4020" subNumber="6">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402000" />
