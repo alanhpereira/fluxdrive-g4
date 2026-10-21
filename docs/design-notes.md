@@ -279,8 +279,8 @@ For motors with Hall sensors and no encoder. 3 uses the Halls alone (any motor);
 
 ### Decoder (`hall.c`)
 - **Polled, not EXTI.** Once per cycle (40 µs). At low speed, where the Halls set the angle, 40 µs is nothing next to the edge spacing; at speed the observer takes over. The EXTI lines in the .ioc fired on noise with J13 empty and would preempt nothing useful at priority 0. A state counts once two samples agree; the edge time is then corrected by 1.5 periods.
-- **Speed over six edges** (one electrical turn), so each sensor's placement error cancels; 60°/dt until six are in. A reversal or a jump restarts the estimate.
-- **Interpolation** advances from the edge at that speed and stops at the sector's end: a late edge means the rotor slowed. Once the time since the edge exceeds the last interval the speed is capped at 60°/elapsed, so the estimate decays with the rotor; after 100 ms it reads zero and the angle sits in the sector middle (≤ 30° off: cos 30° = 87 % torque).
+- **Speed per edge:** the calibrated width of the sector just crossed over the time it took. The table carries each sensor's placement error, so no averaging is needed, and the estimate is one sector behind the rotor. A first version averaged six edges (one electrical turn) and lagged a whole turn when the speed changed: on the bench (unloaded, 7 pole pairs) the speed loop then went into a limit cycle at 100 rpm (−70…+250 rpm). The first edge from standstill and a reversal give no speed; a reversal or a jump restarts the estimate.
+- **Interpolation** advances from the edge at that speed and stops at the sector's end: a late edge means the rotor slowed. Once the time since the edge exceeds the last interval the speed is capped at the sector's width / elapsed, so the estimate decays with the rotor; after 100 ms it reads zero and the angle sits in the sector middle (≤ 30° off: cos 30° = 87 % torque).
 - **Table:** for each state the angle where it begins going forward (`hall_edge`, Q16). `CAL_HALL` averages the forward and backward crossings of a forced-angle sweep: the rotor lag and the sensor hysteresis flip sign with the direction, so they cancel. Sector widths must be 60° ± 25°.
 - **Position** in 3/4 is the base angle accumulated per cycle (`hall_pos_step()`, int32 maths with a remainder carry, no 64-bit division). In 4 that gives HFI resolution at standstill; the guard keeps it from slipping.
 
@@ -290,9 +290,15 @@ For motors with Hall sensors and no encoder. 3 uses the Halls alone (any motor);
 - **Crossfade** by Hall speed between `hyb_lo` and `hyb_hi`; the injection pauses once the Hall weight reaches 1 (hysteresis 0.9), like it does for the observer.
 
 ### Bench stand-in
-The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors. `ZERO_POS` moves all outputs, so after 'e' `CAL_UVW` also puts the zero on electrical zero (`uvw_zero()`: 12-bit steps of 0.088° mech; `elec_offset` keeps the rounding, the Hall table is cleared) and the UVW edges sit like well-mounted Halls. The SPI angle stays there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the six-edge averaging or the glitch filter; that needs a real Hall motor.
+The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors. `ZERO_POS` moves all outputs, so after 'e' `CAL_UVW` also puts the zero on electrical zero (`uvw_zero()`: 12-bit steps of 0.088° mech; `elec_offset` keeps the rounding, the Hall table is cleared) and the UVW edges sit like well-mounted Halls. The SPI angle stays there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the placement correction or the glitch filter; that needs a real Hall motor.
+
+### Bench results (2026-10-21, MT6835 UVW as Halls, unloaded 7-pole-pair motor, encoder as the reference)
+- `currentLoop()` max: 15.6 µs in 3, 19.2–19.5 µs in 4 with HFI injecting: at the limit, no late encoder reads yet. `outer_loops` to flash and `hall_update()` to CCM would give margin.
+- 4: 10/50/100 rpm hold on HFI (no re-seeds, no polarity pulses, HFI − Hall settles within ±7° in 20 ms), the crossfade at 300 rpm and pure Hall at 600 rpm are smooth; position moves land within 0.001 turn.
+- 3: Hall − encoder within ±9° at 1000 rpm and ±13° at 3000 rpm (observer weight 1). Below ~300 rpm the speed loop needs far lower gains than with the encoder: with `vkp` 0.35 / `vki` 15 it limit-cycles at 100 rpm, with 0.05 / 2.1 the speed ripple (sd over 10 ms) is 28 rpm at 100 rpm against 11 with the encoder, the same at 300 rpm. The unloaded rotor changes speed by a few hundred rpm within one sector at 0.5 A; with a load it will be easier.
 
 ### Open
-- Not yet run on hardware. Measure `currentLoop()` max (0x4002) in 3 and 4 with HFI injecting: `hall_update()` runs from flash (CCM full).
+- 3: separate (lower) speed gains below the Hall/observer handover, or a gain scheduled by the Hall edge rate.
+- 4: with the motor off the angle is the Hall sector centre, so enabling moves the position by up to ±30° electrical; a home taken while off carries that.
 - `obs_err_max` (30°) may be tight against the Hall angle under acceleration in 3.
-- `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses.
+- `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses; they worked on the bench.

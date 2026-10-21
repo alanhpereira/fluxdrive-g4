@@ -22,6 +22,7 @@ volatile uint32_t g_hall_bad_total;
 
 /* sector table, from g_params.hall_edge, Q32 electrical. Index = state 1..6 */
 static uint32_t s_begin[8], s_ctr[8], s_half[8];
+static float s_wid[8]; /* sector width, electrical turns */
 static uint8_t s_next[8], s_prev[8];
 /* 0 no table, 1 in use, 2 rebuilt by main: the ISR restarts the decoder and sets 1 */
 static volatile uint8_t s_ok;
@@ -33,8 +34,6 @@ static int8_t s_dir;		  /* direction of the last edge, 0 = standing still */
 static uint32_t s_ph;		  /* angle now, Q32 electrical */
 static float s_we;			  /* speed, electrical turns per cycle (signed) */
 static float s_t = HALL_STOP_N; /* cycles since the last edge */
-static float s_dt[6];		  /* the last edge intervals in the same direction, cycles */
-static uint8_t s_ri, s_n;
 
 /* HALL1 (PC2) = bit 0, HALL2 (PC1) = bit 1, HALL3 (PC0) = bit 2 */
 static inline __attribute__((always_inline)) uint8_t read_pins(void) {
@@ -68,6 +67,7 @@ void hall_table_apply(void) {
 		s_next[a] = b;
 		s_prev[b] = a;
 		s_half[a] = w / 2u;
+		s_wid[a] = (float)w * (1.0f / Q32);
 		s_ctr[a] = s_begin[a] + w / 2u;
 	}
 	__DSB();
@@ -97,8 +97,6 @@ static __attribute__((noinline)) void restart(uint8_t s) {
 	s_dir = 0;
 	s_we = 0.0f;
 	s_t = HALL_STOP_N;
-	s_n = 0;
-	s_ri = 0;
 	if (valid_state(s)) s_ph = s_ctr[s];
 }
 
@@ -123,19 +121,13 @@ static __attribute__((noinline)) void on_edge(uint8_t st) {
 		restart(st);
 		return;
 	}
-	if (d != s_dir)
-		s_n = 0; /* first edge from standstill, or a reversal: no interval to go by */
-	else if (s_t < HALL_STOP_N) {
-		s_dt[s_ri] = s_t;
-		if (++s_ri >= 6) s_ri = 0;
-		if (s_n < 6) s_n++;
-		/* one electrical turn over the last six intervals: the placement error of each sensor cancels */
-		if (s_n >= 6)
-			s_we = (float)d / (s_dt[0] + s_dt[1] + s_dt[2] + s_dt[3] + s_dt[4] + s_dt[5]);
-		else
-			s_we = (float)d / (6.0f * s_t);
-	}
-	if (s_n == 0) s_we = 0.0f;
+	/* the sector just crossed, at its calibrated width (the table carries each sensor's placement error), over
+	 * the time it took: one sector behind the rotor, not a turn. The first edge from standstill, or a reversal,
+	 * has no whole sector behind it */
+	if (d == s_dir && s_t < HALL_STOP_N)
+		s_we = (float)d * s_wid[a] / s_t; /* s_t was spent in a, either way round */
+	else
+		s_we = 0.0f;
 	s_dir = d;
 	s_t = EDGE_LAG;
 	s_ph = at + (uint32_t)(int32_t)(s_we * (EDGE_LAG * Q32));
@@ -190,8 +182,9 @@ int hall_update(uint32_t* th, float* vel) {
 		if (s_t >= HALL_STOP_N)
 			restart(s_st);
 		else {
-			/* the next edge is late: the rotor is slower than it was, at most one sector in s_t */
-			if (fabsf(s_we) * 6.0f * s_t > 1.0f) s_we = (float)s_dir / (6.0f * s_t);
+			/* the next edge is late: the rotor is slower than it was, at most this sector in s_t */
+			const float w = s_wid[s_st];
+			if (fabsf(s_we) * s_t > w) s_we = (float)s_dir * w / s_t;
 			s_ph += (uint32_t)(int32_t)(s_we * Q32);
 		}
 	}
