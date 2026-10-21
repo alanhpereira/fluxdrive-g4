@@ -224,7 +224,7 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .coastingToaStop = 0x00
     },
     .x4002_diagnostics = {
-        .highestSub_indexSupported = 0x0B,
+        .highestSub_indexSupported = 0x0D,
         .currentLoopTime = 0x00000000,
         .currentLoopMax = 0x00000000,
         .encoderReads = 0x00000000,
@@ -235,7 +235,9 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .encoderCRCCheckOn = 0x00,
         .protocolRXErrors = 0x00000000,
         .telemetryDrops = 0x00000000,
-        .overvoltageResumes = 0x00000000
+        .overvoltageResumes = 0x00000000,
+        .hallBadStates = 0x00000000,
+        .hallHFIReseeds = 0x00000000
     },
     .x4010_motor = {
         .highestSub_indexSupported = 0x0B,
@@ -252,8 +254,17 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .calibrationFlags = 0x00000000
     },
     .x4011_angleSource = {
-        .highestSub_indexSupported = 0x01,
-        .angleSource = 0x00
+        .highestSub_indexSupported = 0x0A,
+        .angleSource = 0x00,
+        .hallState1Begins = 0x0000,
+        .hallState2Begins = 0x0000,
+        .hallState3Begins = 0x0000,
+        .hallState4Begins = 0x0000,
+        .hallState5Begins = 0x0000,
+        .hallState6Begins = 0x0000,
+        .hallState = 0x00,
+        .hallHFIHandoverStart = 150.0,
+        .hallHFIHandoverEnd = 400.0
     },
     .x4020_currentLoop = {
         .highestSub_indexSupported = 0x05,
@@ -440,9 +451,9 @@ typedef struct {
     OD_obj_record_t o_1A03_TPDOMappingParameter[9];
     OD_obj_record_t o_4000_deviceInfo[5];
     OD_obj_record_t o_4001_driveStatus[16];
-    OD_obj_record_t o_4002_diagnostics[12];
+    OD_obj_record_t o_4002_diagnostics[14];
     OD_obj_record_t o_4010_motor[12];
-    OD_obj_record_t o_4011_angleSource[2];
+    OD_obj_record_t o_4011_angleSource[11];
     OD_obj_record_t o_4020_currentLoop[6];
     OD_obj_record_t o_4021_speedAndPositionLoops[6];
     OD_obj_record_t o_4022_limits[6];
@@ -1557,6 +1568,18 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .subIndex = 11,
             .attribute = ODA_SDO_RW | ODA_MB,
             .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4002_diagnostics.hallBadStates,
+            .subIndex = 12,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4002_diagnostics.hallHFIReseeds,
+            .subIndex = 13,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 4
         }
     },
     .o_4010_motor = {
@@ -1645,6 +1668,60 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .subIndex = 1,
             .attribute = ODA_SDO_RW,
             .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState1Begins,
+            .subIndex = 2,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState2Begins,
+            .subIndex = 3,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState3Begins,
+            .subIndex = 4,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState4Begins,
+            .subIndex = 5,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState5Begins,
+            .subIndex = 6,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState6Begins,
+            .subIndex = 7,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 2
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallState,
+            .subIndex = 8,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallHFIHandoverStart,
+            .subIndex = 9,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4011_angleSource.hallHFIHandoverEnd,
+            .subIndex = 10,
+            .attribute = ODA_SDO_RW | ODA_MB,
+            .dataLength = 4
         }
     },
     .o_4020_currentLoop = {
@@ -2352,9 +2429,9 @@ static OD_ATTR_OD OD_entry_t ODList[] = {
     {0x1A03, 0x09, ODT_REC, &ODObjs.o_1A03_TPDOMappingParameter, NULL},
     {0x4000, 0x05, ODT_REC, &ODObjs.o_4000_deviceInfo, NULL},
     {0x4001, 0x10, ODT_REC, &ODObjs.o_4001_driveStatus, NULL},
-    {0x4002, 0x0C, ODT_REC, &ODObjs.o_4002_diagnostics, NULL},
+    {0x4002, 0x0E, ODT_REC, &ODObjs.o_4002_diagnostics, NULL},
     {0x4010, 0x0C, ODT_REC, &ODObjs.o_4010_motor, NULL},
-    {0x4011, 0x02, ODT_REC, &ODObjs.o_4011_angleSource, NULL},
+    {0x4011, 0x0B, ODT_REC, &ODObjs.o_4011_angleSource, NULL},
     {0x4020, 0x06, ODT_REC, &ODObjs.o_4020_currentLoop, NULL},
     {0x4021, 0x06, ODT_REC, &ODObjs.o_4021_speedAndPositionLoops, NULL},
     {0x4022, 0x06, ODT_REC, &ODObjs.o_4022_limits, NULL},

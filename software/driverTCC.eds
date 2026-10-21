@@ -2574,7 +2574,7 @@ PDOMapping=0
 ParameterName=Diagnostics
 ObjectType=0x9
 ;StorageLocation=RAM
-SubNumber=0xC
+SubNumber=0xE
 
 [4002sub0]
 ParameterName=Highest sub-index supported
@@ -2582,7 +2582,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0005
 AccessType=ro
-DefaultValue=0x0B
+DefaultValue=0x0D
 PDOMapping=0
 
 [4002sub1]
@@ -2677,6 +2677,24 @@ PDOMapping=0
 
 [4002subB]
 ParameterName=Overvoltage resumes
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0007
+AccessType=rw
+DefaultValue=0
+PDOMapping=0
+
+[4002subC]
+ParameterName=Hall bad states
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0007
+AccessType=rw
+DefaultValue=0
+PDOMapping=0
+
+[4002subD]
+ParameterName=Hall HFI reseeds
 ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
@@ -2824,7 +2842,7 @@ PDOMapping=0
 ParameterName=Angle source
 ObjectType=0x9
 ;StorageLocation=RAM
-SubNumber=0x2
+SubNumber=0xB
 
 [4011sub0]
 ParameterName=Highest sub-index supported
@@ -2832,7 +2850,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0005
 AccessType=ro
-DefaultValue=0x01
+DefaultValue=0x0A
 PDOMapping=0
 
 [4011sub1]
@@ -2841,9 +2859,106 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0005
 AccessType=rw
-HighLimit=2
+HighLimit=4
 LowLimit=0
 DefaultValue=0
+PDOMapping=0
+
+[4011sub2]
+ParameterName=Hall state 1 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub3]
+ParameterName=Hall state 2 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub4]
+ParameterName=Hall state 3 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub5]
+ParameterName=Hall state 4 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub6]
+ParameterName=Hall state 5 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub7]
+ParameterName=Hall state 6 begins
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=rw
+HighLimit=65535
+LowLimit=0
+DefaultValue=0
+PDOMapping=0
+
+[4011sub8]
+ParameterName=Hall state
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+PDOMapping=0
+
+[4011sub9]
+ParameterName=Hall HFI handover start
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=rw
+HighLimit=100000
+LowLimit=0
+DefaultValue=150.0
+PDOMapping=0
+
+[4011subA]
+ParameterName=Hall HFI handover end
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=rw
+HighLimit=100000
+LowLimit=0
+DefaultValue=400.0
 PDOMapping=0
 
 [4020]

@@ -276,6 +276,8 @@ typedef struct {
         uint32_t protocolRXErrors;
         uint32_t telemetryDrops;
         uint32_t overvoltageResumes;
+        uint32_t hallBadStates;
+        uint32_t hallHFIReseeds;
     } x4002_diagnostics;
     struct {
         uint8_t highestSub_indexSupported;
@@ -294,6 +296,15 @@ typedef struct {
     struct {
         uint8_t highestSub_indexSupported;
         uint8_t angleSource;
+        uint16_t hallState1Begins;
+        uint16_t hallState2Begins;
+        uint16_t hallState3Begins;
+        uint16_t hallState4Begins;
+        uint16_t hallState5Begins;
+        uint16_t hallState6Begins;
+        uint8_t hallState;
+        float32_t hallHFIHandoverStart;
+        float32_t hallHFIHandoverEnd;
     } x4011_angleSource;
     struct {
         uint8_t highestSub_indexSupported;
