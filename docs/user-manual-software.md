@@ -6,6 +6,7 @@ This manual covers the PC tools in `software/`: the plotter GUI (a USB page with
 |---|---|
 | `plotter.py` | The GUI. Live telemetry, parameters, calibration, running the motor over USB, and a CANopen master over a CAN adapter. |
 | `cotest.py` | The CANopen test sequences from the command line (the same tests as the GUI's Tests tab). |
+| `drivectl.py` | Headless command line: the Config tab's USB commands and CANopen master commands, one-shot, scripted or as a shell. |
 | `check_sync.py` | Checks the PC tables against the firmware sources (for developers). |
 | `flash_report.py` | Flash usage per module of a build (for developers). |
 
@@ -255,14 +256,73 @@ Close the GUI's CAN connection before running `cotest.py`: an SLCAN adapter can 
 
 ---
 
-## 8. Helper scripts (developers)
+## 8. Headless command line (`drivectl.py`)
+
+The USB commands of the Config tab and the basic CANopen master commands, without the GUI. For scripts, a remote bench, or a quick check from a terminal.
+
+```
+python software/drivectl.py --usb COM7 status                                 one command
+python software/drivectl.py --usb COM7 "set vlim 3000; vel 300; sleep 5; stop" several, separated by ';'
+python software/drivectl.py --usb auto --can slcan:COM8 -f bench.txt          a script, one command per line
+python software/drivectl.py --usb COM7                                        interactive shell
+python software/drivectl.py help                                              the command list
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--usb PORT` | — | The config link. `auto` tries each port with the driver's USB ids (0483:5740) and keeps the one that answers PING. CANable-style adapters have the same ids; the `--can` port is skipped. |
+| `--usb-baud` | 2000000 | UART builds only. |
+| `--can interface:channel` | — | e.g. `slcan:COM8`, `pcan:PCAN_USBBUS1`, `socketcan:can0`. The PC heartbeat (ID 0x7F) runs while the tool is connected. |
+| `--bitrate`, `--node` | 1000000, 1 | |
+| `-f FILE` | — | Run a script. `#` starts a comment; each command is echoed with `>`. |
+| `-k` | off | Scripts: go on after a failed command (otherwise the script stops there). |
+
+USB commands:
+
+| Command | What it does |
+|---|---|
+| `ping` | Protocol version, object table hash, PARAM_VERSION, build id; warns if the table differs from `objects.py`. |
+| `get KEY…` | Reads objects by key (`vlim`) or address (`0x4021:4`). `all`, `params`, `status`, `diag`, `info` read a whole group. |
+| `set KEY VALUE …` or `set KEY=VALUE …` | Writes to RAM, in the Config tab's display units (e.g. `hsal` in %), choices by name or number; the limits are checked first. Prints the value read back. |
+| `status` | The status objects. |
+| `save` | Parameters and CANopen record to flash (motor off). |
+| `cal WHICH [ARG] [--timeout S]` | A calibration, with the Config tab's letters (`c e H r l q t k z u h p`) or names (`offsets encoder hall r ld lq tune kv zero uvw hfimap hfipol`). Prints the events and waits for the end; Ctrl-C sends ABORT. There are no safety prompts: read section 5.2 before running `e`, `H`, `q`, `k`, `z`, `u`, `h`, `p`. |
+| `cur ID IQ`, `vel RPM`, `pos TURNS`, `stop`, `home`, `abort` | As in the run panel. |
+| `reboot [dfu]` | Reset (the port comes back after 1–2 s and the tool reopens it), or into the ST bootloader. |
+| `export FILE.json`, `import FILE.json` | The Config tab's JSON format. `import` writes the values to RAM; `save` afterwards stores them. |
+| `telem [SECONDS] [FILE.csv]` | Telemetry: to a CSV (time from the frame counter, then `seq` and the 16 channels), or 10 lines/s of bus voltage, currents, speed and position. 0 or no time: until Ctrl-C. |
+| `watch KEY… [-p PERIOD]` | Prints the objects every PERIOD s (0.5) until Ctrl-C. |
+| `events [SECONDS]`, `sleep SECONDS` | Wait, printing events (and EMCYs with `--can`). |
+
+CANopen commands (`help co`), with raw OD values (increments, increments/s), except where a unit is named:
+
+| Command | What it does |
+|---|---|
+| `co read OBJ…`, `co write OBJ VALUE` | SDO. OBJ is `0x6041`, `0x608F:1`, a native key (`vlim`) or an EDS name (`Statusword`). |
+| `co nmt [op\|preop\|stop\|reset\|comm]` | NMT command; without one, the state from the heartbeat. |
+| `co state` | Statusword and FSA state, mode, position (turns), speed (rpm), fault and last refusal. |
+| `co enable [pp\|pv\|hm\|csp\|csv\|cst]`, `co disable`, `co shutdown`, `co qstop`, `co fault-reset`, `co halt on\|off` | The CiA 402 walk and controlword commands. `co disable` waits until CAN has let go of the motor. |
+| `co pv RPM` | Profile velocity (enables PV first if needed). |
+| `co pp TURNS [rel] [--timeout S]` | Profile position move; waits for target reached. |
+| `co home [METHOD] [OFFSET_TURNS]` | Homing (method 37: here). |
+| `co store [all\|comm\|app]`, `co emcy` | 0x1010 store; the EMCY log. |
+
+The cyclic modes (CSP, CSV, CST) need set-points every SYNC: use the CANopen tab's stream or `co_link.Streamer` from a script.
+
+Safety: **Ctrl-C** during `sleep`, `cal` or a waiting CANopen command sends STOP over USB and disable voltage over CAN; during `telem`, `watch` and `events` it only ends that command. When the tool exits, the motor keeps doing what it was last told (there is no USB watchdog): end scripts with `stop` or `co disable`. The exit code is 0 when every command succeeded, 1 otherwise, 2 when a link could not be opened.
+
+Like `cotest.py`, it cannot share a port with the GUI.
+
+---
+
+## 9. Helper scripts (developers)
 
 - `python software/check_sync.py`: compares the GUI's object table, message/status/event codes and telemetry layout with the firmware sources and the EDS. Run it after changing either side; it also notes when `driverTCC.xdd` is newer than the exported OD files.
 - `python software/flash_report.py`: flash use per object file of a build.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | What to check |
 |---|---|
@@ -275,4 +335,4 @@ Close the GUI's CAN connection before running `cotest.py`: an SLCAN adapter can 
 | CANopen tab: replies late or SYNC uneven | Use a 5–10 ms period over SLCAN on Windows; a gs_usb adapter on Linux times better. About one SDO reply in a few hundred is lost by SLCAN on the PC side; the tool retries. |
 | CANopen tab: no plots | Switch on the SYNC producer and NMT start (TPDO2/3 are sent on SYNC in operational). |
 | Enable refused, warning bit set | The reason is shown under the state (e.g. speed gains missing, USB has the motor). |
-| `cotest.py` cannot open the adapter | The GUI (or another script) still has it open. |
+| `cotest.py` / `drivectl.py` cannot open a port ("Access is denied") | The GUI (or another script) still has it open. |

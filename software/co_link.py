@@ -1232,6 +1232,7 @@ class UsbSerial(UsbSync):
         self.wlock = threading.Lock()
         link = P.Link(self._write)
         super().__init__(link)
+        self.on_telem = None  # on_telem(72-byte frame), from the reader thread
         self.running = True
         self._rx = threading.Thread(target=self._read_loop, daemon=True)
         self._dr = threading.Thread(target=self._drain_loop, daemon=True)
@@ -1286,6 +1287,8 @@ class UsbSerial(UsbSync):
             for kind, d in self.split.feed(chunk):
                 if kind == "msg":
                     self.link.on_message(*d)
+                elif kind == "telem" and self.on_telem:
+                    self.on_telem(d)
 
     def _drain_loop(self):
         while self.running:

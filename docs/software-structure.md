@@ -29,6 +29,7 @@ flowchart LR
     subgraph PC["PC"]
         PL["plotter.py<br/>(PyQt GUI)"]
         CT["cotest.py<br/>(CLI test runner)"]
+        DC["drivectl.py<br/>(headless commands)"]
         CS["check_sync.py<br/>flash_report.py"]
     end
 
@@ -50,6 +51,8 @@ flowchart LR
     PL -- "SLCAN adapter (COM8)" --> CO
     CT -- "SLCAN (+ USB)" --> CO
     CT -.-> LINK
+    DC -- "USB" --> LINK
+    DC -- "SLCAN" --> CO
     LINK <--> CTRL
     CO <--> CTRL
     CTRL --> BR
@@ -506,6 +509,7 @@ flowchart TD
     OBJ["objects.py<br/>labels, units, limits"]
     EDS["driverTCC.eds"]
     TESTS["cotest.py + cotests/<br/>basic.py, motion.py"]
+    DCTL["drivectl.py<br/>(UsbSerial: own reader,<br/>Link and drain threads)"]
 
     RCV --> SPL
     SPL -- telemetry --> MAINW
@@ -523,9 +527,11 @@ flowchart TD
     DN --> EDS
     TESTS --> DN
     TESTS -. "--usb" .-> LNK
+    DCTL --> DN
+    DCTL -. "--usb" .-> LNK
 ```
 
-The same test runner works from the command line (`cotest.py`) and from the CANopen tab. `check_sync.py` compares the PC tables (`objects.py`, `protocol.py`, `PLOTS`, the EDS) with the firmware sources.
+The same test runner works from the command line (`cotest.py`) and from the CANopen tab. `drivectl.py` sends the Config tab's USB commands and basic CANopen master commands without Qt, through the same `Link` (in `co_link.UsbSerial`, whose reader thread also hands telemetry frames to it) and `Drive402`. `check_sync.py` compares the PC tables (`objects.py`, `protocol.py`, `PLOTS`, the EDS) with the firmware sources.
 
 ---
 

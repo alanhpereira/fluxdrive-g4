@@ -31,6 +31,7 @@ The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is
 - Debug: cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, live watch enabled.
 - Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`. Numeric inputs use the C locale (`.` decimals) on purpose; keep it that way for new inputs.
 - CANopen tests: `python software/cotest.py --can slcan:COM8 [--usb COM7] [names…]` (`--list`, `--no-motion`), the same runner as the CANopen tab's Tests; results in `software/cotest_runs/` (git-ignored). Core: `software/co_link.py` (no Qt). It patches python-can's SLCAN reader/writer and sets a 0.5 ms GIL switch interval in the GUI so the software SYNC stays on time (`docs/design-notes.md`, CANopen PC tool).
+- Headless commands: `python software/drivectl.py --usb COMx [--can slcan:COM8] [command | -f script]` (no Qt; USB config commands, telemetry to CSV, CANopen SDO/NMT/402). It is built on `co_link.UsbSerial`, `CoBus` and `Drive402`.
 - `python software/check_sync.py` checks the PC tables against the firmware sources and the EDS.
 - New hand-written `Core/Src/*.c` files must be in `C_SOURCES` in `STM32Make.make`. The extension adds them when it regenerates the file; for command-line builds, add them by hand. Sources and include paths under `CANopen/` are listed in `STM32-for-VSCode.config.yaml` (`sourceFiles`, `includeDirectories`), so a regenerate keeps them.
 - CANopen object dictionary: `driverTCC.xdd` (repo root) is the CANopenEditor project. `CANopen/od/OD.c`/`OD.h` and `software/driverTCC.eds` are **exported** from it by the user in CANopenEditor; never write or hand-edit them. After an XDD change, stop and let the user export, then build.
@@ -126,7 +127,7 @@ There is no text console: everything goes through binary frames, and the plotter
   - Message types must stay below `MSG_EVENT` (0x7F): a reply is `type | 0x80` and must never equal the event type.
 - **PC side:** `software/config_tab.py` (Config tab, sidebar run panel and status boxes), `software/protocol.py` (framing, `Link`, status/event text), `software/objects.py` (labels, units, limits).
 - **Keep in sync** (`python software/check_sync.py` checks the tables and enums):
-  - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/plotter.py` and `telem_ok()`/`Splitter` in `software/protocol.py`.
+  - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/plotter.py`, `TELEM_NAMES` and `telem_ok()`/`Splitter` in `software/protocol.py`.
   - `k_tab` in `objdict.c` ↔ `OBJECTS` in `software/objects.py`: same order, index, sub, type and flags (both sides hash them; the GUI warns and disables mismatched rows).
   - Message types, `CAL_*`, `st_t`, `EV_*` and `SDO_*` in `proto.h` ↔ `software/protocol.py` (with the English text and event formatters).
   - Native objects 0x4000–0x40FF: `k_tab` ↔ `OBJECTS` ↔ `driverTCC.xdd` (then the user exports `OD.c`/`OD.h`/`driverTCC.eds`). `check_sync.py` compares the EDS with `objects.py` and notes when the XDD is newer than the exports.
