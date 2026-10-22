@@ -31,6 +31,7 @@ import numpy as np
 
 import objects as O
 import protocol as P
+import serial_fix  # noqa: F401  (pyserial on Windows: spurious ReadFile/WriteFile errors, see the module)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDS = os.path.join(HERE, "driverTCC.eds")
