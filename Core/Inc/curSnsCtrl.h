@@ -3,7 +3,8 @@
 
 #include "stm32g4xx_hal.h"
 
-#define VDDA 3.3f
+#define VDDA 3.3f	 /* fallback: initCS() measures it against VREFINT (g_vdda) */
+#define CS_VREF_N 16 /* VREFINT conversions averaged at boot */
 #define CS_SHUNT 0.002f
 #define CS_GAIN 16.0f
 #define VIN_RL 10.0f
@@ -22,6 +23,7 @@ extern volatile int16_t cur_raw[3];
 extern volatile uint16_t vin_raw;
 extern volatile float g_cur[3];
 extern volatile float g_vin;
+extern float g_vdda; /* V, measured at boot (VDDA if that failed) */
 extern int16_t g_cs_off[3];			/* offsets in use, counts from 2048 */
 extern volatile uint8_t g_cs_off_src; /* CS_OFF_SRC_* */
 

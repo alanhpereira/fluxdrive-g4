@@ -18,6 +18,7 @@ volatile uint8_t g_cs_off_src;
 
 float g_curMult;
 float g_vinMult;
+float g_vdda = VDDA;
 
 extern void currentLoop();
 
@@ -74,11 +75,34 @@ void cs_boot_offsets(void) {
 	g_cs_off_src = CS_OFF_SRC_BOOT;
 }
 
+/* VDDA from the internal reference and its factory reading (taken at 3.0 V), once at boot; VDDA if it fails or
+ * is implausible. ADC1 regular channel, after the calibration: the VREFINT path can only be switched on while
+ * both ADCs are disabled, and HAL_ADC_Stop() leaves ADC1 disabled for the injected start */
+static float cs_vdda(void) {
+	ADC_ChannelConfTypeDef c = {0};
+	c.Channel = ADC_CHANNEL_VREFINT;
+	c.Rank = ADC_REGULAR_RANK_1;
+	c.SamplingTime = ADC_SAMPLETIME_640CYCLES_5; /* 15 us, VREFINT needs >= 4 us */
+	c.SingleDiff = ADC_SINGLE_ENDED;
+	c.OffsetNumber = ADC_OFFSET_NONE;
+	if (HAL_ADC_ConfigChannel(&hadc1, &c) != HAL_OK) return VDDA;
+	uint32_t acc = 0;
+	for (int n = 0; n < 2 + CS_VREF_N; n++) {
+		if (HAL_ADC_Start(&hadc1) != HAL_OK || HAL_ADC_PollForConversion(&hadc1, 1) != HAL_OK) {
+			HAL_ADC_Stop(&hadc1);
+			return VDDA;
+		}
+		if (n >= 2) acc += HAL_ADC_GetValue(&hadc1); /* the first two let the reference settle */
+	}
+	HAL_ADC_Stop(&hadc1);
+	if (acc == 0) return VDDA;
+	const float v = 3.0f * (float)*VREFINT_CAL_ADDR * (float)CS_VREF_N / (float)acc;
+	return (v > 3.0f && v < 3.6f) ? v : VDDA;
+}
+
 HAL_StatusTypeDef initCS() {
 	HAL_StatusTypeDef status;
 	cs_fallback();
-	g_curMult = -VDDA / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
-	g_vinMult = VDDA * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
 
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET);
 
@@ -119,6 +143,9 @@ HAL_StatusTypeDef initCS() {
 		disableCS();
 		return status;
 	}
+	g_vdda = cs_vdda();
+	g_curMult = -g_vdda / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
+	g_vinMult = g_vdda * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
 
 	status = HAL_ADCEx_InjectedStart_IT(&hadc1);
 	if (status != HAL_OK) {
