@@ -32,6 +32,7 @@ import serial.tools.list_ports
 from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
 import protocol as P
+import serial_fix  # noqa: F401  (pyserial on Windows: spurious ReadFile/WriteFile errors, see the module)
 from canopen_tab import CanopenTab
 from config_tab import ConfigTab, RunPanel
 
@@ -150,6 +151,7 @@ class Sender(threading.Thread):
         self.q = collections.deque()
         self.ev = threading.Event()
         self.running = True
+        self.error = None
 
     def send_raw(self, frame):
         self.q.append(bytes(frame))
@@ -162,7 +164,8 @@ class Sender(threading.Thread):
             while self.q and self.running:
                 try:
                     self.ser.write(self.q.popleft())
-                except (serial.SerialException, OSError):
+                except (serial.SerialException, OSError) as e:
+                    self.error = str(e)  # update_view() reconnects: without a sender every request would time out
                     return
 
 
@@ -398,8 +401,9 @@ class Main(QtWidgets.QMainWindow):
             link = self.link
             if link:
                 link.drain()  # results and events in arrival order (events -> config.on_event)
-            if rx.error:
-                self.say(f"connection lost: {rx.error}; waiting {RECONNECT_S:.0f} s for the port to come back", "#ff6060")
+            err = rx.error or (self.tx and self.tx.error)
+            if err:
+                self.say(f"connection lost: {err}; waiting {RECONNECT_S:.0f} s for the port to come back", "#ff6060")
                 self.disconnect(reconnect=True)
                 return
             if not self.paused and self.glw.isVisible():  # hidden curves need no redraw (it costs the CAN threads GIL time)
