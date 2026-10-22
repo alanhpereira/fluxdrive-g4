@@ -325,13 +325,12 @@ HFI in 4 started on the Hall angle with no polarity pulses and settled within ±
 
 So 4 is near the encoder for low-speed speed and position control; 3 is good for torque control and above a few hundred rpm, and its low-speed speed loop needs its own gains.
 
-**One unexplained runaway.** The first speed run after soldering the UVW wires (mode 1, 10 rpm) ran to full speed; STOP did not end it, since it brakes under the speed loop first. The encoder counters then showed 823 917 CRC errors (none before or since): the wires had been soldered with the board powered. Not reproduced afterwards. The suspect is the CRC rule in `MT6835_Sample()`: after `MT6835_StartBurst()` (also called by `enc_recover()` when the sensor comes back from a supply dip) the check switches itself off after 25 failures in a row if no group has passed yet, and from then on corrupted groups are used as angles.
+**One unexplained runaway.** The first speed run after soldering the UVW wires (mode 1, 10 rpm) ran to full speed; STOP did not end it, since it brakes under the speed loop first. The encoder counters then showed 823 917 CRC errors (none before or since): the wires had been soldered with the board powered. Not reproduced afterwards. The suspect is the CRC rule in `MT6835_Sample()`: after `MT6835_StartBurst()` (also called by `enc_recover()` when the sensor comes back from a supply dip) the check switches itself off after 25 failures in a row if no group has passed yet, and from then on corrupted groups are used as angles. Fixed since: `crc_seen` is no longer cleared by `MT6835_StartBurst()`, so the switch-off is only possible while no group has passed since boot. Checked 2026-10-22 by toggling SPI1 CPHA through the debugger with the motor off (every group then fails, and `enc_recover()` restarts the burst): before the fix the check went off within a second and the corrupted groups were taken as angles at the full read rate; after it the check stayed on, no group was taken, and reads resumed with no CRC errors once CPHA was restored.
 
 ### Open
 - 3: separate (lower) speed gains below the Hall/observer handover, or a gain scheduled by the Hall edge rate.
 - 4: with the motor off the angle is the Hall sector centre, so enabling moves the position by up to ±30° electrical; a home taken while off carries that. Fix: hold the position while off, or home only while running.
 - 4: the injection lowers the breakaway current, so a small torque command holds less firmly than in 1 or 3.
-- Encoder: allow the CRC switch-off only on the first `MT6835_StartBurst()` after boot, not after a recovery.
 - `obs_err_max` (30°) may be tight against the Hall angle under acceleration in 3.
 - `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses; they worked on the bench.
 
