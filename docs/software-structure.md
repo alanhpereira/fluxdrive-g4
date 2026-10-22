@@ -101,7 +101,7 @@ flowchart TB
         HAL["CubeMX init + HAL<br/>(adc, tim, spi, ...)"]
         USB["USB_Device<br/>usbd_cdc_if.c hooks"]
         CON["CANopenNode stack<br/>+ port/CO_driver_stm32g4.c"]
-        OD["od/OD.c, OD.h<br/>(exported from driverTCC.xdd)"]
+        OD["od/OD.c, OD.h<br/>(exported from fluxdrive-g4.xdd)"]
     end
 
     CALIB --> MC
@@ -509,7 +509,7 @@ flowchart TD
     end
 
     OBJ["objects.py<br/>labels, units, limits"]
-    EDS["driverTCC.eds"]
+    EDS["fluxdrive-g4.eds"]
     TESTS["cotest.py + cotests/<br/>basic.py, motion.py"]
     DCTL["drivectl.py<br/>(UsbSerial: own reader,<br/>Link and drain threads)"]
 

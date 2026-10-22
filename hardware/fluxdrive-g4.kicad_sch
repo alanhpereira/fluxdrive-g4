@@ -711,7 +711,7 @@
 			)
 		)
 		(instances
-			(project "Driver TCC"
+			(project "fluxdrive-g4"
 				(path "/95a51500-717e-4523-bcce-5694622de155"
 					(reference "H2")
 					(unit 1)
@@ -787,7 +787,7 @@
 			)
 		)
 		(instances
-			(project "Driver TCC"
+			(project "fluxdrive-g4"
 				(path "/95a51500-717e-4523-bcce-5694622de155"
 					(reference "H1")
 					(unit 1)
@@ -1264,7 +1264,7 @@
 			)
 		)
 		(instances
-			(project "Driver TCC"
+			(project "fluxdrive-g4"
 				(path "/95a51500-717e-4523-bcce-5694622de155"
 					(page "2")
 				)
@@ -1570,7 +1570,7 @@
 			)
 		)
 		(instances
-			(project "Driver TCC"
+			(project "fluxdrive-g4"
 				(path "/95a51500-717e-4523-bcce-5694622de155"
 					(page "3")
 				)
@@ -1816,7 +1816,7 @@
 			)
 		)
 		(instances
-			(project "Driver TCC"
+			(project "fluxdrive-g4"
 				(path "/95a51500-717e-4523-bcce-5694622de155"
 					(page "4")
 				)

@@ -34,7 +34,7 @@ import protocol as P
 import serial_fix  # noqa: F401  (pyserial on Windows: spurious ReadFile/WriteFile errors, see the module)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EDS = os.path.join(HERE, "driverTCC.eds")
+EDS = os.path.join(HERE, "fluxdrive-g4.eds")
 PC_HB_ID = 0x7F
 INC_REV = 1 << 16  # 0x608F default (Q16.16 turns); DriveNode reads the real one
 

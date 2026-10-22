@@ -46,14 +46,14 @@ Generic CiA 301 v4.2 / CiA 306 / CiA 402 v4.0 drive, not an emulation of a vendo
 | `CANopen/CANopenNode/` | CANopenNode v4 (upstream `v4.1-9-g9b8beed`), only the files that are built; its `README.md` records what was left out. Don't edit; configure from the port header. |
 | `CANopen/port/CO_driver_target.h` | Stack configuration: `CO_USE_GLOBALS` (no malloc), features, BASEPRI locks, and `#pragma GCC optimize("Os")` for all CANopen code (every CANopen source includes it first; nothing under `Core/` does). |
 | `CANopen/port/CO_driver_stm32g4.c` | FDCAN driver: runtime bit timing, software ID matching, bus-off recovery, counters. Owns `FDCAN1_IT0_IRQHandler` and the HAL FDCAN callbacks. |
-| `CANopen/od/OD.c`, `OD.h` | Exported by CANopenEditor from `driverTCC.xdd`. Never edit by hand. |
+| `CANopen/od/OD.c`, `OD.h` | Exported by CANopenEditor from `fluxdrive-g4.xdd`. Never edit by hand. |
 | `CANopen/app/co_app.c` | Communication resets, the 1 kHz TIM7 tick, identity, 0x1010/0x1011, the 0x4000–0x40FF bridge to `objdict.c`. |
 | `CANopen/app/co_store.c` | The CANopen record in flash pages 60–61. |
 | `CANopen/app/co402.c` | FSA, modes, profile generators, faults, unit conversion, parameter views. |
 
 ### Changing the object dictionary
-1. Edit `driverTCC.xdd` in CANopenEditor (v4.2.3 used).
-2. Export **CANopenNode V4** to `CANopen/od/` and **EDS** to `software/driverTCC.eds`; commit all three together.
+1. Edit `fluxdrive-g4.xdd` in CANopenEditor (v4.2.3 used).
+2. Export **CANopenNode V4** to `CANopen/od/` and **EDS** to `software/fluxdrive-g4.eds`; commit all three together.
 3. Run `python software/check_sync.py` (compares the EDS 0x4000 range with `objects.py`, warns when the XDD is newer than the exports).
 4. A layout change in `PERSIST_COMM` or `PERSIST_APP` invalidates that part of the stored record (it carries a layout signature): the exported defaults load once; node ID and bit rate are kept.
 
@@ -114,7 +114,7 @@ New native objects go in three places with the same index, sub and type: `k_tab`
 - Homing: methods 35/37 only (no limit switches or index on this hardware).
 - CAN-side position is Q16.16 turns (0x608F = 2¹⁶ inc/rev; the encoder's 2²¹ is truncated by 5 bits) and wraps at ±32 768 turns (unwrapped internally).
 - Not implemented: LSS, SDO client, TIME, node guarding, SRDO, GFC.
-- Not run yet: ROS (`ros2_canopen` with `driverTCC.eds` + `bus.yml`, CSP at 1 kHz SYNC).
+- Not run yet: ROS (`ros2_canopen` with `fluxdrive-g4.eds` + `bus.yml`, CSP at 1 kHz SYNC).
 
 ---
 
@@ -123,7 +123,7 @@ New native objects go in three places with the same index, sub and type: `k_tab`
 ### Structure
 - `software/co_link.py` (no Qt): `CoBus` (adapter, `canopen.Network`, raw frame tap into a bounded ring, PC heartbeat producer), `DriveNode` (SDO with retry and abort-code text, native objects by `objects.py` key, NMT, heartbeat watch, EMCY log, PDO read/send, store/restore), `Drive402` (controlword commands, per-mode statusword decoding, `goto_enabled()`, PP handshake, homing, unit helpers), `Streamer` (CSP/CSV/CST set-points + SYNC on a thread).
 - `software/canopen_tab.py`: the GUI tab. `software/cotest.py` + `software/cotests/`: the test runner (`check(name, cond, detail)`; every test ends with disable voltage, the mode restored, NMT pre-operational and changed objects restored, in a `finally`).
-- The OD comes only from `software/driverTCC.eds` (`canopen.import_od()`); there is no second table of CAN objects to keep in sync.
+- The OD comes only from `software/fluxdrive-g4.eds` (`canopen.import_od()`); there is no second table of CAN objects to keep in sync.
 - `canopen.BaseNode402`'s state machine is deliberately not used: it hides the controlword timing and the refusals the tool needs to show. 0x6040 is driven directly.
 - Thread rule: python-can/canopen callbacks only append to locked rings and set flags; the GUI polls them on a `QTimer`.
 
@@ -262,10 +262,10 @@ Don't lower `vkp`/`vki` for the zero hold: the oscillation was from pushes.
 ```
 make -f STM32Make.make -j DEBUG=0 "OPTIMIZATION=-Os -g"     # release build -> build/release/
 python software/flash_report.py                           # component / object / section breakdown
-arm-none-eabi-nm --size-sort -S build/release/Driver_TCC.elf | tail -40
-arm-none-eabi-size -A build/release/Driver_TCC.elf | grep -E 'ccmram|\.bss|\.data'
+arm-none-eabi-nm --size-sort -S build/release/fluxdrive-g4.elf | tail -40
+arm-none-eabi-size -A build/release/fluxdrive-g4.elf | grep -E 'ccmram|\.bss|\.data'
 ```
-The map file (`build/Driver_TCC.map`) describes whichever build linked last. Delete `build/release/` after changing optimization flags.
+The map file (`build/fluxdrive-g4.map`) describes whichever build linked last. Delete `build/release/` after changing optimization flags.
 
 After any change to the ISR path, check the Config tab diagnostics (0x4002) in both builds: `currentLoop()` max under ~19 µs, encoder `late` 0.
 
@@ -392,7 +392,7 @@ Support an ams AS5048A next to the MT6835 with a single firmware image, chosen b
 | Supply | 3.3 V | 3.3 V needs VDD3V3 tied to VDD5V |
 
 ### Plan
-- **Selection:** `enc_type` in a spare byte of `motor_params_t` (`reserved1[2]` or `reserved2`). Old copies hold 0 there, so 0 = MT6835 and there is no `PARAM_VERSION` bump (as with `mtemp_max`). It needs a new object 0x40xx in `k_tab`, `objects.py` and the XDD (then the user exports `OD.c`/`OD.h`/`driverTCC.eds`), and takes effect after SAVE + reboot. Optional value "auto": at boot, probe the AS5048A first (read 0x3FFD and expect good parity and plausible AGC bits), then the MT6835 (burst mode and a passing CRC). 0xFFFF is no MT6835 command, so that order is safe.
+- **Selection:** `enc_type` in a spare byte of `motor_params_t` (`reserved1[2]` or `reserved2`). Old copies hold 0 there, so 0 = MT6835 and there is no `PARAM_VERSION` bump (as with `mtemp_max`). It needs a new object 0x40xx in `k_tab`, `objects.py` and the XDD (then the user exports `OD.c`/`OD.h`/`fluxdrive-g4.eds`), and takes effect after SAVE + reboot. Optional value "auto": at boot, probe the AS5048A first (read 0x3FFD and expect good parity and plausible AGC bits), then the MT6835 (burst mode and a passing CRC). 0xFFFF is no MT6835 command, so that order is safe.
 - **`enc.c/h` layer:** `enc_init()`, `enc_start()`, `enc_stop()`, `enc_trigger()` (from `TIM1_UP_TIM16_IRQHandler`), `enc_sample(&age)` and `enc_position()`, writing one `g_enc` state: `angle` always 21-bit, `turns`, and neutral counters (samples, integrity errors, late, stalls, status). `mt6835.c` stays the MT6835 driver; a new `as5048.c` holds the AS5048A. Dispatch through `switch (g_enc.type)`, not function pointers (keeps the hot path inlinable, no veneers). Every `hMT6835.angle`/`turns` reader (`motorCtrl.c`, `calib.c`, `hall.c`, `objdict.c`) moves to `g_enc`.
 - **AS5048A read, one frame per period:** in the TIM1 bottom interrupt, CS low through BSRR, then a DMA transfer of one 16-bit frame of **0xFFFF** (read angle with its parity bit; 0x0000 would be a NOP and never return the angle). In `enc_sample()`: DMA done, CS high (high for the rest of the period), check parity and the error flag, decode. The angle is latched at the CS falling edge, so it is ≈20 µs old at the current sample (MT6835 ≈4 µs). `age_s` carries that to the PLL. To get it down to a few µs, start the frame from a second timer slaved to TIM1 so it ends just before CC4. Hardware NSS pulse mode cannot toggle CS because it needs CPHA = 0.
 - **Guards:** keep rejecting 0x0000 (valid parity, EF = 0, would read as angle 0). 0xFFFF passes parity but has EF set, so the error-flag check rejects it. `ENC_LOST_N`/`ST_ENC_LOST` stay.

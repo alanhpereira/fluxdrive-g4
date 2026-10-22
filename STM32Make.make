@@ -31,7 +31,7 @@ endif
 ######################################
 # This is the name of the embedded target which will be build
 # The final file name will also have debug or release appended to it.
-TARGET ?= Driver_TCC
+TARGET ?= fluxdrive-g4
 
 #######################################
 # Build directories

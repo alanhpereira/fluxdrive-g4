@@ -15,11 +15,11 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q1="http://www.canopen.org/xml/1.1" xsi:type="q1:ProfileBody_Device_CANopen" formatName="CANopen" formatVersion="1.0" fileName="fluxdrive-g4.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModifiedBy="Hahn03" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <q1:DeviceIdentity>
         <q1:vendorName>Hahn</q1:vendorName>
         <q1:vendorID>0x00000000</q1:vendorID>
-        <q1:productName>driverTCC</q1:productName>
+        <q1:productName>fluxdrive-g4</q1:productName>
         <q1:productID>0x00000001</q1:productID>
         <q1:version versionType="SW">0</q1:version>
         <q1:version versionType="FW">0</q1:version>
@@ -1186,7 +1186,7 @@
           <q1:parameter uniqueID="UID_OBJ_1008">
             <label lang="en">Manufacturer device name</label>
             <STRING />
-            <q1:defaultValue value="driverTCC" />
+            <q1:defaultValue value="fluxdrive-g4" />
             <q1:property name="CO_storageGroup" value="PERSIST_COMM" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_1009">
@@ -4081,7 +4081,7 @@
         <ProfileTechnology>CANopen</ProfileTechnology>
       </ISO15745Reference>
     </ProfileHeader>
-    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="driverTCC.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
+    <ProfileBody xmlns:q2="http://www.canopen.org/xml/1.1" xsi:type="q2:ProfileBody_CommunicationNetwork_CANopen" formatName="CANopen" formatVersion="1.0" fileName="fluxdrive-g4.xdd" fileCreator="Hahn03" fileCreationDate="2026-10-17" fileCreationTime="08:00:00.0000000-03:00" fileModificationDate="2026-10-17" fileModificationTime="16:53:34.4510566-03:00" fileVersion="1" supportedLanguages="en" xmlns="">
       <ApplicationLayers>
         <q2:CANopenObjectList>
           <CANopenObject index="1000" name="Device type" objectType="7" PDOmapping="no" uniqueIDRef="UID_OBJ_1000" />

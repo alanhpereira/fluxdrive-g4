@@ -7930,7 +7930,7 @@
 		(property ki_fp_filters "MountingHole*")
 		(path "/7f218406-770b-459d-b582-fdcdee9e9585")
 		(sheetname "/")
-		(sheetfile "Driver TCC.kicad_sch")
+		(sheetfile "fluxdrive-g4.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10105,7 +10105,7 @@
 		(property ki_fp_filters "MountingHole*")
 		(path "/ddc83d3a-3a1b-4194-bbe1-1666e126427c")
 		(sheetname "/")
-		(sheetfile "Driver TCC.kicad_sch")
+		(sheetfile "fluxdrive-g4.kicad_sch")
 		(units
 			(unit
 				(name "A")

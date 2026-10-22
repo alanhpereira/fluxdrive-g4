@@ -56,7 +56,7 @@ static ODR_t restore_cb(CO_storage_entry_t* e, CO_CANmodule_t* m) {
 }
 
 /* ------------------------------------------------------------------ native objects 0x4000-0x40FF over SDO
- * The OD holds them (exported from driverTCC.xdd) so masters and the EDS see them, but the values live in the
+ * The OD holds them (exported from fluxdrive-g4.xdd) so masters and the EDS see them, but the values live in the
  * firmware's own variables: reads and writes go through objdict.c, with the same range checks and side effects
  * (pi_apply(), OF_NOTRUN...) as the USB/serial protocol. Sub-index 0 stays the OD's own */
 int co_app_abort_to_odr(uint32_t ab) {

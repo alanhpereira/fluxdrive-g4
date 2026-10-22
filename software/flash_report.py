@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Flash usage by component, from the linker map of the last build (build/Driver_TCC.map).
+Flash usage by component, from the linker map of the last build (build/fluxdrive-g4.map).
 
 The map is shared by debug and release builds: it describes whichever was linked last.
 
 Usage:
-    python software/flash_report.py [path/to/Driver_TCC.map] [-n 25]
+    python software/flash_report.py [path/to/fluxdrive-g4.map] [-n 25]
 """
 import argparse
 import collections
@@ -56,7 +56,7 @@ def parse(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("map", nargs="?", default="build/Driver_TCC.map")
+    ap.add_argument("map", nargs="?", default="build/fluxdrive-g4.map")
     ap.add_argument("-n", type=int, default=25, help="how many objects / sections to list")
     a = ap.parse_args()
     rows = parse(a.map)

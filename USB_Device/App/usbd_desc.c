@@ -78,9 +78,9 @@
 #undef USBD_PID
 #define USBD_PID     0x0001
 #undef USBD_MANUFACTURER_STRING
-#define USBD_MANUFACTURER_STRING     "Driver TCC"
+#define USBD_MANUFACTURER_STRING     "fluxdrive-g4"
 #undef USBD_PRODUCT_STRING
-#define USBD_PRODUCT_STRING     "Driver TCC motor driver"
+#define USBD_PRODUCT_STRING     "fluxdrive-g4 motor driver"
 
 /* USER CODE END PRIVATE_DEFINES */
 

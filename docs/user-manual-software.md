@@ -1,4 +1,4 @@
-# Driver TCC: user manual (PC software)
+# fluxdrive-g4: user manual (PC software)
 
 This manual covers the PC tools in `software/`: the plotter GUI (a USB page with the Scope and Config tabs, and a CANopen page), the CANopen test runner, and the helper scripts. How the driver itself behaves (calibration, modes, protections, CANopen profile, parameters) is in [user-manual-driver.md](user-manual-driver.md).
 
@@ -317,7 +317,7 @@ Like `cotest.py`, it cannot share a port with the GUI.
 
 ## 9. Helper scripts (developers)
 
-- `python software/check_sync.py`: compares the GUI's object table, message/status/event codes and telemetry layout with the firmware sources and the EDS. Run it after changing either side; it also notes when `driverTCC.xdd` is newer than the exported OD files.
+- `python software/check_sync.py`: compares the GUI's object table, message/status/event codes and telemetry layout with the firmware sources and the EDS. Run it after changing either side; it also notes when `fluxdrive-g4.xdd` is newer than the exported OD files.
 - `python software/flash_report.py`: flash use per object file of a build.
 
 ---

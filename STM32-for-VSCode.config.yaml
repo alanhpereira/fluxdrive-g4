@@ -6,7 +6,7 @@
 # - entry_2
 
 # The project name
-target: Driver TCC
+target: fluxdrive-g4
 # Can be C or C++
 language: C
 

@@ -501,7 +501,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "Driver TCC.kicad_pro",
+    "filename": "fluxdrive-g4.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -797,7 +797,7 @@
     "subpart_id_separator": 0,
     "top_level_sheets": [
       {
-        "filename": "Driver TCC.kicad_sch",
+        "filename": "fluxdrive-g4.kicad_sch",
         "name": "Root",
         "uuid": "95a51500-717e-4523-bcce-5694622de155"
       }

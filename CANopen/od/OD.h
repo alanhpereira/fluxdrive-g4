@@ -11,7 +11,7 @@
 
     File info:
         File Names:   OD.h; OD.c
-        Project File: driverTCC.xdd
+        Project File: fluxdrive-g4.xdd
         File Version: 1
 
         Created:      17/10/2026 08:00:00
@@ -22,7 +22,7 @@
     Device Info:
         Vendor Name:  Hahn
         Vendor ID:    0x00000000
-        Product Name: driverTCC
+        Product Name: fluxdrive-g4
         Product ID:   0x00000001
 
         Description:  
@@ -65,7 +65,7 @@ typedef struct {
     uint32_t x1005_COB_ID_SYNCMessage;
     uint32_t x1006_communicationCyclePeriod;
     uint32_t x1007_synchronousWindowLength;
-    char x1008_manufacturerDeviceName[10];
+    char x1008_manufacturerDeviceName[13];
     char x1009_manufacturerHardwareVersion[2];
     char x100A_manufacturerSoftwareVersion[2];
     uint32_t x1014_COB_ID_EMCY;

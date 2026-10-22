@@ -1,4 +1,4 @@
-# Driver TCC: user manual (driver and firmware)
+# fluxdrive-g4: user manual (driver and firmware)
 
 This manual covers the motor driver board and its firmware: connecting it, flashing it, commissioning a motor, running it, the protections, and operation over CANopen. The PC program (plotter, Config tab, CANopen tab, test runner) has its own manual: [user-manual-software.md](user-manual-software.md).
 
@@ -19,7 +19,7 @@ A field-oriented-control (FOC) driver for 3-phase permanent-magnet motors (BLDC/
 | Position sensor | MT6835 21-bit magnetic encoder (2 097 152 counts per turn) over SPI, or Hall sensors |
 | Control loops | current loop at 25 kHz; speed and position loops at 2.5 kHz |
 | Angle sources | encoder; encoder with a back-EMF flux observer blended in at speed; sensorless (high-frequency injection at low speed, observer at speed); Hall sensors; Hall sensors with high-frequency injection at low speed |
-| PC link | USB full-speed virtual COM port (VID:PID 1209:0001, product string "Driver TCC motor driver"). UART at 2 Mbaud as a build-time alternative |
+| PC link | USB full-speed virtual COM port (VID:PID 1209:0001, product string "fluxdrive-g4 motor driver"). UART at 2 Mbaud as a build-time alternative |
 | Field bus | CANopen on FDCAN1: CiA 301 node, CiA 402 drive profile (PP, PV, HM, CSP, CSV, CST), 20 kbit/s – 1 Mbit/s |
 | Parameter storage | internal flash, two redundant copies with CRC |
 
@@ -44,7 +44,7 @@ Read this before powering a motor.
 
 ## 3. Connections
 
-Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `hardware/Driver TCC schematic.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
+Pin-outs below are taken from the KiCad schematic (`hardware/`, sheet "02 - Connections"; also `hardware/fluxdrive-g4 schematic.pdf`). Pin 1 is as marked on the board. The small signal connectors are JST PH (2.0 mm pitch).
 
 ### Power and motor
 | Ref | Connector | Pins | Notes |
@@ -250,7 +250,7 @@ While a trip is latched, every command except STOP and REBOOT is refused with "a
 
 ## 9. Operation over CANopen
 
-The driver is a generic CiA 402 drive. The EDS for masters is `software/driverTCC.eds`.
+The driver is a generic CiA 402 drive. The EDS for masters is `software/fluxdrive-g4.eds`.
 
 ### 9.1 Node ID and bit rate
 Set over USB in the Config tab (group CAN): `can_id` (1–127, default 1) and `can_kbit` (20, 50, 125, 250, 500, 1000; default 1000). Then **Apply CAN settings** (Statistics box) for an immediate communication reset, and **Save to flash** to keep them. LSS is not supported.

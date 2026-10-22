@@ -25,7 +25,7 @@ OD_ATTR_PERSIST_COMM OD_PERSIST_COMM_t OD_PERSIST_COMM = {
     .x1005_COB_ID_SYNCMessage = 0x00000080,
     .x1006_communicationCyclePeriod = 0x00000000,
     .x1007_synchronousWindowLength = 0x00000000,
-    .x1008_manufacturerDeviceName = {'d', 'r', 'i', 'v', 'e', 'r', 'T', 'C', 'C', 0},
+    .x1008_manufacturerDeviceName = {'f', 'l', 'u', 'x', 'd', 'r', 'i', 'v', 'e', '-', 'g', '4', 0},
     .x1009_manufacturerHardwareVersion = {'1', 0},
     .x100A_manufacturerSoftwareVersion = {'1', 0},
     .x1014_COB_ID_EMCY = 0x00000080,
@@ -565,7 +565,7 @@ static CO_PROGMEM ODObjs_t ODObjs = {
     .o_1008_manufacturerDeviceName = {
         .dataOrig = &OD_PERSIST_COMM.x1008_manufacturerDeviceName[0],
         .attribute = ODA_SDO_R | ODA_STR,
-        .dataLength = 9
+        .dataLength = 12
     },
     .o_1009_manufacturerHardwareVersion = {
         .dataOrig = &OD_PERSIST_COMM.x1009_manufacturerHardwareVersion[0],

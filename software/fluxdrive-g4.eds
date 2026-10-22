@@ -1,5 +1,5 @@
 [FileInfo]
-FileName=driverTCC.eds
+FileName=fluxdrive-g4.eds
 FileVersion=1
 FileRevision=1
 LastEDS=
@@ -15,7 +15,7 @@ ModifiedBy=Hahn03
 [DeviceInfo]
 VendorName=Hahn
 VendorNumber=0x00000000
-ProductName=driverTCC
+ProductName=fluxdrive-g4
 ProductNumber=0x00000001
 RevisionNumber=0
 BaudRate_10=0
@@ -402,7 +402,7 @@ ObjectType=0x7
 ;StorageLocation=PERSIST_COMM
 DataType=0x0009
 AccessType=ro
-DefaultValue=driverTCC
+DefaultValue=fluxdrive-g4
 PDOMapping=0
 
 [1009]

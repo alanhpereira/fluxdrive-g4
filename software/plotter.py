@@ -173,7 +173,7 @@ class Sender(threading.Thread):
 class Main(QtWidgets.QMainWindow):
     def __init__(self, port=None):
         super().__init__()
-        self.setWindowTitle("Driver TCC telemetry")
+        self.setWindowTitle("fluxdrive-g4 telemetry")
         self.settings = QtCore.QSettings("driverTCC", "plotter")
         self.ser = self.rx = self.tx = self.link = None
         self.reconnect = None  # (port, baud, give-up time, next try) while a lost port is retried
@@ -577,7 +577,7 @@ def main():
     # useOpenGL: GPU drawing via Qt's own OpenGL widget (no PyOpenGL needed); painting is ~97% of the redraw cost
     pg.setConfigOptions(useOpenGL=True, antialias=False, background="#17181a", foreground="#c8c8c8")
     QtCore.QLocale.setDefault(QtCore.QLocale.c())  # '.' as decimal separator in every input, whatever the OS uses
-    app = pg.mkQApp("Driver TCC telemetry")
+    app = pg.mkQApp("fluxdrive-g4 telemetry")
     dark_theme(app)
     w = Main(args.port)
     w.show()

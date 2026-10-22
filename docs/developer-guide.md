@@ -18,7 +18,7 @@ Firmware, PC software and hardware of a graduation-thesis BLDC/PMSM motor driver
 - `docs/user-manual-software.md`: using the PC tools.
 - `docs/design-notes.md`: design decisions, bench measurements and open items (config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget, Hall sources, temperatures, planned AS5048A support).
 - `docs/software-structure.md`: Mermaid flowcharts of the firmware and PC software structure (execution paths, data flow, priorities). Update it when a call path or module role changes.
-- Hardware: KiCad project in `hardware/`, schematic PDF `hardware/Driver TCC schematic.pdf`, datasheets in `hardware/datasheets/`.
+- Hardware: KiCad project in `hardware/`, schematic PDF `hardware/fluxdrive-g4 schematic.pdf`, datasheets in `hardware/datasheets/`.
 
 Keep the manuals in step when a change affects what a user sees (parameters, status codes, GUI controls, pin use).
 
@@ -26,7 +26,7 @@ Keep the manuals in step when a change affects what a user sees (parameters, sta
 
 The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is generated from `STM32-for-VSCode.config.yaml` plus the CubeMX `Makefile`. Toolchain paths are in `.stm32env`: arm-none-eabi-gcc 13.2 and OpenOCD 0.12 under `C:/DEV/TOOLS/...`.
 
-- Build: VS Code task "Build STM", or `make -f STM32Make.make -j` → `build/debug/Driver_TCC.elf`, always `-Og`. `OPTIMIZATION` is only used with `DEBUG=0` (`make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`) → `build/release/`; tasks "Build STM release" / "Flash STM release" (`-Os -g`) and the launch config "Attach STM32 (release)" go with it. `make` does not rebuild when only `OPTIMIZATION` changes: delete `build/release/` when you switch flags. Flash use per module: `python software/flash_report.py`.
+- Build: VS Code task "Build STM", or `make -f STM32Make.make -j` → `build/debug/fluxdrive-g4.elf`, always `-Og`. `OPTIMIZATION` is only used with `DEBUG=0` (`make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`) → `build/release/`; tasks "Build STM release" / "Flash STM release" (`-Os -g`) and the launch config "Attach STM32 (release)" go with it. `make` does not rebuild when only `OPTIMIZATION` changes: delete `build/release/` when you switch flags. Flash use per module: `python software/flash_report.py`.
 - Flash: task "Flash STM", or `make -f STM32Make.make flash` (ST-Link through OpenOCD, `openocd.cfg`). Erase: `make -f STM32Make.make erase`, which also wipes the stored motor parameters and CANopen record.
 - Debug: cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, live watch enabled.
 - Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`. Numeric inputs use the C locale (`.` decimals) on purpose; keep it that way for new inputs.
@@ -35,13 +35,13 @@ The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is
 - Headless commands: `python software/drivectl.py --usb COMx [--can slcan:COM8] [command | -f script]` (no Qt; USB config commands, telemetry to CSV, CANopen SDO/NMT/402). It is built on `co_link.UsbSerial`, `CoBus` and `Drive402`.
 - `python software/check_sync.py` checks the PC tables against the firmware sources and the EDS.
 - New hand-written `Core/Src/*.c` files must be in `C_SOURCES` in `STM32Make.make`. The extension adds them when it regenerates the file; for command-line builds, add them by hand. Sources and include paths under `CANopen/` are listed in `STM32-for-VSCode.config.yaml` (`sourceFiles`, `includeDirectories`), so a regenerate keeps them.
-- CANopen object dictionary: `driverTCC.xdd` (repo root) is the CANopenEditor project. `CANopen/od/OD.c`/`OD.h` and `software/driverTCC.eds` are **exported** from it by the user in CANopenEditor; never write or hand-edit them. After an XDD change, stop and let the user export, then build.
+- CANopen object dictionary: `fluxdrive-g4.xdd` (repo root) is the CANopenEditor project. `CANopen/od/OD.c`/`OD.h` and `software/fluxdrive-g4.eds` are **exported** from it by the user in CANopenEditor; never write or hand-edit them. After an XDD change, stop and let the user export, then build.
 
 There are no unit tests. Changes are verified on hardware through the plotter (Config tab and telemetry) and `cotest.py`.
 
 ## CubeMX rules (important)
 
-`Driver TCC.ioc` is the source of truth for the peripheral setup. Everything below is CubeMX-generated, and CubeMX overwrites it when the project is regenerated:
+`fluxdrive-g4.ioc` is the source of truth for the peripheral setup. Everything below is CubeMX-generated, and CubeMX overwrites it when the project is regenerated:
 - `Core/Src/{adc,dac,dma,fdcan,gpio,i2c,opamp,spi,tim,usart,cordic}.c`
 - `stm32g4xx_hal_msp.c`, `stm32g4xx_it.c`
 - `USB_Device/`, `Drivers/`, `Middlewares/`, `Makefile`, the linker script, and the startup file
@@ -132,8 +132,8 @@ There is no text console: everything goes through binary frames, and the plotter
   - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/plotter.py`, `TELEM_NAMES` and `telem_ok()`/`Splitter` in `software/protocol.py`.
   - `k_tab` in `objdict.c` ↔ `OBJECTS` in `software/objects.py`: same order, index, sub, type and flags (both sides hash them; the GUI warns and disables mismatched rows).
   - Message types, `CAL_*`, `st_t`, `EV_*` and `SDO_*` in `proto.h` ↔ `software/protocol.py` (with the English text and event formatters).
-  - Native objects 0x4000–0x40FF: `k_tab` ↔ `OBJECTS` ↔ `driverTCC.xdd` (then the user exports `OD.c`/`OD.h`/`driverTCC.eds`). `check_sync.py` compares the EDS with `objects.py` and notes when the XDD is newer than the exports.
-  - The CANopen tab and `co_link.py` read everything about CAN objects from `software/driverTCC.eds`. The `st_t` codes the tests use (`ST_NEED_VGAINS`, `ST_RUNNING`, `ST_CAN_*`, `ST_FOLLOWING_ERROR`) are named in `protocol.py` and checked.
+  - Native objects 0x4000–0x40FF: `k_tab` ↔ `OBJECTS` ↔ `fluxdrive-g4.xdd` (then the user exports `OD.c`/`OD.h`/`fluxdrive-g4.eds`). `check_sync.py` compares the EDS with `objects.py` and notes when the XDD is newer than the exports.
+  - The CANopen tab and `co_link.py` read everything about CAN objects from `software/fluxdrive-g4.eds`. The `st_t` codes the tests use (`ST_NEED_VGAINS`, `ST_RUNNING`, `ST_CAN_*`, `ST_FOLLOWING_ERROR`) are named in `protocol.py` and checked.
 
 ### Parameters in flash
 - `params_save()` refuses to run while MOE is set (the page erase stalls the CPU ~20 ms). SAVE is refused unless the motor is off; it disables the bridge, saves, and re-inits it. SAVE writes both records: the motor params (pages 62–63) and the CANopen record (pages 60–61: node ID, bit rate, the `PERSIST_COMM`/`PERSIST_APP` OD parts). CANopen 0x1010 store requests are deferred to the main loop the same way (`:2` CANopen record, `:3` 402 settings + motor params).

@@ -3,7 +3,7 @@
 Checks that the PC side matches the firmware sources (no hardware, no compiler needed):
     Core/Src/objdict.c k_tab   <->  objects.py OBJECTS   (order, index, sub, type, flags; and the hash)
     Core/Inc/proto.h           <->  protocol.py          (message types, CAL ids, status and event codes)
-    software/driverTCC.eds     <->  objects.py OBJECTS   (the native objects 0x4000-0x40FF over CANopen: type, access)
+    software/fluxdrive-g4.eds     <->  objects.py OBJECTS   (the native objects 0x4000-0x40FF over CANopen: type, access)
 
 Usage:
     python software/check_sync.py
@@ -92,8 +92,8 @@ for code in re.findall(r"#define\s+SDO_\w+\s+(0x[0-9A-Fa-f]+)u", h):
     if int(code, 16) not in P.SDO:
         errors.append(f"SDO code {code} has no text in protocol.SDO")
 
-# CANopen: the native objects in the exported EDS (driverTCC.xdd -> CANopenEditor) must match objects.py
-EDS = os.path.join(ROOT, "software", "driverTCC.eds")
+# CANopen: the native objects in the exported EDS (fluxdrive-g4.xdd -> CANopenEditor) must match objects.py
+EDS = os.path.join(ROOT, "software", "fluxdrive-g4.eds")
 EDS_TYPE = {P.T_U8: 0x0005, P.T_I8: 0x0002, P.T_U16: 0x0006, P.T_U32: 0x0007, P.T_I32: 0x0004, P.T_F32: 0x0008,
             P.T_I16: 0x0003}
 eds = configparser.ConfigParser(strict=False, interpolation=None)
@@ -102,7 +102,7 @@ native = {o.index for o in O.OBJECTS}
 for o in O.OBJECTS:
     sec = f"{o.index:04X}sub{o.sub:X}"
     if not eds.has_section(sec):
-        errors.append(f"0x{o.index:04X}:{o.sub} {o.key} is not in driverTCC.eds (add it to driverTCC.xdd, re-export)")
+        errors.append(f"0x{o.index:04X}:{o.sub} {o.key} is not in fluxdrive-g4.eds (add it to fluxdrive-g4.xdd, re-export)")
         continue
     t = int(eds.get(sec, "DataType", fallback="0"), 0)
     if t != EDS_TYPE[o.type]:
@@ -113,10 +113,10 @@ for o in O.OBJECTS:
 for sec in eds.sections():
     m = re.fullmatch(r"([0-9A-F]{4})sub([0-9A-F]+)", sec, flags=re.I)
     if m and int(m.group(1), 16) in native and int(m.group(2), 16) and (int(m.group(1), 16), int(m.group(2), 16)) not in O.BY_ADDR:
-        errors.append(f"driverTCC.eds has {sec}, unknown to objects.py")
-xdd, odh = os.path.join(ROOT, "driverTCC.xdd"), os.path.join(ROOT, "CANopen", "od", "OD.h")
+        errors.append(f"fluxdrive-g4.eds has {sec}, unknown to objects.py")
+xdd, odh = os.path.join(ROOT, "fluxdrive-g4.xdd"), os.path.join(ROOT, "CANopen", "od", "OD.h")
 if os.path.getmtime(xdd) > os.path.getmtime(odh) + 2 or os.path.getmtime(xdd) > os.path.getmtime(EDS) + 2:
-    print("note: driverTCC.xdd is newer than OD.h / driverTCC.eds: re-export both from CANopenEditor if it changed")
+    print("note: fluxdrive-g4.xdd is newer than OD.h / fluxdrive-g4.eds: re-export both from CANopenEditor if it changed")
 
 if errors:
     print("\n".join("MISMATCH: " + e for e in errors))

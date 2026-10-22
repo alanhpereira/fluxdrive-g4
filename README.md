@@ -1,4 +1,4 @@
-# Driver TCC
+# fluxdrive-g4
 
 Firmware, PC software and hardware design of a field-oriented-control (FOC) driver for 3-phase BLDC/PMSM motors, built as a graduation thesis (TCC) project.
 
@@ -23,12 +23,12 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | Path | Content |
 |---|---|
 | `Core/` | Firmware: CubeMX-generated peripheral setup plus the hand-written control code (`motorCtrl.c`, `calib.c`, `hfi.c`, `mt6835.c`, `proto.c`, `objdict.c`, `params.c`, …) |
-| `CANopen/` | CANopenNode stack, the FDCAN port, the object dictionary (exported from `driverTCC.xdd`) and the CiA 402 layer |
+| `CANopen/` | CANopenNode stack, the FDCAN port, the object dictionary (exported from `fluxdrive-g4.xdd`) and the CiA 402 layer |
 | `Drivers/`, `Middlewares/`, `USB_Device/` | ST HAL, CMSIS and USB device stack (generated) |
-| `Driver TCC.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
-| `driverTCC.xdd` | CANopenEditor project of the object dictionary |
-| `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `driverTCC.eds` (EDS for CANopen masters) |
-| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`Driver TCC schematic.pdf`) |
+| `fluxdrive-g4.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
+| `fluxdrive-g4.xdd` | CANopenEditor project of the object dictionary |
+| `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `fluxdrive-g4.eds` (EDS for CANopen masters) |
+| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`fluxdrive-g4 schematic.pdf`) |
 | `hardware/datasheets/` | Datasheets of the main parts: STSPIN32G4 (controller + gate driver), STM32G431 (its MCU), DI100N10PQ (bridge MOSFETs), MT6835 (encoder), TJA1051 (CAN transceiver), USBLC6-2 (USB ESD protection), ANTC1608-103F3450FB (board NTC). The STM32G4 reference manual (RM0440, register descriptions) is not included: get it from [st.com](https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf). |
 | `docs/` | Manuals and design notes |
 
@@ -38,7 +38,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 Requirements: arm-none-eabi-gcc, make, OpenOCD and an ST-Link (paths in `.stm32env`). The project is set up for the **STM32 for VSCode** extension.
 
 ```
-make -f STM32Make.make -j                                   # debug build -> build/debug/Driver_TCC.elf
+make -f STM32Make.make -j                                   # debug build -> build/debug/fluxdrive-g4.elf
 make -f STM32Make.make -j flash                             # flash over ST-Link
 make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os flash    # release build
 ```
@@ -53,7 +53,7 @@ python software/plotter.py
 Connect to the port marked **[driver USB]**, then follow the calibration steps in the Config tab (driver manual, section 5).
 
 ### Hardware
-Open `hardware/Driver TCC.kicad_pro` in KiCad (made with KiCad 10).
+Open `hardware/fluxdrive-g4.kicad_pro` in KiCad (made with KiCad 10).
 
 ## License
 
