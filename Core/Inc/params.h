@@ -15,13 +15,13 @@
 
 /* angle source (ang_src): what commutation, speed and the observer's references come from */
 #define ANG_ENCODER 0u   /* encoder only; the observer and HFI run and log, nothing blends in */
-#define ANG_ENC_OBS 1u   /* encoder, with the observer blended in above obs_lo_v (obs_blend) */
-#define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo_v; no encoder in the loop, position mode refused */
-#define ANG_HALL 3u		  /* Hall sensors (interpolated), with the observer above obs_lo_v (obs_blend); no encoder */
-#define ANG_HALL_HFI 4u	  /* HFI at low speed, guarded and started by the Halls; Halls from hyb_lo..hyb_hi up; observer above obs_lo_v */
+#define ANG_ENC_OBS 1u   /* encoder, with the observer blended in above obs_lo (obs_blend) */
+#define ANG_SENSORLESS 2u /* HFI, with the observer above obs_lo; no encoder in the loop, position mode refused */
+#define ANG_HALL 3u		  /* Hall sensors (interpolated), with the observer above obs_lo (obs_blend); no encoder */
+#define ANG_HALL_HFI 4u	  /* HFI at low speed, guarded and started by the Halls; Halls from hyb_lo..hyb_hi up; observer above obs_lo */
 
 #define PARAM_MAGIC 0x4D505231u /* 'MPR1' */
-#define PARAM_VERSION 8u /* bump when the struct layout changes: older copies are rejected, defaults load */
+#define PARAM_VERSION 9u /* bump when the struct layout changes: older copies are rejected, defaults load */
 
 typedef struct {
 	/* header */
@@ -64,8 +64,8 @@ typedef struct {
 
 	/* back-EMF observer and speed ramp */
 	float obs_gain;		/* rad/s, flux magnitude correction */
-	float obs_lo_v;		/* peak back-EMF where the observer starts to get weight, V */
-	float obs_hi_v;		/* ...and where it has all of it */
+	float obs_lo;		/* rpm: the observer starts to get weight at this speed (of the base angle) */
+	float obs_hi;		/* ...and has all of it here */
 	float obs_flux_tol; /* |flux| / lambda must stay within 1 +- tol */
 	float obs_err_max;	/* deg electrical: sustained observer - encoder difference above this drops it */
 	float acc_lim;		/* rpm/s, speed reference ramp in the speed/position loops; 0 = off */

@@ -138,7 +138,7 @@ Editing works in two steps:
 | **Revert** | Drops pending edits. |
 | **Save to flash** | Stores what the device holds (not pending edits) in flash, plus the CANopen settings. Refused while the motor runs. The orange line "device RAM differs from flash" means there is something unsaved. |
 | **Export JSON…** | Reads everything and saves it with a timestamp. Use it as a backup of a calibrated motor. |
-| **Import JSON…** | Loads a file as pending edits (nothing is sent yet). Then **Write changed** and **Save to flash**. This is how a calibration is restored after a firmware update that reset the parameters. |
+| **Import JSON…** | Loads a file as pending edits (nothing is sent yet). Then **Write changed** and **Save to flash**. This is how a calibration is restored after a firmware update that reset the parameters. A value whose unit has changed since the export (e.g. `olo`/`ohi`, V before `PARAM_VERSION` 9, rpm now) is skipped and listed in the log: set it by hand. |
 | **Reboot** | Resets the driver (unsaved RAM edits are lost). The port closes and the plotter reopens it when the driver is back (it retries for 10 s). |
 | **Reboot to DFU** | Resets into the ST USB bootloader for flashing with STM32CubeProgrammer. |
 
@@ -289,7 +289,7 @@ USB commands:
 | `cal WHICH [ARG] [--timeout S]` | A calibration, with the Config tab's letters (`c e H r l q t k z u h p`) or names (`offsets encoder hall r ld lq tune kv zero uvw hfimap hfipol`). Prints the events and waits for the end; Ctrl-C sends ABORT. There are no safety prompts: read section 5.2 before running `e`, `H`, `q`, `k`, `z`, `u`, `h`, `p`. |
 | `cur ID IQ`, `vel RPM`, `pos TURNS`, `stop`, `home`, `abort` | As in the run panel. |
 | `reboot [dfu]` | Reset (the port comes back after 1–2 s and the tool reopens it), or into the ST bootloader. |
-| `export FILE.json`, `import FILE.json` | The Config tab's JSON format. `import` writes the values to RAM; `save` afterwards stores them. |
+| `export FILE.json`, `import FILE.json` | The Config tab's JSON format. `import` writes the values to RAM; `save` afterwards stores them. Values whose unit has changed since the export are skipped and listed. |
 | `telem [SECONDS] [FILE.csv]` | Telemetry: to a CSV (time from the frame counter, then `seq` and the 16 channels), or 10 lines/s of bus voltage, currents, speed and position. 0 or no time: until Ctrl-C. |
 | `watch KEY… [-p PERIOD]` | Prints the objects every PERIOD s (0.5) until Ctrl-C. |
 | `events [SECONDS]`, `sleep SECONDS` | Wait, printing events (and EMCYs with `--can`). |

@@ -3474,24 +3474,24 @@
             </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403003" access="readWrite">
-            <description lang="en">[V] peak back-EMF where the observer starts to get weight</description>
+            <description lang="en">[rpm] speed where the observer starts to get weight</description>
             <REAL />
-            <q1:defaultValue value="0.0" />
+            <q1:defaultValue value="425.0" />
             <q1:allowedValues>
               <q1:range>
                 <minValue value="0" />
-                <maxValue value="100" />
+                <maxValue value="100000" />
               </q1:range>
             </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_403004" access="readWrite">
-            <description lang="en">[V]</description>
+            <description lang="en">[rpm] speed from which the observer has all the weight</description>
             <REAL />
-            <q1:defaultValue value="0.0" />
+            <q1:defaultValue value="850.0" />
             <q1:allowedValues>
               <q1:range>
                 <minValue value="0" />
-                <maxValue value="100" />
+                <maxValue value="100000" />
               </q1:range>
             </q1:allowedValues>
           </q1:parameter>

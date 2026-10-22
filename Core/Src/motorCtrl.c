@@ -319,8 +319,8 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 /* Nonlinear flux observer (Ortega et al. 2011, the one VESC/ODrive use), stationary frame:
  *   x' = v - R*i + k * eta * (lambda^2 - |eta|^2),   eta = x - L*i = rotor flux,  k = gain / (2 lambda^2)
  * The angle of eta is the electrical angle at the current sample, the same instant theta_m refers to.
- * With g_params.obs_blend it replaces the encoder for commutation and speed above obs_lo_v of back-EMF,
- * with a linear blend up to obs_hi_v. Position always comes from the encoder. Tuning (params, 's'):
+ * With g_params.obs_blend it replaces the encoder for commutation and speed above obs_lo rpm,
+ * with a linear blend up to obs_hi (rpm, like hyb_lo/hyb_hi). Position always comes from the encoder. Tuning (params, 's'):
  * obs_gain (rad/s), obs_flux_tol, obs_err_max (deg electrical: leaves room for the encoder's own error,
  * nonlinearity ~+-5 and a mount slip of ~13 deg have been seen) */
 #define OBS_LOCK_N 250		/* cycles (10 ms) both checks must hold before it gets any weight */
@@ -394,9 +394,9 @@ static int obs_update(float i_a, float i_b, uint32_t* theta) {
 }
 
 /* weight of the observer angle against the base angle (encoder, or HFI when sensorless). diff = observer - base
- * (Q32 electrical), we = electrical speed of the base in Q32 per second, blend = 0: run and log only,
+ * (Q32 electrical), vel = speed of the base in mechanical turn/s, blend = 0: run and log only,
  * agree = 0: the base is not a reference for the agreement check (sensorless above SL_AGREE_MAX_TURNS) */
-static float obs_weight(int valid, uint32_t diff, float we, int blend, int agree) {
+static float obs_weight(int valid, uint32_t diff, float vel, int blend, int agree) {
 	if (!valid) {
 		s_obs_good = 0;
 		s_obs_flux_bad = s_obs_enc_bad = 0;
@@ -429,12 +429,11 @@ static float obs_weight(int valid, uint32_t diff, float we, int blend, int agree
 	}
 	float w = 0.0f;
 	if (blend && s_obs_good >= OBS_LOCK_N) {
-		float emf = s_obs_lambda * fabsf(we) * (2.0f * (float)M_PI / 4294967296.0f); /* V peak */
-		float span = g_params.obs_hi_v - g_params.obs_lo_v;
+		const float r = fabsf(vel) * 60.0f, lo = g_params.obs_lo, span = g_params.obs_hi - lo; /* rpm */
 		if (span > 0.0f)
-			w = (emf - g_params.obs_lo_v) / span;
+			w = (r - lo) / span;
 		else
-			w = (emf >= g_params.obs_lo_v) ? 1.0f : 0.0f;
+			w = (r >= lo) ? 1.0f : 0.0f;
 		w = w < 0.0f ? 0.0f : w > 1.0f ? 1.0f
 									   : w;
 	}
@@ -684,13 +683,12 @@ void currentLoop(void) {
 		s_hall_pos_on = 0;
 	s_hall_vel = vel_hall;
 	s_hall_err = (src == ANG_HALL && g_enc_lost_n < ENC_LOST_N) ? (float)(int32_t)(th_hall - th_enc) * (1.0f / 4294967296.0f) : NAN;
-	const float we = vel_base * pp * 4294967296.0f; /* electrical Q32 per second, of the base */
 	obs_pll(obs, th_obs, vel_base);
 	/* sensorless always blends the observer in (HFI alone cannot reach full speed); ENCODER never does */
 	const int blend = sl || ((src == ANG_ENC_OBS || hl) && g_params.obs_blend);
-	/* the observer's agreement check and back-EMF level use the base: HFI when sensorless, else the encoder or the Halls */
+	/* the observer's agreement check and speed threshold use the base: HFI when sensorless, else the encoder or the Halls */
 	const int agree = !sl || fabsf(vel_base) < SL_AGREE_MAX_TURNS; /* sensorless: HFI is wrong at speed */
-	float w = obs_weight(obs, th_obs - th_base, we, blend, agree);
+	float w = obs_weight(obs, th_obs - th_base, vel_base, blend, agree);
 	/* injection off once the observer (Hall + HFI: or the Halls) has it all, back on below 90 % (hysteresis: w is
 	 * noisy at the edge) */
 	static uint8_t hfi_pause;

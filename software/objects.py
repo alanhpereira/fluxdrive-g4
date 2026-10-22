@@ -50,6 +50,16 @@ class Obj:
         """'0 = encoder, 1 = ...'; just the values when the names are the numbers themselves (dir, can_kbit)"""
         return ", ".join(n if n.lstrip("+") == str(k) else f"{k} = {n}" for k, n in self.choices.items())
 
+    @property
+    def json_unit(self):
+        """the unit a JSON export records for the value (device units)"""
+        return self.unit if self.type != T_F32 or self.scale == 1.0 else "SI (see objects.py)"
+
+    def unit_changed(self, doc):
+        """a reason if a JSON export recorded this value in another unit than the one it has now, else None"""
+        u = (doc.get("units") or {}).get(self.key)
+        return None if u is None or u == self.json_unit else f"exported in {u or 'no unit'}, now {self.json_unit}"
+
     def check(self, v):
         """None if v (device units) is acceptable, else a reason"""
         if v != v:
@@ -221,9 +231,10 @@ OBJECTS = [
         help="1: blend into angle and speed above olo; 0: run and log it only",
         choices={0: "log only", 1: "blend"}),
     Obj(0x4030, 2, T_F32, STORED, "ogain", "Flux correction gain", "rad/s", lo=0, hi=1e6, group=G_OBS, decimals=0),
-    Obj(0x4030, 3, T_F32, STORED, "olo", "Blend start", "V", lo=0, hi=100, group=G_OBS, decimals=2,
-        help="peak back-EMF where the observer starts to get weight"),
-    Obj(0x4030, 4, T_F32, STORED, "ohi", "Blend full", "V", lo=0, hi=100, group=G_OBS, decimals=2),
+    Obj(0x4030, 3, T_F32, STORED, "olo", "Blend start", "rpm", lo=0, hi=1e5, group=G_OBS, decimals=0,
+        help="speed where the observer starts to get weight"),
+    Obj(0x4030, 4, T_F32, STORED, "ohi", "Blend full", "rpm", lo=0, hi=1e5, group=G_OBS, decimals=0,
+        help="speed from which the observer has all the weight"),
     Obj(0x4030, 5, T_F32, STORED, "oftol", "Flux tolerance", "", lo=0, hi=1, group=G_OBS, decimals=2,
         help="|flux|/lambda must stay within 1 ± tol"),
     Obj(0x4030, 6, T_F32, STORED, "oerr", "Max observer error", "deg elec", lo=0, hi=180, group=G_OBS, decimals=0),

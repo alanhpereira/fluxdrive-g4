@@ -593,8 +593,7 @@ class ConfigTab(QtWidgets.QWidget):
             doc = {"format": "driverTCC-params", "param_version": parv, "build_id": f"{bid:08X}",
                    "saved": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "values": {o.key: self.dev[o.key] for o in self.params() if o.key in self.dev},
-                   "units": {o.key: o.unit if o.type != P.T_F32 or o.scale == 1.0 else "SI (see objects.py)"
-                             for o in self.params()}}
+                   "units": {o.key: o.json_unit for o in self.params()}}
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(doc, f, indent=1)
             self.log(f"exported {len(doc['values'])} values to {path}", GREEN)
@@ -617,7 +616,7 @@ class ConfigTab(QtWidgets.QWidget):
             if o is None or not o.stored or o.ro or k in self.disabled:
                 bad.append(f"{k} (unknown)")
                 continue
-            why = o.check(v) if isinstance(v, (int, float)) else "not a number"
+            why = o.unit_changed(doc) or (o.check(v) if isinstance(v, (int, float)) else "not a number")
             if why:
                 bad.append(f"{k} ({why})")
                 continue

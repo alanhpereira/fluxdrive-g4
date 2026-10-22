@@ -3379,9 +3379,9 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0008
 AccessType=rw
-HighLimit=100
+HighLimit=100000
 LowLimit=0
-DefaultValue=0.0
+DefaultValue=425.0
 PDOMapping=0
 
 [4030sub4]
@@ -3390,9 +3390,9 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0008
 AccessType=rw
-HighLimit=100
+HighLimit=100000
 LowLimit=0
-DefaultValue=0.0
+DefaultValue=850.0
 PDOMapping=0
 
 [4030sub5]

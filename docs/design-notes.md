@@ -288,6 +288,7 @@ For motors with Hall sensors and no encoder. 3 uses the Halls alone (any motor);
 - HFI autostarts on the Hall angle (`th_ref` of `hfi_step()`). Within ±30° of the truth, the PLL locks on the right side: no polarity pulses, no ~185 ms start.
 - **Guard:** HFI more than 20° outside the present Hall sector for 2 ms → `hfi_reseed()` on the Hall angle, counted in 0x4002:13. That only costs accuracy; nothing stops the motor while the Halls are there.
 - **Crossfade** by Hall speed between `hyb_lo` and `hyb_hi`; the injection pauses once the Hall weight reaches 1 (hysteresis 0.9), like it does for the observer.
+- **One unit for the handovers (2026-10-22, `PARAM_VERSION` 9).** The observer thresholds `olo`/`ohi` were volts of peak back-EMF, but the firmware computed that voltage from the base speed (λ · ω, λ from `kv`), so they were speed thresholds in another unit. Next to `hyb_lo`/`hyb_hi` in rpm, comparing them meant working out λ by hand. They are now rpm too (defaults 425 / 850, which is 0.7 / 1.4 V on the bench motor). The threshold no longer follows `kv` by itself, but a new motor gets new settings anyway. It also freed 48 bytes of CCM (64 in release). JSON exports record each value's unit, and both importers (Config tab, `drivectl.py import`) skip a value whose unit has changed since the export.
 
 ### Bench stand-in
 The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors. `ZERO_POS` moves all outputs, so after 'e' `CAL_UVW` also puts the zero on electrical zero (`uvw_zero()`: 12-bit steps of 0.088° mech; `elec_offset` keeps the rounding, the Hall table is cleared) and the UVW edges sit like well-mounted Halls. The SPI angle stays there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the placement correction or the glitch filter; that needs a real Hall motor.
@@ -303,7 +304,7 @@ Setup: the MT6835's UVW outputs as the Halls, 7 pole pairs, 30 V, the SPI encode
 
 | | 10 rpm | 50 rpm | 100 rpm | 300 rpm | 600 rpm | 1000 rpm | 3000 rpm |
 |---|---|---|---|---|---|---|---|
-| 4 | 9.9 avg (stick-slip on the cogging) | 49.7 avg | 99.6 avg | 299.4 avg (crossfade) | 606.7 avg (Hall, HFI paused; observer weight 0.42, as `olo`/`ohi` give: 1.0 V of back-EMF) | — | — |
+| 4 | 9.9 avg (stick-slip on the cogging) | 49.7 avg | 99.6 avg | 299.4 avg (crossfade) | 606.7 avg (Hall, HFI paused; observer weight 0.42, as `olo`/`ohi` gave: 1.0 V of back-EMF, then the unit) | — | — |
 | 3, `vkp` 0.35 | runs to > 100 | — | limit cycle −70…+250 | — | — | — | — |
 | 3, `vkp` 0.05 / `vki` 2.1 | — | ripple 58 (1: 50) | ripple 28 (1: 11) | ripple 6.8 (1: 5.8) | — | 1000.2 avg, ripple 12, Hall − enc ±9° | Hall − enc −13…+6° |
 

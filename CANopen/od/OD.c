@@ -314,8 +314,8 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .highestSub_indexSupported = 0x06,
         .blendObserver = 0x00,
         .fluxCorrectionGain = 0.0,
-        .blendStart = 0.0,
-        .blendFull = 0.0,
+        .blendStart = 425.0,
+        .blendFull = 850.0,
         .fluxTolerance = 0.0,
         .maxObserverError = 0.0
     },

@@ -322,7 +322,7 @@ flowchart LR
     SEL -- "3: Hall" --> BASE
     SEL -- "4: Hall + HFI" --> BASE
 
-    BASE --> BL["blend with weight w<br/>w = 0 below obs_lo_v,<br/>1 at obs_hi_v,<br/>only after lock"]
+    BASE --> BL["blend with weight w<br/>w = 0 below obs_lo rpm,<br/>1 at obs_hi rpm,<br/>only after lock"]
     OP --> BL
     BL --> TH["commutation angle θm, θo"]
     BL --> SV["s_vel → speed loop,<br/>g_vel, output advance"]
@@ -332,7 +332,7 @@ flowchart LR
 
 - `ang_src` 0: encoder only (w is computed but forced to 0).
 - `ang_src` 1: blends the observer in when `obs_blend` = 1.
-- `ang_src` 2: HFI is the base, the observer always blends in above `obs_lo_v`; the encoder is only logged and position mode is refused.
+- `ang_src` 2: HFI is the base, the observer always blends in above `obs_lo`; the encoder is only logged and position mode is refused.
 - `ang_src` 3: the interpolated Hall angle is the base; the observer blends in with `obs_blend` = 1.
 - `ang_src` 4: HFI, started on the Hall angle and kept in the Hall sector, crossfades to the Hall angle between `hyb_lo` and `hyb_hi` (the injection pauses above); the observer blends in with `obs_blend` = 1. In 3 and 4 the position is the base angle accumulated.
 

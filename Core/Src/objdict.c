@@ -134,8 +134,8 @@ static const obj_t k_tab[] = {
 	/* 0x4030 observer */
 	{0x4030, 1, T_U8, OF_STORED, F(g_params.obs_blend), 0.0f, 1.0f},
 	{0x4030, 2, T_F32, OF_STORED, F(g_params.obs_gain), 0.0f, 1.0e6f},
-	{0x4030, 3, T_F32, OF_STORED, F(g_params.obs_lo_v), 0.0f, 100.0f},
-	{0x4030, 4, T_F32, OF_STORED, F(g_params.obs_hi_v), 0.0f, 100.0f},
+	{0x4030, 3, T_F32, OF_STORED, F(g_params.obs_lo), 0.0f, 1.0e5f},
+	{0x4030, 4, T_F32, OF_STORED, F(g_params.obs_hi), 0.0f, 1.0e5f},
 	{0x4030, 5, T_F32, OF_STORED, F(g_params.obs_flux_tol), 0.0f, 1.0f},
 	{0x4030, 6, T_F32, OF_STORED, F(g_params.obs_err_max), 0.0f, 180.0f},
 	/* 0x4031 high-frequency injection */

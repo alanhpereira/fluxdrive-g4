@@ -188,7 +188,7 @@ Set with `angsrc` (only while stopped), then save.
 | `angsrc` | Name | Use |
 |---|---|---|
 | 0 | Encoder only | Simplest. The observer and HFI still run for logging if enabled, but do not affect control. |
-| 1 | Encoder + observer *(default)* | Below `olo` of back-EMF the encoder is used; between `olo` and `ohi` the observer's angle and speed are blended in (with `oblend` = 1), once it has passed its flux check and agreed with the encoder. Position always comes from the encoder. Gives a cleaner speed estimate at high speed. |
+| 1 | Encoder + observer *(default)* | Below `olo` rpm the encoder is used; between `olo` and `ohi` the observer's angle and speed are blended in (with `oblend` = 1), once it has passed its flux check and agreed with the encoder. Position always comes from the encoder. Gives a cleaner speed estimate at high speed. |
 | 2 | Sensorless | HFI (high-frequency injection) at standstill and low speed, the observer above `olo`. The encoder is not used for control (only logged). **Position mode is refused.** |
 | 3 | Hall | The Hall sensors on J13, interpolated between their edges with the speed of the last sector (its width from **H** over the time it took); the observer blends in above `olo` (with `oblend` = 1). No encoder needed. At standstill the angle sits in the middle of the Hall sector (up to 30° electrical off: about 87 % of the torque for the current). Position counts the angle: coarse at low speed (6 × `pp` steps per turn). Works on any motor. Good for current (torque) mode and for speed above a few hundred rpm; below that the speed is new only once per sector, so the speed loop needs much lower `vkp`/`vki` than with an encoder (see "3 or 4?" below). |
 | 4 | Hall + HFI | HFI at standstill and low speed, started on the Hall angle (so no polarity pulses) and kept inside the Hall sector: if it strays out for 2 ms it is put back on the Hall angle (counted in "HFI re-seeds"), never a stop. Between `hyblo` and `hybhi` the Hall angle fades in and the injection pauses above it; the observer blends in above `olo`. Full torque and fine position at standstill. Needs a salient motor (the **h** map) and the Hall sensors. The injection also shakes the rotor slightly, which lowers the current it needs to break away from cogging, so a small torque command holds less firmly than in 1 or 3. With the motor off there is no injection and the angle is the Hall sector centre: home while running for a fine zero. |
@@ -391,7 +391,7 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 |---|---|---|---|---|
 | `oblend` | Blend observer | 0/1 | 1 | 0 = run and log only. |
 | `ogain` | Flux correction gain | rad/s | 1000 | |
-| `olo` / `ohi` | Blend start / full | V (peak back-EMF) | 0.7 / 1.4 | |
+| `olo` / `ohi` | Blend start / full | rpm | 425 / 850 | The observer's weight ramps from 0 at `olo` to 1 at `ohi`, by the speed of the base angle (encoder, HFI or Halls). The same unit as `hyblo`/`hybhi`. Up to `PARAM_VERSION` 8 these were volts of peak back-EMF; 0.7 / 1.4 V correspond to 425 / 850 rpm on the bench motor. |
 | `oftol` | Flux tolerance | — | 0.3 | \|flux\|/λ must stay within 1 ± tol. |
 | `oerr` | Max observer error | ° elec | 30 | Sustained disagreement with the encoder drops the observer. |
 
