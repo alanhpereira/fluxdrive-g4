@@ -303,7 +303,7 @@ Setup: the MT6835's UVW outputs as the Halls, 7 pole pairs, 30 V, the SPI encode
 
 | | 10 rpm | 50 rpm | 100 rpm | 300 rpm | 600 rpm | 1000 rpm | 3000 rpm |
 |---|---|---|---|---|---|---|---|
-| 4 | 9.9 avg (stick-slip on the cogging) | 49.7 avg | 99.6 avg | 299.4 avg (crossfade) | 606.7 avg (Hall, HFI paused) | — | — |
+| 4 | 9.9 avg (stick-slip on the cogging) | 49.7 avg | 99.6 avg | 299.4 avg (crossfade) | 606.7 avg (Hall, HFI paused; observer weight 0.42, as `olo`/`ohi` give: 1.0 V of back-EMF) | — | — |
 | 3, `vkp` 0.35 | runs to > 100 | — | limit cycle −70…+250 | — | — | — | — |
 | 3, `vkp` 0.05 / `vki` 2.1 | — | ripple 58 (1: 50) | ripple 28 (1: 11) | ripple 6.8 (1: 5.8) | — | 1000.2 avg, ripple 12, Hall − enc ±9° | Hall − enc −13…+6° |
 
@@ -331,6 +331,5 @@ So 4 is near the encoder for low-speed speed and position control; 3 is good for
 - 4: with the motor off the angle is the Hall sector centre, so enabling moves the position by up to ±30° electrical; a home taken while off carries that. Fix: hold the position while off, or home only while running.
 - 4: the injection lowers the breakaway current, so a small torque command holds less firmly than in 1 or 3.
 - Encoder: allow the CRC switch-off only on the first `MT6835_StartBurst()` after boot, not after a recovery.
-- At 600 rpm in 4 the observer weight was 0.42 (back-EMF above `ohi`, so 1 was expected): not looked into.
 - `obs_err_max` (30°) may be tight against the Hall angle under acceleration in 3.
 - `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses; they worked on the bench.
