@@ -15,6 +15,7 @@
 #include "motorCtrl.h" /* g_loop_cyc */
 #include "pi_ctrl.h"
 #include "proto.h"
+#include "temp.h"
 
 volatile ctrl_mode_t g_mode = CTRL_OFF;
 volatile float g_vd_cmd, g_vq_cmd;
@@ -148,6 +149,7 @@ static st_t hall_lost(void) {
  * STOP abort, anything else gets ST_BUSY */
 static st_t chk(void) {
 	if (proto_poll(1)) return ST_ABORTED;
+	temp_poll(); /* keeps measuring while a calibration blocks main */
 	if (g_trip) return g_trip == TRIP_OV ? ST_VBUS_HIGH : ST_OVERCURRENT; /* the ISR trip (overcurrent too) */
 	if (checkAndClearBridgeFault() != 0) return ST_BRIDGE_FAULT;
 	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
@@ -155,7 +157,7 @@ static st_t chk(void) {
 	if (sl_lost() != ST_OK) return ST_HFI_LOST;
 	if (enc_lost() != ST_OK) return ST_ENC_LOST;
 	if (hall_lost() != ST_OK) return ST_HALL_LOST;
-	return ST_OK;
+	return (st_t)temp_fault(NULL);
 }
 
 static st_t precheck(void) {
@@ -1094,6 +1096,7 @@ static void run_watchdog(void) {
 		return;
 	}
 	st_t e = ST_OK;
+	float tval = 0.0f; /* the temperature (or sensor) of a temperature stop */
 	if (g_hfi_start_done) { /* report the sensorless start (its polarity pulses); refuse to run on a coin toss */
 		g_hfi_start_done = 0;
 		const float s[3] = {g_hfi_pol_contrast, g_hfi_pol_flip, g_hfi_err * 360.0f};
@@ -1108,7 +1111,9 @@ static void run_watchdog(void) {
 	else if (sl_lost() != ST_OK) e = ST_HFI_LOST; /* sensorless: HFI stopped tracking */
 	else if (enc_lost() != ST_OK) e = ST_ENC_LOST; /* encoder modes: no valid angle */
 	else if (hall_lost() != ST_OK) e = ST_HALL_LOST; /* Hall sources: sensor gone */
-	if (g_coasting && (e == ST_VBUS_LOW || e == ST_OVERSPEED)) e = ST_OK; /* the coast already is the reaction */
+	else e = (st_t)temp_fault(&tval); /* over-temperature: the derating has already taken the current to zero */
+	if (g_coasting && (e == ST_VBUS_LOW || e == ST_OVERSPEED || e == ST_OVERTEMP || e == ST_MOTOR_OVERTEMP || e == ST_TEMP_SENSOR))
+		e = ST_OK; /* the coast already is the reaction */
 	if (!e) {
 		if (g_coasting && fabsf(g_vel) < COAST_END_TURNS) {
 			g_coasting = 0;
@@ -1130,7 +1135,7 @@ static void run_watchdog(void) {
 		g_mode = CTRL_OFF;
 	}
 	g_stop_reason = (uint8_t)e;
-	const float v[5] = {(float)e, g_id, g_iq, g_vin, e == ST_BRIDGE_FAULT ? (float)bridge_fault_info() : 0.0f};
+	const float v[5] = {(float)e, g_id, g_iq, g_vin, e == ST_BRIDGE_FAULT ? (float)bridge_fault_info() : tval};
 	proto_event(0, EV_STOPPED, 5, v); /* unsolicited: tok 0 */
 }
 
@@ -1198,7 +1203,7 @@ static st_t ready_check(void) {
 	if (g_params.rated_current <= 0.0f || g_params.max_current <= 0.0f) return ST_NEED_RATED;
 	if (g_vin < g_params.vbus_min) return ST_VBUS_LOW;
 	if (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) return ST_VBUS_HIGH;
-	return ST_OK;
+	return (st_t)temp_fault(NULL);
 }
 
 st_t drive_check(loop_t loop) {
@@ -1383,6 +1388,7 @@ static void enc_recover(void) {
 }
 
 void cmd_poll(void) {
+	temp_poll();
 	run_watchdog();
 	enc_recover();
 	proto_poll(0); /* frames -> objdict / cmd_message() */

@@ -65,10 +65,14 @@ STATUS = [
     "Hall calibration: a sector is not 60 ± 25 deg electrical (pole pairs wrong?)",
     "run the Hall calibration first",
     "encoder UVW register not written (encoder not answering?)",
+    "over temperature (board above tmax or MCU die above 110 °C): runs again 10 °C below the limit",
+    "motor over temperature (above mtmax): runs again 10 °C below the limit",
+    "temperature sensor open or shorted (motor NTC unplugged? set mtmax = 0 without one)",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 ST_NEED_VGAINS, ST_RUNNING, ST_CAN_ACTIVE, ST_CAN_LOST, ST_FOLLOWING_ERROR = 13, 34, 48, 49, 50
 ST_HALL_LOST = 52
+ST_BRIDGE_FAULT, ST_OVERTEMP, ST_MOTOR_OVERTEMP, ST_TEMP_SENSOR = 2, 57, 58, 59
 SDO = {
     0x06020000: "object does not exist",
     0x06090011: "subindex does not exist",
@@ -130,11 +134,22 @@ def bridge_fault_text(bits):
     return "driver: " + ", ".join(t for b, t in BRIDGE_FAULT_BITS if bits & b)
 
 
+def _stop_detail(st, x):
+    """EV_STOPPED v[4]: bridge_fault_info() for a bridge fault, the temperature or the sensor for the temperature stops"""
+    if st == ST_BRIDGE_FAULT and int(x):
+        return "; " + bridge_fault_text(int(x))
+    if st in (ST_OVERTEMP, ST_MOTOR_OVERTEMP):
+        return f"; {x:.1f} °C"
+    if st == ST_TEMP_SENSOR:
+        return "; motor sensor" if int(x) == 2 else "; board sensor"
+    return ""
+
+
 EVENTS = {
     EV_DONE: lambda v: f"{CAL_NAMES.get(int(v[1]), '?')}: " + ("done" if int(v[0]) == 0 else f"FAILED: {status_text(int(v[0]))}"),
     EV_STOPPED: lambda v: f"STOPPED: {status_text(int(v[0]))} (id {v[1]:.2f} A, iq {v[2]:.2f} A"
                           + (f", bus {v[3]:.1f} V" if len(v) > 3 else "")
-                          + (f"; {bridge_fault_text(int(v[4]))}" if len(v) > 4 and int(v[4]) else "") + ")",
+                          + (_stop_detail(int(v[0]), v[4]) if len(v) > 4 else "") + ")",
     EV_RPM_LIMITED: lambda v: f"limited to vlim {v[0]:.0f} rpm",
     EV_CUR_LIMITED: lambda v: f"limited to rated {v[0]:.2f} A",
     EV_RESUMED: lambda v: f"bus back down to {v[0]:.1f} V: resumed after the overvoltage coast ({v[1]:.0f} so far)",

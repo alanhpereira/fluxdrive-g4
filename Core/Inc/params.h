@@ -41,7 +41,7 @@ typedef struct {
 	uint8_t pole_pairs;
 	int8_t enc_dir; /* +1 or -1 */
 	uint8_t ang_src; /* ANG_* */
-	uint8_t reserved0;
+	uint8_t mtemp_max; /* deg C, motor NTC on J12; 0 = no motor sensor (was reserved, 0 in older copies) */
 
 	/* sensing */
 	int16_t cur_off[3]; /* per-channel offset, counts */
@@ -52,7 +52,7 @@ typedef struct {
 	float cur_BW; /* current loop bandwidth, Hz (autotune input) */
 	/* limits */
 	float vbus_min, vbus_max; /* V */
-	float temp_max;			  /* deg C */
+	float temp_max;			  /* deg C, board NTC (TH1): derate below it, stop at it (temp.c); 0 = off */
 	float vbus_clamp;		  /* V below vbus_max where the regen clamp starts cutting braking current; 0 = off */
 	float vbus_resume;		  /* V below vbus_max the bus must fall to before an OV coast resumes */
 

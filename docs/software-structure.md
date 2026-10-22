@@ -178,7 +178,8 @@ flowchart TD
 
     subgraph CP["cmd_poll()"]
         direction TB
-        RW["run_watchdog()<br/>trip_watchdog(), coast end,<br/>bridge/vbus/overspeed/angle-lost checks<br/>→ EV_STOPPED"] --> ER["enc_recover()<br/>resend burst cmd every 100 ms<br/>while motor off"]
+        TP["temp_poll()<br/>every 10 ms: read the last regular conversions,<br/>arm the next (g_temp_start),<br/>g_i_temp / g_i_vel, over-temperature latches"] --> RW
+        RW["run_watchdog()<br/>trip_watchdog(), coast end,<br/>bridge/vbus/overspeed/angle-lost/<br/>temperature checks<br/>→ EV_STOPPED"] --> ER["enc_recover()<br/>resend burst cmd every 100 ms<br/>while motor off"]
         ER --> PP["proto_poll(0)<br/>parse frames →<br/>objdict / cmd_message()"]
         PP --> CAP["co_app_poll()<br/>NMT communication / node resets"]
         CAP --> C4P["co402_poll()<br/>CiA 402 FSA transitions"]
@@ -223,6 +224,7 @@ TIM1 counts up and down (center-aligned, ARR 3399). The order of events in one p
 ```mermaid
 flowchart LR
     B["TIM1 counter bottom<br/>t = 0"] --> UP["TIM1_UP_TIM16_IRQHandler<br/>(mt6835.c)<br/>start SPI1 DMA read of<br/>MT6835_GROUPS groups"]
+    UP --> TS["temp_isr_start():<br/>ADSTART on ADC1 + ADC2 regular<br/>if g_temp_start (ends ≤ 6.1 µs)"]
     UP --> DMA["DMA clocks 6 groups<br/>≈ 18.1 µs (no CPU)"]
     DMA --> CC4["TIM1 CC4 ≈ 19.6 µs<br/>triggers injected ADC1 + ADC2"]
     CC4 --> ADC["ADC1_2_IRQHandler<br/>→ cs_adc_irq()<br/>at ADC2 JEOS"]
@@ -271,7 +273,7 @@ flowchart TD
     PARK --> TRIP["trip_check(id, iq)<br/>overvoltage, overcurrent"]
     TRIP --> HS["hfi_step()<br/>injection + demodulation,<br/>hfi_filter(id, iq)"]
     HS --> RC["regen clamp factor rk<br/>(vbus near vbus_max)"]
-    RC --> OL["outer_loops()<br/>every OUTER_DIV = 10 cycles:<br/>position P → speed PI → iq_ref"]
+    RC --> OL["outer_loops()<br/>every OUTER_DIV = 10 cycles:<br/>position P → speed PI → iq_ref<br/>(limit g_i_vel: rated, temperature cap)"]
     OL --> M2{"g_mode"}
     M2 -- CTRL_RUN --> PIC["pi_current_step()<br/>id, iq → vd, vq<br/>(voltage circle, d first)"]
     M2 -- CTRL_CAL --> VC["vd, vq = g_vd_cmd, g_vq_cmd"]
@@ -437,7 +439,7 @@ flowchart TD
 
     subgraph MAINSIDE["main: run_watchdog()"]
         TW["trip_watchdog():<br/>|speed| < 30 rpm → CTRL_OFF,<br/>EV_STOPPED (ST_VBUS_HIGH / ST_OVERCURRENT)"]
-        CHKW{"bridge fault, vbus low,<br/>overspeed, HFI lost,<br/>encoder lost?"}
+        CHKW{"bridge fault, vbus low,<br/>overspeed, HFI lost,<br/>encoder lost, over temperature?"}
         CHKW -- "angle lost" --> OFF1["MOE = 0 (coasts)"]
         CHKW -- other --> CO["coast_or_off()"]
         CO --> SPD{"|speed| > COAST_END_TURNS<br/>(30 rpm)?"}
@@ -539,7 +541,7 @@ The same test runner works from the command line (`cotest.py`) and from the CANo
 
 ```mermaid
 flowchart TB
-    P0["Priority 0 (cannot preempt each other)<br/>ADC1_2 → cs_adc_irq → currentLoop<br/>TIM1_UP (encoder DMA start)<br/>TIM1_BRK (nFAULT break)<br/>(EXTI0-2: disabled, the Halls are polled)"]
+    P0["Priority 0 (cannot preempt each other)<br/>ADC1_2 → cs_adc_irq → currentLoop<br/>TIM1_UP (encoder DMA start, temperature ADSTART)<br/>TIM1_BRK (nFAULT break)<br/>(EXTI0-2: disabled, the Halls are polled)"]
     P1["Priority 1<br/>USB_LP (or USART1): link RX/TX,<br/>deferred telemetry"]
     P2["Priority 2 (CO_IRQ_PRIO)<br/>FDCAN1_IT0, TIM7 1 kHz CANopen tick"]
     P15["Priority 15<br/>SysTick (HAL_GetTick)"]

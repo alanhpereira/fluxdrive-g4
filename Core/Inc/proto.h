@@ -105,6 +105,9 @@ typedef enum {
 	ST_HALL_SPACING, /* Hall calibration: a sector is not 60 +- 25 deg electrical (pole pairs wrong?) */
 	ST_NEED_HALL,	 /* run the Hall calibration first */
 	ST_UVW_FAIL,	 /* encoder UVW register not written (encoder not answering) */
+	ST_OVERTEMP,	 /* board (temp_max) or MCU die (TEMP_DIE_MAX) over its limit; runs again TEMP_HYST below it */
+	ST_MOTOR_OVERTEMP, /* motor NTC over mtemp_max; runs again TEMP_HYST below it */
+	ST_TEMP_SENSOR,	 /* a temperature sensor with a limit set reads open or shorted */
 	ST_N
 } st_t;
 

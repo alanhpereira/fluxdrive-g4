@@ -61,7 +61,7 @@ ARG_TIPS = {
 }
 
 STATUS_KEYS = ["mode", "loop", "st_flags", "moe", "nfault", "brk", "ready", "trip", "trip_moe", "coasting", "vin", "busy",
-               "dirty", "seq"]
+               "dirty", "seq", "t_board", "t_die", "t_motor", "i_temp", "t_state"]
 DIAG_KEYS = ["drv", "loop_cyc", "loop_cyc_max", "enc_samples", "enc_crc", "enc_late", "enc_stalls", "enc_status",
              "enc_crc_check", "proto_err", "ov_resumes", "hall_state", "hall_bad", "hyb_reseeds", "coff_a_use", "coff_b_use", "coff_c_use", "coff_src",
              "can_id_act", "can_kbit_act", "can_nmt", "can_err", "can_rx", "can_tx", "can_lost", "fsa", "fsa_refused",
@@ -310,7 +310,8 @@ class ConfigTab(QtWidgets.QWidget):
                 self.st_lbl[key] = lb
             return g, f
         status, _ = box("Status / faults", [("state", "State"), ("bridge", "Bridge"), ("trip", "Trip"),
-                                             ("drv", "Gate driver"), ("vin", "Bus voltage"), ("flash", "Flash")])
+                                             ("drv", "Gate driver"), ("vin", "Bus voltage"), ("temp", "Temperature"),
+                                             ("flash", "Flash")])
         stats, f = box("Statistics", [("loop", "Loop time"), ("enc", "Encoder"), ("coff", "Current offsets"),
                                       ("link", "Link"), ("can", "CAN")])
         self.st_lbl["loop"].setToolTip("currentLoop() time: the max must stay under ~19 µs")
@@ -814,6 +815,17 @@ class ConfigTab(QtWidgets.QWidget):
             self.st_lbl["drv"].setText("<span style='color:%s'>I2C error</span>" % RED if d & 0x100 else f"0x{d:02X}  {bits(d, DRV_BITS)}")
         if "vin" in s:
             self.st_lbl["vin"].setText(f"{g('vin'):.2f} V")
+        if "t_state" in s:
+            def deg(k):
+                v = g(k)
+                return "—" if v is None or v != v else f"{v:.1f} °C"
+            ts = g("t_state")
+            txt = f"board {deg('t_board')}, die {deg('t_die')}" + (f", motor {deg('t_motor')}" if self.dev.get("mtmax") else "")
+            if ts:
+                col = ORANGE if ts == 1 else RED
+                what = {1: f"derating to {g('i_temp', 0):.2f} A", 2: "over temperature", 3: "sensor fault"}.get(ts, ts)
+                txt += f"<br><span style='color:{col}'>{what}</span>"
+            self.st_lbl["temp"].setText(txt)
         if "dirty" in s:
             dirty = g("dirty")
             self.st_lbl["flash"].setText(("<span style='color:%s'>unsaved changes</span>" % ORANGE if dirty else "saved")

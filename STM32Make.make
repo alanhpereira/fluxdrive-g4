@@ -119,6 +119,7 @@ Core/Src/stm32g4xx_it.c \
 Core/Src/syscalls.c \
 Core/Src/sysmem.c \
 Core/Src/system_stm32g4xx.c \
+Core/Src/temp.c \
 Core/Src/tim.c \
 Core/Src/usart.c \
 Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c \

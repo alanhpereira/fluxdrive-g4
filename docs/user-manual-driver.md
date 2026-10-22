@@ -67,13 +67,13 @@ The logic supply (+5 V, +3.3 V) comes from the STSPIN32G4's internal buck regula
 | J9 | JST PH 6-pin | 1 +3.3 V, 2 GND, 3 SPI1_NSS, 4 SPI1_SCK, 5 SPI1_MISO, 6 SPI1_MOSI | **MT6835 encoder (required for the encoder angle sources).** Mount the magnet centered on the shaft and the sensor rigidly: mount play shows up as angle error under load. |
 | J8 | JST PH 5-pin | 1 +3.3 V, 2 GND, 3 ENC_A, 4 ENC_B, 5 ENC_I | Incremental (ABI) encoder input. Not used. |
 | J13 | JST PH 5-pin | 1 +3.3 V, 2 GND, 3 HALL1, 4 HALL2, 5 HALL3 | Hall sensors (angle sources 3 and 4). 3.3 V logic; the inputs have internal pull-ups, so open-collector sensors work. The MT6835's U/V/W outputs can stand in for them on the bench (**u**, section 7). |
-| J12 | JST PH 2-pin | 1 +3.3 V, 2 M_TEMP | Motor temperature sensor (to a 10 kΩ divider). Not used yet. |
+| J12 | JST PH 2-pin | 1 +3.3 V, 2 M_TEMP | Motor temperature: a 10 kΩ NTC, B = 3450 K (the board's type, ANTC1608-103F3450FB) between the two pins, against 10 kΩ to GND on the board. Read only when `mtmax` is set (section 8). |
 | J11 | JST PH 3-pin | 1 +3.3 V, 2 GND, 3 DO1 | Spare digital I/O (PB10). Not used. |
 | J10 | JST PH 4-pin | 1 +3.3 V, 2 GND, 3 DO2, 4 DO3 | Spare digital I/O (PC15, PC14). Not used. |
 
 The +3.3 V on the sensor connectors is the board's logic supply, which also powers the MCU: keep the load on it small.
 
-On the board: an NTC thermistor for the driver temperature (not used yet: `tmax` is stored but not acted on) and an LED on PC13 (not driven by the firmware).
+On the board: an NTC thermistor (TH1) for the driver temperature, limited by `tmax`, and an LED on PC13 (not driven by the firmware). The MCU die temperature is measured as well. The Status box shows all three temperatures.
 
 ---
 
@@ -176,6 +176,7 @@ While running, the driver stops by itself (and reports why in the log and the Ru
 - encoder lost: no valid angle for 10 ms (cable, supply, CRC errors) — the bridge is switched off and the motor coasts,
 - sensorless: HFI lost for 50 ms, or a polarity result too weak to trust,
 - Hall sensors lost: an invalid state (000 or 111: unplugged, no supply) for 10 ms — the bridge is switched off and the motor coasts,
+- over temperature (board, MCU die or motor), or a temperature sensor with a limit set reading open or shorted (section 8),
 - the trips in section 8.
 
 ---
@@ -238,6 +239,9 @@ Use 4 for speed or position control at low speed: it holds close to the encoder.
 | Overspeed | \|speed\| > 1.5 × `vlim` | Stop (coast). | — |
 | Encoder lost | no valid angle for 10 ms (encoder modes) | Bridge off, motor coasts. The driver re-sends the encoder setup every 100 ms while stopped, so a sensor that lost power comes back. | Home again if absolute position matters. |
 | Hall lost | Hall state 000 or 111 for 10 ms (Hall modes) | Bridge off, motor coasts. | Reconnect; home again if absolute position matters. |
+| Temperature derating | board within 10 °C of `tmax`, motor within 10 °C of `mtmax`, or MCU die within 10 °C of 110 °C | The current limit falls linearly from `imax` to zero at the limit, in every mode (USB and CANopen). The Status box shows "derating" and the cap. | Automatic as it cools. |
+| Over temperature | board ≥ `tmax`, motor ≥ `mtmax` or MCU die ≥ 110 °C (`tmax`/`mtmax` = 0 disables that sensor) | Stop (coast). Runs and calibrations are refused. | Runs again once it is 10 °C below the limit. |
+| Temperature sensor fault | a sensor with a limit set reads open or shorted (below about −50 °C or above 157 °C), for example the motor NTC unplugged | Stop (coast); runs are refused. | Reconnect, or set `mtmax` = 0 without a motor sensor. |
 | Gate driver fault | nFAULT / break input | Bridge off by hardware. The STOPPED message gives the bus voltage and the driver's reason: VCC UVLO (the supply sagged, often a bench supply's current limit), thermal shutdown, VDS protection (MOSFET overcurrent) or driver reset. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless, or a lost encoder or Halls: after 3 s). |
 
 While a trip is latched, every command except STOP and REBOOT is refused with "a trip is latched". The Status box shows the trip and whether the bridge was switched off.
@@ -304,6 +308,8 @@ The mapping can be changed by the master and stored with 0x1010:2.
 | Gate driver fault / break | 0x5400 |
 | Encoder lost | 0x7305 |
 | Hall sensors lost | 0x7306 |
+| Over temperature: board or MCU die / motor | 0x4210 / 0x4310 |
+| Temperature sensor open or shorted | 0x4000 |
 | Sensorless angle lost / polarity weak | 0x7300 |
 | Overspeed | 0x8400 |
 | Following error (PP, CSP: 6065 / 6066) | 0x8611 |
@@ -372,7 +378,8 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | `vmax` | Bus max | V | 60 | 0 = off. |
 | `vclamp` | Regen clamp band | V | 3 | 0 = off. |
 | `vresume` | Overvoltage resume margin | V | 2 | |
-| `tmax` | Max temperature | °C | 80 | Not used yet. |
+| `tmax` | Max board temperature | °C | 80 | Board NTC: derates over the 10 °C below, stops at it, runs again 10 °C below. 0 = off (the MCU die limit of 110 °C stays). |
+| `mtmax` | Max motor temperature | °C | 0 | Motor NTC on J12, the same rules as `tmax`. 0 = no motor sensor. |
 
 ### Current sensing
 | Key | Name | Unit | Notes |
@@ -422,6 +429,8 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | "a trip is latched" | Press STOP after the motor has coasted down. |
 | "encoder: no valid angle for 10 ms" | Check the encoder cable and supply; the Statistics box shows CRC errors, stalls and the sensor status (weak field = magnet too far). |
 | "Hall sensors lost" | Check J13 and the sensor supply: the Hall state must never read 0 or 7. |
+| "over temperature" / "motor over temperature" | Let it cool 10 °C below the limit; check the cooling, or the load against `rated`. |
+| "temperature sensor open or shorted" | Motor NTC unplugged (set `mtmax` = 0 if there is none), or TH1 / its divider faulty (the board temperature shows "—"). |
 | "Hall calibration: … order does not repeat" | A state is missing or a sensor glitches: turn by hand and watch the Hall state; check the wiring and the shaft is free. |
 | "Hall calibration: a sector is not 60 ± 25 deg" | `pp` is wrong, or the rotor did not follow the sweep (raise `rated`, unload). |
 | Speed swings or overshoots at low speed in `angsrc` 3 | The Hall speed is new only once per sector: lower `vkp`/`vki` several times, or use `angsrc` 4. |

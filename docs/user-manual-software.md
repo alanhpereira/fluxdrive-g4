@@ -54,7 +54,7 @@ On the USB page the left sidebar is shared by the Scope and Config tabs:
 |---|---|
 | **Connection** | Port, baud, Connect/Disconnect. |
 | **Run** | Motor commands over USB (below). |
-| **Status / faults** | State (off / calibration / run, loop, coasting, running calibration), bridge enabled or disabled with nFAULT / break / READY warnings, latched trip, gate-driver status bits, bus voltage, flash state (saved or unsaved changes, save count). |
+| **Status / faults** | State (off / calibration / run, loop, coasting, running calibration), bridge enabled or disabled with nFAULT / break / READY warnings, latched trip, gate-driver status bits, bus voltage, temperatures (board, MCU die, and motor when `mtmax` is set; "—" for an open or shorted sensor; derating with its current cap, over temperature or sensor fault), flash state (saved or unsaved changes, save count). |
 | **Statistics** | Control-loop time and its max (red at ≥ 19 µs), encoder reads and CRC / late / stall counters and sensor status, the Hall state with its bad-state and HFI re-seed counters, current offsets in use and their source, link timeouts and device RX errors, CAN node state, frame counters and the CiA 402 state. **Clear max / counters** resets them. **Apply CAN settings** makes a new node ID / bit rate take effect. |
 | **Display**, **Plots** | Only with the Scope tab (section 4). |
 

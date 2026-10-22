@@ -743,6 +743,29 @@
               <UDINT />
             </q1:varDeclaration>
           </q1:struct>
+          <q1:struct name="Temperatures" uniqueID="UID_REC_4003">
+            <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_400300">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Board temperature" uniqueID="UID_RECSUB_400301">
+              <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="MCU die temperature" uniqueID="UID_RECSUB_400302">
+              <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Motor temperature" uniqueID="UID_RECSUB_400303">
+              <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Current cap (temperature)" uniqueID="UID_RECSUB_400304">
+              <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Temperature state" uniqueID="UID_RECSUB_400305">
+              <USINT />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Motor sensor input" uniqueID="UID_RECSUB_400306">
+              <UINT />
+            </q1:varDeclaration>
+          </q1:struct>
           <q1:struct name="Motor" uniqueID="UID_REC_4010">
             <q1:varDeclaration name="Highest sub-index supported" uniqueID="UID_RECSUB_401000">
               <USINT />
@@ -866,7 +889,7 @@
             <q1:varDeclaration name="Bus max" uniqueID="UID_RECSUB_402202">
               <REAL />
             </q1:varDeclaration>
-            <q1:varDeclaration name="Max temperature" uniqueID="UID_RECSUB_402203">
+            <q1:varDeclaration name="Max board temperature" uniqueID="UID_RECSUB_402203">
               <REAL />
             </q1:varDeclaration>
             <q1:varDeclaration name="Regen clamp band" uniqueID="UID_RECSUB_402204">
@@ -874,6 +897,9 @@
             </q1:varDeclaration>
             <q1:varDeclaration name="Overvoltage resume margin" uniqueID="UID_RECSUB_402205">
               <REAL />
+            </q1:varDeclaration>
+            <q1:varDeclaration name="Max motor temperature" uniqueID="UID_RECSUB_402206">
+              <USINT />
             </q1:varDeclaration>
           </q1:struct>
           <q1:struct name="Current sensing" uniqueID="UID_REC_4023">
@@ -2869,6 +2895,45 @@
             <UDINT />
             <q1:defaultValue value="0" />
           </q1:parameter>
+          <q1:parameter uniqueID="UID_OBJ_4003">
+            <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
+            <q1:dataTypeIDRef uniqueIDRef="UID_REC_4003" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400300">
+            <label lang="en">Highest sub-index supported</label>
+            <USINT />
+            <q1:defaultValue value="0x06" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400301">
+            <description lang="en">[°C] NTC TH1 near the bridge; NaN: open or shorted</description>
+            <REAL />
+            <q1:defaultValue value="0.0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400302">
+            <description lang="en">[°C] internal sensor, same package as the gate driver; limit 110 °C</description>
+            <REAL />
+            <q1:defaultValue value="0.0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400303">
+            <description lang="en">[°C] NTC on J12; NaN: no sensor (mtmax = 0), open or shorted</description>
+            <REAL />
+            <q1:defaultValue value="0.0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400304">
+            <description lang="en">[A] imax, falling to zero over the 10 °C below a temperature limit</description>
+            <REAL />
+            <q1:defaultValue value="0.0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400305">
+            <description lang="en">0 ok, 1 derating, 2 over temperature, 3 sensor fault</description>
+            <USINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_400306">
+            <description lang="en">[counts] filtered ADC counts of J12: about 0 with nothing connected</description>
+            <UINT />
+            <q1:defaultValue value="0" />
+          </q1:parameter>
           <q1:parameter uniqueID="UID_OBJ_4010">
             <description lang="en">Native object, same as the USB/serial config protocol (software/objects.py). SI units</description>
             <q1:dataTypeIDRef uniqueIDRef="UID_REC_4010" />
@@ -3247,7 +3312,7 @@
           <q1:parameter uniqueID="UID_SUB_402200">
             <label lang="en">Highest sub-index supported</label>
             <USINT />
-            <q1:defaultValue value="0x05" />
+            <q1:defaultValue value="0x06" />
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402201" access="readWrite">
             <description lang="en">[V] calibration and run stop below it</description>
@@ -3272,13 +3337,13 @@
             </q1:allowedValues>
           </q1:parameter>
           <q1:parameter uniqueID="UID_SUB_402203" access="readWrite">
-            <description lang="en">[°C] not used yet</description>
+            <description lang="en">[°C] board NTC: the current cap falls from imax to zero over the 10 °C below it, the run stops at it and starts again 10 °C below it. 0 = off (the MCU die limit of 110 °C stays)</description>
             <REAL />
             <q1:defaultValue value="0.0" />
             <q1:allowedValues>
               <q1:range>
-                <minValue value="-40" />
-                <maxValue value="200" />
+                <minValue value="0" />
+                <maxValue value="150" />
               </q1:range>
             </q1:allowedValues>
           </q1:parameter>
@@ -3301,6 +3366,17 @@
               <q1:range>
                 <minValue value="0" />
                 <maxValue value="20" />
+              </q1:range>
+            </q1:allowedValues>
+          </q1:parameter>
+          <q1:parameter uniqueID="UID_SUB_402206" access="readWrite">
+            <description lang="en">[°C] motor NTC on J12 (10 k, B 3450): derates and stops like tmax; with a limit set an open sensor stops the run. 0 = no motor sensor</description>
+            <USINT />
+            <q1:defaultValue value="0" />
+            <q1:allowedValues>
+              <q1:range>
+                <minValue value="0" />
+                <maxValue value="200" />
               </q1:range>
             </q1:allowedValues>
           </q1:parameter>
@@ -4360,6 +4436,15 @@
             <CANopenSubObject subIndex="0C" name="Hall bad states" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020C" />
             <CANopenSubObject subIndex="0D" name="Hall HFI reseeds" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_40020D" />
           </CANopenObject>
+          <CANopenObject index="4003" name="Temperatures" objectType="9" uniqueIDRef="UID_OBJ_4003" subNumber="7">
+            <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400300" />
+            <CANopenSubObject subIndex="01" name="Board temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400301" />
+            <CANopenSubObject subIndex="02" name="MCU die temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400302" />
+            <CANopenSubObject subIndex="03" name="Motor temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400303" />
+            <CANopenSubObject subIndex="04" name="Current cap (temperature)" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400304" />
+            <CANopenSubObject subIndex="05" name="Temperature state" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400305" />
+            <CANopenSubObject subIndex="06" name="Motor sensor input" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_400306" />
+          </CANopenObject>
           <CANopenObject index="4010" name="Motor" objectType="9" uniqueIDRef="UID_OBJ_4010" subNumber="12">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401000" />
             <CANopenSubObject subIndex="01" name="kv" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_401001" />
@@ -4403,13 +4488,14 @@
             <CANopenSubObject subIndex="04" name="Speed limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402104" />
             <CANopenSubObject subIndex="05" name="Acceleration limit" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402105" />
           </CANopenObject>
-          <CANopenObject index="4022" name="Limits" objectType="9" uniqueIDRef="UID_OBJ_4022" subNumber="6">
+          <CANopenObject index="4022" name="Limits" objectType="9" uniqueIDRef="UID_OBJ_4022" subNumber="7">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402200" />
             <CANopenSubObject subIndex="01" name="Bus min" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402201" />
             <CANopenSubObject subIndex="02" name="Bus max" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402202" />
-            <CANopenSubObject subIndex="03" name="Max temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402203" />
+            <CANopenSubObject subIndex="03" name="Max board temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402203" />
             <CANopenSubObject subIndex="04" name="Regen clamp band" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402204" />
             <CANopenSubObject subIndex="05" name="Overvoltage resume margin" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402205" />
+            <CANopenSubObject subIndex="06" name="Max motor temperature" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402206" />
           </CANopenObject>
           <CANopenObject index="4023" name="Current sensing" objectType="9" uniqueIDRef="UID_OBJ_4023" subNumber="8">
             <CANopenSubObject subIndex="00" name="Highest sub-index supported" objectType="7" PDOmapping="no" uniqueIDRef="UID_SUB_402300" />

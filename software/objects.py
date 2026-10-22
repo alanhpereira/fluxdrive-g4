@@ -116,6 +116,19 @@ OBJECTS = [
         help="invalid Hall states (000/111) and jumps over a sector since boot"),
     Obj(0x4002, 13, T_U32, 0, "hyb_reseeds", "Hall + HFI re-seeds", lo=0, hi=0, group=G_DIAG,
         help="times HFI left the Hall sector and was put back on the Hall angle (angsrc 4); 0 in normal running"),
+    # 0x4003 temperatures
+    Obj(0x4003, 1, T_F32, RO, "t_board", "Board temperature", "°C", group=G_STATUS, decimals=1,
+        help="NTC TH1 near the bridge; NaN: open or shorted"),
+    Obj(0x4003, 2, T_F32, RO, "t_die", "MCU die temperature", "°C", group=G_STATUS, decimals=1,
+        help="internal sensor, same package as the gate driver; limit 110 °C"),
+    Obj(0x4003, 3, T_F32, RO, "t_motor", "Motor temperature", "°C", group=G_STATUS, decimals=1,
+        help="NTC on J12; NaN: no sensor (mtmax = 0), open or shorted"),
+    Obj(0x4003, 4, T_F32, RO, "i_temp", "Current cap (temperature)", "A", group=G_STATUS, decimals=2,
+        help="imax, falling to zero over the 10 °C below a temperature limit"),
+    Obj(0x4003, 5, T_U8, RO, "t_state", "Temperature state", group=G_STATUS,
+        choices={0: "ok", 1: "derating", 2: "over temperature", 3: "sensor fault"}),
+    Obj(0x4003, 6, T_U16, RO, "t_motor_raw", "Motor sensor input", "counts", group=G_DIAG,
+        help="filtered ADC counts of J12: about 0 with nothing connected"),
     # 0x4010 motor
     Obj(0x4010, 1, T_F32, STORED, "kv", "kv", "rpm/V", lo=0, hi=1e5, group=G_MOTOR, decimals=1,
         help="back-EMF constant, line-to-line peak; measured by the kv calibration. The observer derives lambda from it"),
@@ -182,12 +195,17 @@ OBJECTS = [
     Obj(0x4022, 2, T_F32, STORED, "vmax", "Bus max", "V", lo=0, hi=100, group=G_LIM, decimals=1,
         help="trip after 1 ms above it: zero-current coast (no regen, no braking), resumes once the bus is "
              "below vmax - vresume; outside a run STOP resets. 0 = off"),
-    Obj(0x4022, 3, T_F32, STORED, "tmax", "Max temperature", "°C", lo=-40, hi=200, group=G_LIM, decimals=0, help="not used yet"),
+    Obj(0x4022, 3, T_F32, STORED, "tmax", "Max board temperature", "°C", lo=0, hi=150, group=G_LIM, decimals=0,
+        help="board NTC: the current cap falls from imax to zero over the 10 °C below it, the run stops at it and "
+             "starts again 10 °C below it. 0 = off (the MCU die limit of 110 °C stays)"),
     Obj(0x4022, 4, T_F32, STORED, "vclamp", "Regen clamp band", "V", lo=0, hi=20, group=G_LIM, decimals=1,
         help="braking current falls linearly to zero from vmax - vclamp to vmax, so decelerations stay within "
              "what the bus can take; motoring is never limited. 0 = off"),
     Obj(0x4022, 5, T_F32, STORED, "vresume", "Overvoltage resume margin", "V", lo=0, hi=20, group=G_LIM, decimals=1,
         help="after an overvoltage trip the run resumes once the bus has been below vmax - vresume for 10 ms"),
+    Obj(0x4022, 6, T_U8, STORED, "mtmax", "Max motor temperature", "°C", lo=0, hi=200, group=G_LIM,
+        help="motor NTC on J12 (10 k, B 3450): derates and stops like tmax; with a limit set an open sensor "
+             "stops the run. 0 = no motor sensor"),
     # 0x4023 current sensing
     Obj(0x4023, 1, T_I16, STORED | NOTRUN, "coff_a", "Current offset A", "counts", lo=-300, hi=300, group=G_SENSE,
         help="ADC zero - 2048, stored by the current-offset calibration ('c'); the fallback when the boot "

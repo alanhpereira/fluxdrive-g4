@@ -26,6 +26,7 @@ static const motor_params_t k_defaults = {
 	.pole_pairs = 7,
 	.enc_dir = 1,
 	.ang_src = ANG_ENC_OBS,
+	.mtemp_max = 0, /* no motor sensor */
 	.cur_off = CS_OFF_DEFAULT, /* replaced by CAL_CUR_OFF (and measured at every boot) */
 	.kp_d = 0.0f,
 	.ki_d = 0.0f,

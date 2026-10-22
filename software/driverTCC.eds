@@ -2353,21 +2353,22 @@ DefaultValue=0x000003A5
 PDOMapping=0
 
 [ManufacturerObjects]
-SupportedObjects=14
+SupportedObjects=15
 1=0x4000
 2=0x4001
 3=0x4002
-4=0x4010
-5=0x4011
-6=0x4020
-7=0x4021
-8=0x4022
-9=0x4023
-10=0x4030
-11=0x4031
-12=0x4040
-13=0x4041
-14=0x4042
+4=0x4003
+5=0x4010
+6=0x4011
+7=0x4020
+8=0x4021
+9=0x4022
+10=0x4023
+11=0x4030
+12=0x4031
+13=0x4040
+14=0x4041
+15=0x4042
 
 [4000]
 ParameterName=Device info
@@ -2699,6 +2700,75 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0007
 AccessType=rw
+DefaultValue=0
+PDOMapping=0
+
+[4003]
+ParameterName=Temperatures
+ObjectType=0x9
+;StorageLocation=RAM
+SubNumber=0x7
+
+[4003sub0]
+ParameterName=Highest sub-index supported
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0x06
+PDOMapping=0
+
+[4003sub1]
+ParameterName=Board temperature
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=ro
+DefaultValue=0.0
+PDOMapping=0
+
+[4003sub2]
+ParameterName=MCU die temperature
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=ro
+DefaultValue=0.0
+PDOMapping=0
+
+[4003sub3]
+ParameterName=Motor temperature
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=ro
+DefaultValue=0.0
+PDOMapping=0
+
+[4003sub4]
+ParameterName=Current cap (temperature)
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0008
+AccessType=ro
+DefaultValue=0.0
+PDOMapping=0
+
+[4003sub5]
+ParameterName=Temperature state
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+PDOMapping=0
+
+[4003sub6]
+ParameterName=Motor sensor input
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0006
+AccessType=ro
 DefaultValue=0
 PDOMapping=0
 
@@ -3105,7 +3175,7 @@ PDOMapping=0
 ParameterName=Limits
 ObjectType=0x9
 ;StorageLocation=RAM
-SubNumber=0x6
+SubNumber=0x7
 
 [4022sub0]
 ParameterName=Highest sub-index supported
@@ -3113,7 +3183,7 @@ ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0005
 AccessType=ro
-DefaultValue=0x05
+DefaultValue=0x06
 PDOMapping=0
 
 [4022sub1]
@@ -3139,13 +3209,13 @@ DefaultValue=0.0
 PDOMapping=0
 
 [4022sub3]
-ParameterName=Max temperature
+ParameterName=Max board temperature
 ObjectType=0x7
 ;StorageLocation=RAM
 DataType=0x0008
 AccessType=rw
-HighLimit=200
-LowLimit=-40
+HighLimit=150
+LowLimit=0
 DefaultValue=0.0
 PDOMapping=0
 
@@ -3169,6 +3239,17 @@ AccessType=rw
 HighLimit=20
 LowLimit=0
 DefaultValue=0.0
+PDOMapping=0
+
+[4022sub6]
+ParameterName=Max motor temperature
+ObjectType=0x7
+;StorageLocation=RAM
+DataType=0x0005
+AccessType=rw
+HighLimit=200
+LowLimit=0
+DefaultValue=0
 PDOMapping=0
 
 [4023]

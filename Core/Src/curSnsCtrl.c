@@ -6,6 +6,7 @@
 #include "dac.h"
 #include "opamp.h"
 #include "params.h"
+#include "temp.h" /* temp_init() */
 
 volatile int16_t cur_raw[3];
 volatile uint16_t vin_raw;
@@ -80,6 +81,13 @@ void cs_boot_offsets(void) {
  * both ADCs are disabled, and HAL_ADC_Stop() leaves ADC1 disabled for the injected start */
 static float cs_vdda(void) {
 	ADC_ChannelConfTypeDef c = {0};
+	/* the die temperature sensor path too, in the same window (temp.c converts it later) */
+	c.Channel = ADC_CHANNEL_TEMPSENSOR_ADC1;
+	c.Rank = ADC_REGULAR_RANK_1;
+	c.SamplingTime = ADC_SAMPLETIME_247CYCLES_5;
+	c.SingleDiff = ADC_SINGLE_ENDED;
+	c.OffsetNumber = ADC_OFFSET_NONE;
+	(void)HAL_ADC_ConfigChannel(&hadc1, &c); /* failed: temp_init() sees the path off, die temperature NaN */
 	c.Channel = ADC_CHANNEL_VREFINT;
 	c.Rank = ADC_REGULAR_RANK_1;
 	c.SamplingTime = ADC_SAMPLETIME_640CYCLES_5; /* 15 us, VREFINT needs >= 4 us */
@@ -146,6 +154,7 @@ HAL_StatusTypeDef initCS() {
 	g_vdda = cs_vdda();
 	g_curMult = -g_vdda / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
 	g_vinMult = g_vdda * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
+	temp_init(); /* regular-channel sample times: only while JADSTART = 0 */
 
 	status = HAL_ADCEx_InjectedStart_IT(&hadc1);
 	if (status != HAL_OK) {

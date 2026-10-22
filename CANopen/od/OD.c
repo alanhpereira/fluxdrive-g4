@@ -239,6 +239,15 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .hallBadStates = 0x00000000,
         .hallHFIReseeds = 0x00000000
     },
+    .x4003_temperatures = {
+        .highestSub_indexSupported = 0x06,
+        .boardTemperature = 0.0,
+        .MCUDieTemperature = 0.0,
+        .motorTemperature = 0.0,
+        .currentCapTemperature = 0.0,
+        .temperatureState = 0x00,
+        .motorSensorInput = 0x0000
+    },
     .x4010_motor = {
         .highestSub_indexSupported = 0x0B,
         .kv = 0.0,
@@ -283,12 +292,13 @@ OD_ATTR_RAM OD_RAM_t OD_RAM = {
         .accelerationLimit = 0.0
     },
     .x4022_limits = {
-        .highestSub_indexSupported = 0x05,
+        .highestSub_indexSupported = 0x06,
         .busMin = 0.0,
         .busMax = 0.0,
-        .maxTemperature = 0.0,
+        .maxBoardTemperature = 0.0,
         .regenClampBand = 0.0,
-        .overvoltageResumeMargin = 0.0
+        .overvoltageResumeMargin = 0.0,
+        .maxMotorTemperature = 0x00
     },
     .x4023_currentSensing = {
         .highestSub_indexSupported = 0x07,
@@ -452,11 +462,12 @@ typedef struct {
     OD_obj_record_t o_4000_deviceInfo[5];
     OD_obj_record_t o_4001_driveStatus[16];
     OD_obj_record_t o_4002_diagnostics[14];
+    OD_obj_record_t o_4003_temperatures[7];
     OD_obj_record_t o_4010_motor[12];
     OD_obj_record_t o_4011_angleSource[11];
     OD_obj_record_t o_4020_currentLoop[6];
     OD_obj_record_t o_4021_speedAndPositionLoops[6];
-    OD_obj_record_t o_4022_limits[6];
+    OD_obj_record_t o_4022_limits[7];
     OD_obj_record_t o_4023_currentSensing[8];
     OD_obj_record_t o_4030_observer[7];
     OD_obj_record_t o_4031_HFInjection[8];
@@ -1582,6 +1593,50 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .dataLength = 4
         }
     },
+    .o_4003_temperatures = {
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.highestSub_indexSupported,
+            .subIndex = 0,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.boardTemperature,
+            .subIndex = 1,
+            .attribute = ODA_SDO_R | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.MCUDieTemperature,
+            .subIndex = 2,
+            .attribute = ODA_SDO_R | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.motorTemperature,
+            .subIndex = 3,
+            .attribute = ODA_SDO_R | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.currentCapTemperature,
+            .subIndex = 4,
+            .attribute = ODA_SDO_R | ODA_MB,
+            .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.temperatureState,
+            .subIndex = 5,
+            .attribute = ODA_SDO_R,
+            .dataLength = 1
+        },
+        {
+            .dataOrig = &OD_RAM.x4003_temperatures.motorSensorInput,
+            .subIndex = 6,
+            .attribute = ODA_SDO_R | ODA_MB,
+            .dataLength = 2
+        }
+    },
     .o_4010_motor = {
         {
             .dataOrig = &OD_RAM.x4010_motor.highestSub_indexSupported,
@@ -1820,7 +1875,7 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .dataLength = 4
         },
         {
-            .dataOrig = &OD_RAM.x4022_limits.maxTemperature,
+            .dataOrig = &OD_RAM.x4022_limits.maxBoardTemperature,
             .subIndex = 3,
             .attribute = ODA_SDO_RW | ODA_MB,
             .dataLength = 4
@@ -1836,6 +1891,12 @@ static CO_PROGMEM ODObjs_t ODObjs = {
             .subIndex = 5,
             .attribute = ODA_SDO_RW | ODA_MB,
             .dataLength = 4
+        },
+        {
+            .dataOrig = &OD_RAM.x4022_limits.maxMotorTemperature,
+            .subIndex = 6,
+            .attribute = ODA_SDO_RW,
+            .dataLength = 1
         }
     },
     .o_4023_currentSensing = {
@@ -2430,11 +2491,12 @@ static OD_ATTR_OD OD_entry_t ODList[] = {
     {0x4000, 0x05, ODT_REC, &ODObjs.o_4000_deviceInfo, NULL},
     {0x4001, 0x10, ODT_REC, &ODObjs.o_4001_driveStatus, NULL},
     {0x4002, 0x0E, ODT_REC, &ODObjs.o_4002_diagnostics, NULL},
+    {0x4003, 0x07, ODT_REC, &ODObjs.o_4003_temperatures, NULL},
     {0x4010, 0x0C, ODT_REC, &ODObjs.o_4010_motor, NULL},
     {0x4011, 0x0B, ODT_REC, &ODObjs.o_4011_angleSource, NULL},
     {0x4020, 0x06, ODT_REC, &ODObjs.o_4020_currentLoop, NULL},
     {0x4021, 0x06, ODT_REC, &ODObjs.o_4021_speedAndPositionLoops, NULL},
-    {0x4022, 0x06, ODT_REC, &ODObjs.o_4022_limits, NULL},
+    {0x4022, 0x07, ODT_REC, &ODObjs.o_4022_limits, NULL},
     {0x4023, 0x08, ODT_REC, &ODObjs.o_4023_currentSensing, NULL},
     {0x4030, 0x07, ODT_REC, &ODObjs.o_4030_observer, NULL},
     {0x4031, 0x08, ODT_REC, &ODObjs.o_4031_HFInjection, NULL},

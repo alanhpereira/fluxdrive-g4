@@ -16,6 +16,7 @@
 #include "params.h"
 #include "calib.h"
 #include "pi_ctrl.h"
+#include "temp.h" /* g_i_vel */
 
 #define SQRT3_2 0.8660254f
 #define INV_SQRT3 0.57735027f
@@ -294,9 +295,10 @@ static __attribute__((noinline)) int outer_loops(ctrl_mode_t mode) {
 			else
 				vramp = vref;
 			s_vel_ref_eff = vramp;
-			g_iq_ref = pi_run(&g_pi_vel, vramp - s_vel, g_params.rated_current);
+			const float ilim = g_i_vel; /* rated_current, capped by the temperature derating (temp.c) */
+			g_iq_ref = pi_run(&g_pi_vel, vramp - s_vel, ilim);
 			/* regen clamp: no braking integrator beyond what the current loop is allowed to deliver */
-			const float bmax = s_regen_k * g_params.rated_current;
+			const float bmax = s_regen_k * ilim;
 			if (g_pi_vel.integ * s_vel < 0.0f && fabsf(g_pi_vel.integ) > bmax) g_pi_vel.integ = copysignf(bmax, g_pi_vel.integ);
 		}
 	}

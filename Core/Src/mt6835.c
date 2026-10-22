@@ -1,5 +1,6 @@
 #include "mt6835.h"
 #include "spi.h"
+#include "temp.h" /* temp_isr_start() */
 MT6835_HandleTypeDef hMT6835 = {
 	.hspi = &hspi1,
 	.nCS_pin = GPIO_PIN_15,
@@ -268,8 +269,7 @@ HAL_StatusTypeDef MT6835_StartBurst(MT6835_HandleTypeDef* hMT6835) {
 
 HAL_StatusTypeDef MT6835_StopBurst(MT6835_HandleTypeDef* hMT6835) {
 	SPI_TypeDef* spi = hMT6835->hspi->Instance;
-	TIM1->DIER &= ~TIM_DIER_UIE;
-	hMT6835->bursting = 0;
+	hMT6835->bursting = 0; /* the update interrupt stays on: it also starts the temperature conversions */
 	uint32_t t0 = HAL_GetTick(); /* let a read in flight finish */
 	while (hMT6835->hspi->hdmarx->Instance->CNDTR != 0 && (hMT6835->hspi->hdmarx->Instance->CCR & DMA_CCR_EN) &&
 		   HAL_GetTick() - t0 < 2) {
@@ -288,6 +288,9 @@ void TIM1_UP_TIM16_IRQHandler(void) {
 	if (TIM1->SR & TIM_SR_UIF) {
 		TIM1->SR = ~TIM_SR_UIF;
 		/* center-aligned: after the bottom the counter counts up (DIR = 0) */
-		if (!(TIM1->CR1 & TIM_CR1_DIR) && hMT6835.bursting) MT6835_Trigger(&hMT6835);
+		if (!(TIM1->CR1 & TIM_CR1_DIR)) {
+			if (hMT6835.bursting) MT6835_Trigger(&hMT6835);
+			temp_isr_start();
+		}
 	}
 }

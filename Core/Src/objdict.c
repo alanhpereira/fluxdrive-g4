@@ -14,6 +14,7 @@
 #include "mt6835.h"
 #include "params.h"
 #include "proto.h"
+#include "temp.h" /* 0x4003 */
 
 /* ------------------------------------------------------------------ live values behind 0x4000/0x4001 */
 static const uint16_t k_proto_ver = PROTO_VERSION;
@@ -72,6 +73,13 @@ static const obj_t k_tab[] = {
 	{0x4002, 11, T_U32, 0, F(g_ov_resumes), 0.0f, 0.0f},
 	{0x4002, 12, T_U32, 0, F(g_hall_bad_total), 0.0f, 0.0f},
 	{0x4002, 13, T_U32, 0, F(g_hyb_reseeds), 0.0f, 0.0f},
+	/* 0x4003 temperatures (temp.c) */
+	{0x4003, 1, T_F32, OF_RO, F(g_temp_board), NOLIM},
+	{0x4003, 2, T_F32, OF_RO, F(g_temp_die), NOLIM},
+	{0x4003, 3, T_F32, OF_RO, F(g_temp_motor), NOLIM},
+	{0x4003, 4, T_F32, OF_RO, F(g_i_temp), NOLIM},
+	{0x4003, 5, T_U8, OF_RO, F(g_temp_state), NOLIM},
+	{0x4003, 6, T_U16, OF_RO, F(g_temp_motor_raw), NOLIM},
 	/* 0x4010 motor */
 	{0x4010, 1, T_F32, OF_STORED, F(g_params.kv), 0.0f, 1.0e5f},
 	{0x4010, 2, T_U8, OF_STORED | OF_NOTRUN, F(g_params.pole_pairs), 1.0f, 64.0f},
@@ -111,9 +119,10 @@ static const obj_t k_tab[] = {
 	/* 0x4022 limits */
 	{0x4022, 1, T_F32, OF_STORED, F(g_params.vbus_min), 0.0f, 100.0f},
 	{0x4022, 2, T_F32, OF_STORED, F(g_params.vbus_max), 0.0f, 100.0f},
-	{0x4022, 3, T_F32, OF_STORED, F(g_params.temp_max), -40.0f, 200.0f},
+	{0x4022, 3, T_F32, OF_STORED, F(g_params.temp_max), 0.0f, 150.0f},
 	{0x4022, 4, T_F32, OF_STORED, F(g_params.vbus_clamp), 0.0f, 20.0f},
 	{0x4022, 5, T_F32, OF_STORED, F(g_params.vbus_resume), 0.0f, 20.0f},
+	{0x4022, 6, T_U8, OF_STORED, F(g_params.mtemp_max), 0.0f, 200.0f},
 	/* 0x4023 current sensing: stored offsets (CAL_CUR_OFF), then the ones in use (boot measurement or fallback) */
 	{0x4023, 1, T_I16, OF_STORED | OF_NOTRUN, F(g_params.cur_off[0]), -300.0f, 300.0f},
 	{0x4023, 2, T_I16, OF_STORED | OF_NOTRUN, F(g_params.cur_off[1]), -300.0f, 300.0f},

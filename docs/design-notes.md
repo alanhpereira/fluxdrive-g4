@@ -333,3 +333,40 @@ So 4 is near the encoder for low-speed speed and position control; 3 is good for
 - Encoder: allow the CRC switch-off only on the first `MT6835_StartBurst()` after boot, not after a recovery.
 - `obs_err_max` (30°) may be tight against the Hall angle under acceleration in 3.
 - `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses; they worked on the bench.
+
+---
+
+## 8. Temperature measurement (`temp.c`)
+
+### Why and what
+`tmax` had been stored since the start without anything reading it. The board has an NTC (TH1, ANTC1608-103F3450FB: 10 kΩ at 25 °C, B 3450 K) against 10 kΩ / 0.1 % from 3.3 V on PC4, and J12 puts a motor sensor from 3.3 V to PC3, against 10 kΩ to GND. The motor NTC is to be the same type, at the end of a cable. Both dividers are ratiometric to VDDA, so `g_vdda` only enters the die-sensor conversion (its TS_CAL values are taken at 3.0 V).
+
+### Decisions
+- **Regular conversions, timed away from the current sample.** The injected sequences (CC4) carry the shunts. A regular conversion started from main could overlap one. RM0440 says the injected conversion preempts it, but whether that adds latency was not checked. So main only arms `g_temp_start`, and the TIM1 bottom interrupt sets ADSTART 19.6 µs before CC4. At 42.5 MHz the dividers take 47.5 + 12.5 cycles = 1.4 µs (C26/C19 hold the input for the 5 pF sample capacitor), and the die sensor 247.5 + 12.5 = 6.1 µs (≥ 5 µs required). The two never overlap.
+- **The TIM1 update interrupt is always on.** It was enabled by `MT6835_StartBurst()`, so without an answering encoder (Hall-only motor, a lost sensor) the temperatures would never be sampled. The handler already checked `bursting`. A conversion that has not come back in 100 ms makes the readings invalid instead of stale.
+- **Derating without touching `currentLoop()`.** CCM had about 50 bytes left, and an `iq_ref` clamp there cost 48. The cap is applied at the sources instead: `g_i_vel` is the speed loop's limit, CST caps its own reference in the 1 kHz tick, and `temp_poll()` caps a current-mode `g_iq_ref` every 20 ms. The cap falls linearly from `imax` to zero over the 10 °C below a limit. At the limit the run stops (coast); it starts again 10 °C below.
+- **No parameter version bump.** `mtemp_max` is the former `reserved0` byte (°C, U8), which every stored copy holds as 0 = no motor sensor. The NTC constants, band, hysteresis and the die limit (110 °C) are constants in `temp.h`.
+- **Sensor faults.** A reading outside 100…4000 counts (about −50…157 °C) is open or shorted: NaN, and with that sensor's limit set, a stop with `ST_TEMP_SENSOR`. With nothing on J12 the input reads ≈ 0, hence `mtmax` = 0 by default.
+- EMCY: 0x4210 (board / die), 0x4310 (motor), 0x4000 (sensor). The CiA 402 meaning of 0x4310 ("drive") is to be checked.
+
+### Bench results (2026-10-21)
+- **Idle readings:** board 40.0–40.5 °C and die 59.8–61.0 °C at 31 V, motor off. The chip felt warm, which is consistent. Not checked against a thermometer. The conversions check out against the raw values: board 1 482 counts; die 1 032 counts at VDDA 3.32 V with TS_CAL1 1 040 / TS_CAL2 1 373. J12 open reads 0 counts.
+- **No effect on current sensing (300 rpm unloaded, 3 s of telemetry, dev vs this branch on the same board):**
+
+  | | dev | this branch |
+  |---|---|---|
+  | iq sd | 0.0735 A | 0.0734 A |
+  | id sd | 0.0223 A | 0.0225 A |
+  | rpm sd | 12.29 | 12.25 |
+  | `loop_cyc_max` | 2 588 cycles | 2 586 cycles |
+
+  `enc_late` and CRC stayed 0, with no telemetry drops. Boot offsets unchanged (−6/−22/−7).
+- **Derating:**
+  - At standstill, `tmax` 45 with the board at 40.4 °C gave a cap of 6.86 A.
+  - At 300 rpm with the cap at ≈1 A and the shaft loaded by hand, mean iq held at 0.94–1.04 A (peaks 1.13 A, the current ripple) while the speed fell to 1 rpm. Unloaded it went back to 300 rpm. The same load without a cap had drawn 2.4 A.
+- **Stops:**
+  - `tmax` 35 refuses a run. At 300 rpm it gives `EV_STOPPED` (`ST_OVERTEMP`, 40.1 °C) and a coast to off.
+  - `mtmax` 60 with J12 open refuses with `ST_TEMP_SENSOR`.
+  - In CANopen PV: fault 0x603F = 0x4210, EMCY 0x4210 (error register 0x21), and a fault reset to switch on disabled once `tmax` is back.
+- `cotest.py --no-motion`: 7 of 7 pass.
+- Not tested: USB current mode under derating (an unloaded motor runs away in current mode), and the die limit (110 °C).

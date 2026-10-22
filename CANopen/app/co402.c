@@ -9,6 +9,7 @@
 #include "co_app.h"
 #include "objdict.h" /* od_write(): the parameter views go through the same checks as the USB protocol */
 #include "pi_ctrl.h" /* g_vel_ref, g_iq_ref */
+#include "temp.h"	 /* g_i_temp */
 
 #define INC_PER_TURN 65536.0f /* 0x608F: 2^16 increments per motor revolution, Q16.16 turns (g_pos_cnt) */
 #define INC_TO_Q32 65536	  /* increments -> Q32.32 turns */
@@ -88,6 +89,9 @@ static const struct {
 	{ST_ABORTED, 0x47, 0xFF01},	 /* manufacturer: stopped from the USB/serial link */
 	{ST_CAN_LOST, 0x48, 0x8130}, /* heartbeat / life guard error: master lost */
 	{ST_FOLLOWING_ERROR, 0x46, 0x8611},
+	{ST_OVERTEMP, 0x4A, 0x4210},	   /* excess temperature device (board NTC or MCU die) */
+	{ST_MOTOR_OVERTEMP, 0x4A, 0x4310}, /* excess temperature drive (the motor) */
+	{ST_TEMP_SENSOR, 0x4A, 0x4000},	   /* temperature (a sensor reads open or shorted) */
 };
 #define FAULT_OTHER_BIT 0x49
 #define FAULT_OTHER_CODE 0x1000 /* generic error */
@@ -644,6 +648,7 @@ void co402_tick(void) {
 		float iq = halt ? 0.0f : (float)(OD_RAM.x6071_targetTorque + OD_RAM.x60B2_torqueOffset) * rated * 0.001f;
 		float imax = (float)OD_PERSIST_APP.x6072_maxTorque * rated * 0.001f;
 		if (imax > g_params.max_current) imax = g_params.max_current;
+		if (imax > g_i_temp) imax = g_i_temp; /* temperature derating (temp.c) */
 		g_iq_ref = clampf(iq, imax, &lim);
 		b12 = !halt;
 		reached = halt;
