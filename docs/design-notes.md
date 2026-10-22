@@ -257,7 +257,6 @@ Don't lower `vkp`/`vki` for the zero hold: the oscillation was from pushes.
 | Drop USB CDC | ~10 KB | Loses the PC link; not planned |
 | `currentLoop` at `-Os` (release) | −1.3 KB CCM | Slower loop |
 | Drop the O2 pragma from `motorCtrl.c` / `hfi.c` | −2.8 / −0.8 KB CCM (debug) | Slower loop |
-| `outer_loops` to flash | −636 B CCM | Slower outer-loop cycles (the longest); would let `hall_update()` (696 B) back into CCM |
 
 ### How to measure
 ```
@@ -298,7 +297,7 @@ Setup: the MT6835's UVW outputs as the Halls, 7 pole pairs, 30 V, the SPI encode
 
 **Table and decoder.** **H** gave sectors of 56–63°; the sequence 5 → 1 → 3 → 2 → 6 → 4 repeats every 8.6° mech; no invalid state in any run.
 
-**Loop time.** `currentLoop()` max 15.6 µs in 3, 19.2–19.5 µs in 4 with HFI injecting (`enc_late` did not grow). That is at the limit; `outer_loops` to flash and `hall_update()` to CCM would give margin.
+**Loop time.** `currentLoop()` max 15.6 µs in 3, 19.2–19.5 µs in 4 with HFI injecting (`enc_late` did not grow). That is at the limit; `hall_update()` back in CCM (696 B, room since 2026-10-22, section 6) would give margin.
 
 **Speed, unloaded.**
 
