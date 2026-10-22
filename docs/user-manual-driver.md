@@ -189,8 +189,8 @@ Set with `angsrc` (only while stopped), then save.
 | 0 | Encoder only | Simplest. The observer and HFI still run for logging if enabled, but do not affect control. |
 | 1 | Encoder + observer *(default)* | Below `olo` of back-EMF the encoder is used; between `olo` and `ohi` the observer's angle and speed are blended in (with `oblend` = 1), once it has passed its flux check and agreed with the encoder. Position always comes from the encoder. Gives a cleaner speed estimate at high speed. |
 | 2 | Sensorless | HFI (high-frequency injection) at standstill and low speed, the observer above `olo`. The encoder is not used for control (only logged). **Position mode is refused.** |
-| 3 | Hall | The Hall sensors on J13, interpolated between their edges with the speed measured over the last electrical turn; the observer blends in above `olo` (with `oblend` = 1). No encoder needed. At standstill the angle sits in the middle of the Hall sector (up to 30° electrical off: about 87 % of the torque for the current). Position counts the angle: coarse at low speed (6 × `pp` steps per turn). Works on any motor. |
-| 4 | Hall + HFI | HFI at standstill and low speed, started on the Hall angle (so no polarity pulses) and kept inside the Hall sector: if it strays out for 2 ms it is put back on the Hall angle (counted in "HFI re-seeds"), never a stop. Between `hyblo` and `hybhi` the Hall angle fades in and the injection pauses above it; the observer blends in above `olo`. Full torque and fine position at standstill. Needs a salient motor (the **h** map) and the Hall sensors. |
+| 3 | Hall | The Hall sensors on J13, interpolated between their edges with the speed of the last sector (its width from **H** over the time it took); the observer blends in above `olo` (with `oblend` = 1). No encoder needed. At standstill the angle sits in the middle of the Hall sector (up to 30° electrical off: about 87 % of the torque for the current). Position counts the angle: coarse at low speed (6 × `pp` steps per turn). Works on any motor. Good for current (torque) mode and for speed above a few hundred rpm; below that the speed is new only once per sector, so the speed loop needs much lower `vkp`/`vki` than with an encoder (see "3 or 4?" below). |
+| 4 | Hall + HFI | HFI at standstill and low speed, started on the Hall angle (so no polarity pulses) and kept inside the Hall sector: if it strays out for 2 ms it is put back on the Hall angle (counted in "HFI re-seeds"), never a stop. Between `hyblo` and `hybhi` the Hall angle fades in and the injection pauses above it; the observer blends in above `olo`. Full torque and fine position at standstill. Needs a salient motor (the **h** map) and the Hall sensors. The injection also shakes the rotor slightly, which lowers the current it needs to break away from cogging, so a small torque command holds less firmly than in 1 or 3. With the motor off there is no injection and the angle is the Hall sector centre: home while running for a fine zero. |
 
 ### Sensorless commissioning
 Sensorless needs, in addition to r, l, t and k:
@@ -211,7 +211,19 @@ Starting while the motor is already spinning fast is not supported in sensorless
 
 The order of the wires does not matter: **H** learns which state is where. Swapping two motor phases does, so rerun **H** after rewiring.
 
-**Bench test without a Hall motor:** the MT6835 has U/V/W outputs that act as ideal Hall sensors. Wire them to J13 HALL1..3 (with the encoder's GND), run **e** (for `pp`), then **u**, then **H** in `angsrc` 1. In `angsrc` 3 the "HFI / Hall error" plot then shows Hall − encoder, and in 4 HFI − Hall. Being ideal, these signals do not exercise the sensor-placement averaging and the glitch filter that a real Hall motor needs.
+**3 or 4?** Measured on the bench (7 pole pairs, the encoder as the reference, the shaft lightly braked by hand, speed gains tuned on the encoder; ± is the speed's standard deviation over 10 ms):
+
+| | Encoder (1) | Hall + HFI (4) | Hall (3) |
+|---|---|---|---|
+| 20 rpm | 20.2 rpm ± 3 | 20.2 rpm ± 6 | 28 rpm ± 45 |
+| 100 rpm | 97.4 rpm ± 12 | 100.2 rpm ± 11 | 83 rpm ± 79 |
+| Torque at ±0.3 A, held or accelerating | reference | the same | the same |
+
+Use 4 for speed or position control at low speed: it holds close to the encoder. Use 3 for torque control, for speed above a few hundred rpm, or on a motor without saliency. For speed control in 3 below that, lower `vkp` and `vki` several times (on the bench 7×: `vkp` 0.05, `vki` 2.1) and test with the real load. In current mode an unloaded motor accelerates until something stops it, whatever the angle source.
+
+**Bench test without a Hall motor:** the MT6835 has U/V/W outputs that act as ideal Hall sensors. Wire them to J13 HALL1..3 (with the encoder's GND), run **e** (for `pp`), then **u**, **Save to flash**, then **H** in `angsrc` 1. In `angsrc` 3 the "HFI / Hall error" plot then shows Hall − encoder, and in 4 HFI − Hall. Being ideal, these signals do not exercise the sensor-placement correction and the glitch filter that a real Hall motor needs.
+- **u** moves the encoder zero, which the encoder stores at once, but corrects `offset` only in RAM. Save before anything can reset the board, or the stored `offset` no longer fits the encoder.
+- Switch the board off before soldering on the encoder. Soldering it live once gave 800 000 encoder CRC errors and an unexplained runaway on the next run. If the encoder was disturbed, reboot before running, and check that the CRC errors in the Statistics box stay still.
 
 ---
 
@@ -412,6 +424,7 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | "Hall sensors lost" | Check J13 and the sensor supply: the Hall state must never read 0 or 7. |
 | "Hall calibration: … order does not repeat" | A state is missing or a sensor glitches: turn by hand and watch the Hall state; check the wiring and the shaft is free. |
 | "Hall calibration: a sector is not 60 ± 25 deg" | `pp` is wrong, or the rotor did not follow the sweep (raise `rated`, unload). |
+| Speed swings or overshoots at low speed in `angsrc` 3 | The Hall speed is new only once per sector: lower `vkp`/`vki` several times, or use `angsrc` 4. |
 | "HFI re-seeds" counting up in `angsrc` 4 | HFI loses the angle under load or at speed: raise `hv`, check `hsal`, or lower `hyblo`/`hybhi`. |
 | "not allowed while the motor runs: stop first" | Saving, rebooting and calibrating need the motor off. |
 | "the CANopen master has the motor" | Disable the drive on the CAN side, or press STOP. |

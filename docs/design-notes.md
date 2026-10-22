@@ -292,13 +292,45 @@ For motors with Hall sensors and no encoder. 3 uses the Halls alone (any motor);
 ### Bench stand-in
 The MT6835's U/V/W outputs (register 0x00B: `UVW_RES` = pp − 1, `UVW_MUX` 0, `UVW_OFF` 0; `CAL_UVW` writes and saves it) behave as ideal Hall sensors. `ZERO_POS` moves all outputs, so after 'e' `CAL_UVW` also puts the zero on electrical zero (`uvw_zero()`: 12-bit steps of 0.088° mech; `elec_offset` keeps the rounding, the Hall table is cleared) and the UVW edges sit like well-mounted Halls. The SPI angle stays there as the reference: telemetry v[2] is Hall − encoder in 3 and HFI − Hall in 4. Being ideal they do not exercise the placement correction or the glitch filter; that needs a real Hall motor.
 
-### Bench results (2026-10-21, MT6835 UVW as Halls, unloaded 7-pole-pair motor, encoder as the reference)
-- `currentLoop()` max: 15.6 µs in 3, 19.2–19.5 µs in 4 with HFI injecting: at the limit, no late encoder reads yet. `outer_loops` to flash and `hall_update()` to CCM would give margin.
-- 4: 10/50/100 rpm hold on HFI (no re-seeds, no polarity pulses, HFI − Hall settles within ±7° in 20 ms), the crossfade at 300 rpm and pure Hall at 600 rpm are smooth; position moves land within 0.001 turn.
-- 3: Hall − encoder within ±9° at 1000 rpm and ±13° at 3000 rpm (observer weight 1). Below ~300 rpm the speed loop needs far lower gains than with the encoder: with `vkp` 0.35 / `vki` 15 it limit-cycles at 100 rpm, with 0.05 / 2.1 the speed ripple (sd over 10 ms) is 28 rpm at 100 rpm against 11 with the encoder, the same at 300 rpm. The unloaded rotor changes speed by a few hundred rpm within one sector at 0.5 A; with a load it will be easier.
+### Bench results (2026-10-21)
+Setup: the MT6835's UVW outputs as the Halls, 7 pole pairs, 30 V, the SPI encoder as the reference (unwrapped from telemetry v[0]). **u** moved the encoder zero by 30.06° mech and left `offset` at +0.21°; **e** afterwards measured +0.32°, so `uvw_zero()` has the right sign. Speed gains `vkp` 0.35 / `vki` 15 (tuned on the encoder) unless noted. "Ripple" is the sd of the true speed over 10 ms windows, in rpm.
+
+**Table and decoder.** **H** gave sectors of 56–63°; the sequence 5 → 1 → 3 → 2 → 6 → 4 repeats every 8.6° mech; no invalid state in any run.
+
+**Loop time.** `currentLoop()` max 15.6 µs in 3, 19.2–19.5 µs in 4 with HFI injecting (`enc_late` did not grow). That is at the limit; `outer_loops` to flash and `hall_update()` to CCM would give margin.
+
+**Speed, unloaded.**
+
+| | 10 rpm | 50 rpm | 100 rpm | 300 rpm | 600 rpm | 1000 rpm | 3000 rpm |
+|---|---|---|---|---|---|---|---|
+| 4 | 9.9 avg (stick-slip on the cogging) | 49.7 avg | 99.6 avg | 299.4 avg (crossfade) | 606.7 avg (Hall, HFI paused) | — | — |
+| 3, `vkp` 0.35 | runs to > 100 | — | limit cycle −70…+250 | — | — | — | — |
+| 3, `vkp` 0.05 / `vki` 2.1 | — | ripple 58 (1: 50) | ripple 28 (1: 11) | ripple 6.8 (1: 5.8) | — | 1000.2 avg, ripple 12, Hall − enc ±9° | Hall − enc −13…+6° |
+
+HFI in 4 started on the Hall angle with no polarity pulses and settled within ±7° of it in 20 ms; no re-seed in any run. With the first, six-edge speed the limit cycle in 3 was worse: the estimate trailed a whole turn (55 rpm while the rotor went from 53 to 280 rpm), hence the per-edge speed. What is left in 3 is the loop: the speed is new once per sector (14 ms at 100 rpm), and the unloaded rotor gains or loses a few hundred rpm within one sector at 0.5 A.
+
+**Position (4).** +0.25 turn and back to 0 landed at +0.2500 and +0.0008; ±2° mech against the encoder while moving. A 1-turn move ran at the speed the gains ask for (~1200 rpm with `pkp` 20) through the Hall range without a slip.
+
+**Torque, unloaded.** ±0.3 A from standstill: 100 → 1000 rpm in 114–117 ms in 1, 3 and 4 alike (~7900 rpm/s), so the Hall angle costs no measurable torque once turning; id within ±0.25 A, iq within ±0.1 A of the reference. At 0.12 A, 1 and 3 stay held by the cogging at the same detents (3 with the sector centre 24° off), while 4 breaks away every time: the injection shakes the rotor out of the detent. Nothing starts at 0.06 A.
+
+**Shaft held lightly by hand** (friction load, 0.5–1.7 A):
+
+| | 1 (encoder) | 4 (Hall + HFI) | 3 (Hall) |
+|---|---|---|---|
+| 20 rpm | 20.2 avg, ripple 3 | 20.2 avg, ripple 6 | 28 avg, ripple 45 |
+| 50 rpm | 49.8 avg, ripple 7 | 49.8 avg, ripple 19 | 38 avg, ripple 52 |
+| 100 rpm | 97.4 avg, ripple 12 | 100.2 avg, ripple 11 | 83 avg, ripple 79 |
+| ±0.3 A, held | iq sd 0.02 | iq sd 0.01 | iq sd 0.02–0.03, sector centre 19–25° off |
+
+So 4 is near the encoder for low-speed speed and position control; 3 is good for torque control and above a few hundred rpm, and its low-speed speed loop needs its own gains.
+
+**One unexplained runaway.** The first speed run after soldering the UVW wires (mode 1, 10 rpm) ran to full speed; STOP did not end it, since it brakes under the speed loop first. The encoder counters then showed 823 917 CRC errors (none before or since): the wires had been soldered with the board powered. Not reproduced afterwards. The suspect is the CRC rule in `MT6835_Sample()`: after `MT6835_StartBurst()` (also called by `enc_recover()` when the sensor comes back from a supply dip) the check switches itself off after 25 failures in a row if no group has passed yet, and from then on corrupted groups are used as angles.
 
 ### Open
 - 3: separate (lower) speed gains below the Hall/observer handover, or a gain scheduled by the Hall edge rate.
-- 4: with the motor off the angle is the Hall sector centre, so enabling moves the position by up to ±30° electrical; a home taken while off carries that.
+- 4: with the motor off the angle is the Hall sector centre, so enabling moves the position by up to ±30° electrical; a home taken while off carries that. Fix: hold the position while off, or home only while running.
+- 4: the injection lowers the breakaway current, so a small torque command holds less firmly than in 1 or 3.
+- Encoder: allow the CRC switch-off only on the first `MT6835_StartBurst()` after boot, not after a recovery.
+- At 600 rpm in 4 the observer weight was 0.42 (back-EMF above `ohi`, so 1 was expected): not looked into.
 - `obs_err_max` (30°) may be tight against the Hall angle under acceleration in 3.
 - `hyb_lo`/`hyb_hi` defaults (150/400 rpm) are guesses; they worked on the bench.
