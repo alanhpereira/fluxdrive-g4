@@ -163,11 +163,9 @@ static uint8_t s_pll_init;
 static float s_vel;				  /* turn/s, encoder PLL blended with the observer PLL: what the loops use */
 static float s_vel_ref_eff = NAN; /* speed reference actually fed to the speed PI, for telemetry */
 
-/* p: raw position from the angle source, motor direction: the encoder, or the accumulated Hall / Hall + HFI
- * angle (hall_pos()). ph: encoder phase (Q32 = one turn, motor direction) for the encoder PLL. age_s: how long
- * ago the sensor sampled it. fresh = 0 when there was no new sample (stream stalled, CRC): the PLL then only
- * predicts */
-static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
+/* the main/tick -> ISR requests (home, position reference / CSP segment, position here), from motion_update()
+ * on the cycles that carry one. In flash to leave CCM room: at most one cycle per CSP frame */
+static __attribute__((noinline)) void motion_latch(pos_q32_t p) {
 	if (g_home_req) {
 		s_home = p - ((pos_q32_t)g_home_pos << 16); /* g_home_pos: Q16.16 turns */
 		g_home_req = 0;
@@ -205,6 +203,21 @@ static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
 		}
 		g_pos_ref_req = 0;
 	}
+	if (g_pos_here_req) { /* after the two above: it wins over a reference latched in the same cycle */
+		s_pos_ref = p - s_home;
+		s_pos_ff_n = 0;
+		s_pos_ff_hold = 0;
+		s_pos_ff = 0.0f;
+		g_pos_here_req = 0;
+	}
+}
+
+/* p: raw position from the angle source, motor direction: the encoder, or the accumulated Hall / Hall + HFI
+ * angle (hall_pos()). ph: encoder phase (Q32 = one turn, motor direction) for the encoder PLL. age_s: how long
+ * ago the sensor sampled it. fresh = 0 when there was no new sample (stream stalled, CRC): the PLL then only
+ * predicts */
+static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
+	if (g_home_req | g_pos_ref_req | g_pos_here_req) motion_latch(p);
 	if (s_pos_ff_n) {
 		if (--s_pos_ff_n || !s_pos_snap)
 			s_pos_ref += s_pos_ff_q;
@@ -219,13 +232,6 @@ static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
 		if (--s_pos_ff_hold == 0) s_pos_ff = 0.0f;
 	}
 	s_pos = p - s_home;
-	if (g_pos_here_req) {
-		s_pos_ref = s_pos;
-		s_pos_ff_n = 0;
-		s_pos_ff_hold = 0;
-		s_pos_ff = 0.0f;
-		g_pos_here_req = 0;
-	}
 	g_pos_cnt = (int32_t)(s_pos >> 16); /* Q16.16 turns, CANopen 0x6064: wraps at +-32768 turns */
 	g_pos_ref_cnt = (int32_t)(s_pos_ref >> 16); /* CANopen 0x6062 / following error: the interpolated reference */
 	g_pos = q32_to_f(s_pos);
@@ -481,20 +487,15 @@ volatile uint32_t g_ov_resumes;
  * current (CTRL_RUN). Outside CTRL_RUN a trip switches the bridge off straight away: CTRL_OFF/CTRL_CAL would put
  * the zero vector (short-brake) or an open-loop voltage on it. An OV coast resumes by itself once the bus is
  * back down (vbus_resume, OV_RESUME_N). The ISR never writes g_mode */
-static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
-	static uint8_t ov_n, oc_n;
+/* the trip and the coast after it, from trip_check(): t = the trip just detected, or TRIP_NONE while coasting. In
+ * flash to leave CCM room: it runs only on those cycles */
+static __attribute__((noinline)) int trip_coast(uint8_t t, float ia, int oc, ctrl_mode_t mode) {
 	static uint8_t lost_n, res_n;
 	static float id_save, iq_save; /* references when the trip hit, for the resume */
 	const float imax = g_params.max_current;
-	const float ia = fabsf(id) > fabsf(iq) ? fabsf(id) : fabsf(iq);
-	const int oc = imax > 0.0f && ia > imax;
-	if (g_trip == TRIP_NONE) {
-		ov_n = (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) ? (ov_n < 255 ? ov_n + 1 : ov_n) : 0;
-		oc_n = oc ? (oc_n < 255 ? oc_n + 1 : oc_n) : 0;
-		uint8_t t = ov_n >= OV_TRIP_N ? TRIP_OV : oc_n >= OC_TRIP_N ? TRIP_OC : TRIP_NONE;
-		if (t == TRIP_NONE) return 0;
+	if (t != TRIP_NONE) {
 		g_trip = t;
-		ov_n = oc_n = lost_n = res_n = 0;
+		lost_n = res_n = 0;
 		id_save = g_id_ref;
 		iq_save = g_iq_ref;
 		if (mode != CTRL_RUN) {
@@ -519,6 +520,20 @@ static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
 		}
 	}
 	return 1;
+}
+
+static inline int trip_check(float id, float iq, ctrl_mode_t mode) {
+	static uint8_t ov_n, oc_n;
+	const float imax = g_params.max_current;
+	const float ia = fabsf(id) > fabsf(iq) ? fabsf(id) : fabsf(iq);
+	const int oc = imax > 0.0f && ia > imax;
+	if (g_trip != TRIP_NONE) return trip_coast(TRIP_NONE, ia, oc, mode);
+	ov_n = (g_params.vbus_max > 0.0f && g_vin > g_params.vbus_max) ? (ov_n < 255 ? ov_n + 1 : ov_n) : 0;
+	oc_n = oc ? (oc_n < 255 ? oc_n + 1 : oc_n) : 0;
+	uint8_t t = ov_n >= OV_TRIP_N ? TRIP_OV : oc_n >= OC_TRIP_N ? TRIP_OC : TRIP_NONE;
+	if (t == TRIP_NONE) return 0;
+	ov_n = oc_n = 0;
+	return trip_coast(t, ia, oc, mode);
 }
 
 /* Hall angle sources, for the telemetry (set in currentLoop()) */

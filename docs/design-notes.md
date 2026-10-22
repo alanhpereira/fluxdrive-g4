@@ -241,7 +241,7 @@ Don't lower `vkp`/`vki` for the zero hold: the oscillation was from pushes.
 ### Usage (2026-10-17, with CANopen)
 - Flash: release `-Os` 96.5 KB (23.5 KB free), debug 105.8 KB (14.2 KB free). CANopen + CiA 402 + FDCAN HAL added ~30 KB; the largest parts are `co402.o` 6.0 KB, `OD.o` 3.6 KB, `CO_PDO.o` 3.5 KB, `CO_SDOserver.o` 2.5 KB.
 - RAM: 19.9 of 22 KB including the 4 KB stack reserve (~2.1 KB free). Heap is 0 (`_Min_Heap_Size` = 0: nothing calls `malloc`; restore a heap if something ever needs it). The stack reserve is a guard so a static-data overflow fails at link time.
-- CCM: ≈ 9.6 of 10 KB; 10 144 of 10 240 bytes after the Hall sources (2026-10-20, section 7).
+- CCM: ≈ 9.6 of 10 KB; 10 144 of 10 240 bytes after the Hall sources (2026-10-20, section 7); 9 488 after the position-request latch (`motion_latch()`, 336 B) and the trip latch/coast (`trip_coast()`, 320 B) moved to flash (2026-10-22).
 
 ### What was done and why
 - **ISR path at `-O2`** in every build: `#pragma GCC optimize("O2")` at the top of `motorCtrl.c`, `curSnsCtrl.c`, `hfi.c`, and over the burst/DMA half of `mt6835.c` (costs ~0.8 KB against plain `-Os`). CANopen is `-Os` everywhere through its port header.
