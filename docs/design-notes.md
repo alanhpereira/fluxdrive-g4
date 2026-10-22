@@ -369,3 +369,38 @@ So 4 is near the encoder for low-speed speed and position control; 3 is good for
   - In CANopen PV: fault 0x603F = 0x4210, EMCY 0x4210 (error register 0x21), and a fault reset to switch on disabled once `tmax` is back.
 - `cotest.py --no-motion`: 7 of 7 pass.
 - Not tested: USB current mode under derating (an unloaded motor runs away in current mode), and the die limit (110 °C).
+
+---
+
+## 9. Second encoder type (AS5048A), planned
+
+Not implemented. This section records the plan so it can be picked up later.
+
+### Why and what
+Support an ams AS5048A next to the MT6835 with a single firmware image, chosen by a parameter. The AS5048B is I2C only, too slow for a read every PWM period, so it is out. If the choice is still open, the AS5047P is the better fit for FOC: it uses the same SPI protocol, compensates its own latency (DAEC) and has an ABI output for the TIM4 encoder interface reserved on J8.
+
+### How the AS5048A differs
+
+| | MT6835 | AS5048A |
+|---|---|---|
+| Resolution | 21 bit | 14 bit |
+| SPI | mode 3, run at 10.6 MHz (/16) | mode 1 (CPOL 0, CPHA 1), 10 MHz max, so /32 = 5.3 MHz |
+| Reading | burst mode, CS held low, 4-byte groups | 16-bit frames; CS must go high between frames; the reply to a command comes in the next frame |
+| Integrity | CRC-8, status bits in ANGLE_L | even parity (bit 15), error flag (bit 14); magnet diagnostics in register 0x3FFD |
+| Zero, direction | ZERO_POS and ROT in EEPROM | zero is OTP; no direction register (set by the magnet side) |
+| UVW | yes (`CAL_UVW`) | no (PWM output only) |
+| Supply | 3.3 V | 3.3 V needs VDD3V3 tied to VDD5V |
+
+### Plan
+- **Selection:** `enc_type` in a spare byte of `motor_params_t` (`reserved1[2]` or `reserved2`). Old copies hold 0 there, so 0 = MT6835 and there is no `PARAM_VERSION` bump (as with `mtemp_max`). It needs a new object 0x40xx in `k_tab`, `objects.py` and the XDD (then the user exports `OD.c`/`OD.h`/`driverTCC.eds`), and takes effect after SAVE + reboot. Optional value "auto": at boot, probe the AS5048A first (read 0x3FFD and expect good parity and plausible AGC bits), then the MT6835 (burst mode and a passing CRC). 0xFFFF is no MT6835 command, so that order is safe.
+- **`enc.c/h` layer:** `enc_init()`, `enc_start()`, `enc_stop()`, `enc_trigger()` (from `TIM1_UP_TIM16_IRQHandler`), `enc_sample(&age)` and `enc_position()`, writing one `g_enc` state: `angle` always 21-bit, `turns`, and neutral counters (samples, integrity errors, late, stalls, status). `mt6835.c` stays the MT6835 driver; a new `as5048.c` holds the AS5048A. Dispatch through `switch (g_enc.type)`, not function pointers (keeps the hot path inlinable, no veneers). Every `hMT6835.angle`/`turns` reader (`motorCtrl.c`, `calib.c`, `hall.c`, `objdict.c`) moves to `g_enc`.
+- **AS5048A read, one frame per period:** in the TIM1 bottom interrupt, CS low through BSRR, then a DMA transfer of one 16-bit frame of **0xFFFF** (read angle with its parity bit; 0x0000 would be a NOP and never return the angle). In `enc_sample()`: DMA done, CS high (high for the rest of the period), check parity and the error flag, decode. The angle is latched at the CS falling edge, so it is ≈20 µs old at the current sample (MT6835 ≈4 µs). `age_s` carries that to the PLL. To get it down to a few µs, start the frame from a second timer slaved to TIM1 so it ends just before CC4. Hardware NSS pulse mode cannot toggle CS because it needs CPHA = 0.
+- **Guards:** keep rejecting 0x0000 (valid parity, EF = 0, would read as angle 0). 0xFFFF passes parity but has EF set, so the error-flag check rejects it. `ENC_LOST_N`/`ST_ENC_LOST` stay.
+- **Resolution:** store `raw14 << 7`, so `angle << 11`, 2097152, the `1 << 20` wrap, `enc_delta()`, `elec_angle()` and the telemetry scale stay as they are. The raw speed step is ≈92 rpm per count per cycle: expect lower PLL bandwidth and lower `vkp`/`pkp`.
+- **SPI at runtime:** the .ioc keeps the MT6835 setup. `as5048_init()` reprograms SPI1 by register (CPOL 0, /32, optional 16-bit frames and DMA width), out of CubeMX's reach.
+- **Register access:** 16-bit frames with parity (command, then a NOP frame for the reply). 0x3FFD read every N periods in place of the angle, or from main with the motor off, into `status`.
+- **Calibrations:** `CAL_ZERO` (`reset_encoder()`) and `CAL_UVW` (`uvw_zero()`) return a new `ST_ENC_UNSUPPORTED` on the AS5048A (keep the `CAL_*` numbering; add the status to `protocol.py`; the GUI greys the buttons out). The zero stays in software (`elec_offset`, HOME), the direction in `enc_dir`. `enc_recover()` sends "clear error flag" (0x4001) instead of the burst command.
+- **Timing:** `ENC_EXTRA_S` becomes a per-type value. The AS5048A has no DAEC, so its propagation delay shows up as an angle error that grows with speed. Take it from the datasheet or from the observer − encoder error at speed.
+- **CCM:** 9 488 of 10 240 bytes (debug) since `motion_latch()` and `trip_coast()` moved to flash, so both sample paths fit in CCM (AS5048A sample estimated at 150–250 bytes plus the dispatch). That room competes with moving `hall_update()` back into CCM (section 6); measure after each step. The `.ccmram` list in the linker script needs the new function names.
+- **Order:** first the `enc` layer with the MT6835 only (pure refactor, checked against today's 0x4002 diagnostics and loop times), then the AS5048A driver, the parameter and the object.
+- **Docs and PC side:** 0x4002 labels in `objects.py` (index, sub and type unchanged, so the hash is too), the Calibration tab buttons, `check_sync.py`, the developer guide's hardware list, the driver manual (parameter reference, encoder calibrations, wiring) and `software-structure.md` (the `enc` layer in the ISR path).
