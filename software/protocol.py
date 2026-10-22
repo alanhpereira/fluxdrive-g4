@@ -154,7 +154,8 @@ EVENTS = {
                        f"{v[3]:+.1f} deg off the average, spread {v[4]:.1f} deg elec"),
     EV_TUNE: lambda v: f"bw {v[0]:.0f} Hz:  d kp {v[1]:.4f} ki {v[2]:.2f}   q kp {v[3]:.4f} ki {v[4]:.2f}",
     EV_KV: lambda v: (f"kv = {v[0]:.1f} rpm/V   (lambda {v[1] * 1e3:.3f} mWb, Kt {v[2]:.4f} Nm/A, offset {v[3]:.3f} V, "
-                      f"{v[4]:.0f} samples, peak {v[5]:.0f} rpm)"),
+                      f"{v[4]:.0f} samples, peak {v[5]:.0f} rpm"
+                      + (f", frame angle error {math.degrees(math.atan(v[6])):+.1f} deg elec" if len(v) > 6 else "") + ")"),
     EV_HFI_PT: lambda v: f"  id {v[0]:5.2f} A  phi {v[1]:5.1f} deg   L {v[2] * 1e6:7.2f} uH   across/along {v[3]:+.3f}",
     EV_HFI_FIT: _fmt_hfi_fit,
     EV_HFI_POL: _fmt_hfi_pol,

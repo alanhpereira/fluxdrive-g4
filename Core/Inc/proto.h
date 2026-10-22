@@ -136,7 +136,7 @@ enum {
 	EV_PP_BAD,		 /* measured pole pairs */
 	EV_ENC,			 /* dir, pp, measured pp, single point - average (deg), spread (deg) */
 	EV_TUNE,		 /* bw, kp_d, ki_d, kp_q, ki_q */
-	EV_KV,			 /* kv, lambda (Wb), Kt (Nm/A), offset (V), samples, peak rpm */
+	EV_KV,			 /* kv, lambda (Wb), Kt (Nm/A), offset (V), samples, peak rpm, vd/vq over the coast */
 	EV_HFI_PT,		 /* bias (A), angle from d (deg elec), L along it (H), across/along ratio */
 	EV_HFI_FIT,		 /* bias (A), a0, a2, b2 (1/H: 1/L = a0 + a2 cos 2phi + b2 sin 2phi), saliency, stored (0/1) */
 	EV_HFI_POL,		 /* error before (deg elec, HFI - encoder), error after, flipped (0/1), contrast */

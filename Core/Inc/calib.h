@@ -40,7 +40,7 @@ extern volatile uint8_t g_rec_use_q; /* record iq instead of id */
 
 /* measured currents (A, motorCtrl.c) and bus voltage (V, curSnsCtrl.c), written by the ISR every cycle */
 extern volatile float g_id, g_iq, g_vin;
-extern volatile float g_vq_f, g_iq_f; /* low-passed vq command and iq, from currentLoop() */
+extern volatile float g_vd_f, g_vq_f, g_iq_f; /* low-passed vd/vq command and iq, from currentLoop() */
 
 /* from currentLoop(): motor direction (positive = positive iq), relative to home */
 #define SL_LOST_N 1250 /* sensorless: HFI not tracking for this many cycles (50 ms) stops the motor */

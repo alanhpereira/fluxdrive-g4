@@ -46,9 +46,10 @@ Frame telemetry;
 
 static float dc_float;
 static float center_f;
+static float duty_k; /* g_max_duty_cycle / g_pwm_res: the share of the bus the duty window spans */
 
 volatile float g_iq, g_id;
-volatile float g_vq_f, g_iq_f;
+volatile float g_vd_f, g_vq_f, g_iq_f;
 volatile float g_vel, g_pos, g_rpm;
 volatile uint8_t g_home_req;
 volatile int32_t g_home_pos;
@@ -87,6 +88,7 @@ HAL_StatusTypeDef initMotor() {
 	}
 	dc_float = g_max_duty_cycle * INV_SQRT3;
 	center_f = (float)g_half_duty_cycle + 0.5f;
+	duty_k = (float)g_max_duty_cycle / (float)g_pwm_res;
 	MT6835_StartBurst(&hMT6835);
 	hall_init();
 	telemetry.sync[0] = 0xA5;
@@ -742,8 +744,9 @@ void currentLoop(void) {
 	else
 		g_sl_lost_n = 0;
 
-	/* voltage command in volts */
-	float vin = g_vin > 1.0f ? g_vin : 1.0f;
+	/* voltage command in volts. SVPWM() spans 0..ARR - ZERO_TIME, so full scale is that share of the bus:
+	 * with g_vin the applied volts were ~3 % below the command (kv read ~3 % low, R high) */
+	float vin = (g_vin > 1.0f ? g_vin : 1.0f) * duty_k;
 	float v_d = 0.0f, v_q = 0.0f; /* CTRL_OFF: zero volts, bridge stays enabled */
 	/* regen clamp: braking current shrinks to zero across the vbus_clamp band below vbus_max (0 = off) */
 	float rk = 1.0f;
@@ -770,6 +773,7 @@ void currentLoop(void) {
 		}
 	}
 	/* ~0.4 ms low-pass, read by slow routines in main (kv calibration back-EMF) */
+	g_vd_f += 0.1f * (v_d - g_vd_f);
 	g_vq_f += 0.1f * (v_q - g_vq_f);
 	g_iq_f += 0.1f * (iq - g_iq_f);
 

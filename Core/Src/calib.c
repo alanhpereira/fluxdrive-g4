@@ -720,19 +720,23 @@ static st_t cal_kv(void) {
 		return ST_KV_BACKWARDS;
 	}
 
-	/* coast-down: least squares y = lambda * x + c, x = we, y = vq - R*iq */
+	/* coast-down: least squares y = lambda * x + c, x = we, y = |v - R*i|. At id = iq = 0 the whole voltage
+	 * vector is back-EMF; fitting vq alone would read lambda * cos(frame angle error) */
 	const float w0 = w;
 	g_iq_ref = 0.0f;
 	HAL_Delay(20); /* current settles to zero */
 	spd_init(&s);
 	/* running means and centred sums (Welford): stays accurate in float, unlike n*sxx - sx*sx */
 	int n = 0;
-	float mx = 0.0f, my = 0.0f, cxx = 0.0f, cxy = 0.0f;
+	float mx = 0.0f, my = 0.0f, cxx = 0.0f, cxy = 0.0f, svd = 0.0f, svq = 0.0f;
 	t0 = HAL_GetTick();
 	while (w > 0.3f * w0 && HAL_GetTick() - t0 < 5000) {
 		HAL_Delay(1);
 		w = spd_update(&s);
-		float y = g_vq_f - g_params.rq * g_iq_f;
+		const float vd = g_vd_f, vq = g_vq_f - g_params.rq * g_iq_f;
+		float y = sqrtf(vd * vd + vq * vq);
+		svd += vd;
+		svq += vq;
 		n++;
 		float dx = w - mx;
 		mx += dx / (float)n;
@@ -754,7 +758,9 @@ static st_t cal_kv(void) {
 	/* line-to-line peak convention: Kt = 1.5 * pp * lambda = 8.27 / kv */
 	float kv = 60.0f / (2.0f * (float)M_PI * SQRT3 * (float)g_params.pole_pairs * lambda);
 	g_params.kv = kv;
-	EV(EV_KV, kv, lambda, (1.5f * (float)g_params.pole_pairs * lambda), c, n, (w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f));
+	/* vd/vq over the coast: tan of the angle between the control frame and the rotor (0 when the angle is right) */
+	EV(EV_KV, kv, lambda, (1.5f * (float)g_params.pole_pairs * lambda), c, n, (w0 / (2.0f * (float)M_PI * (float)g_params.pole_pairs) * 60.0f),
+	   svq != 0.0f ? svd / svq : 0.0f);
 	return ST_OK;
 }
 
