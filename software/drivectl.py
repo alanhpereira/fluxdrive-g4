@@ -34,7 +34,7 @@ sys.path.insert(0, HERE)
 import objects as O  # noqa: E402
 import protocol as P  # noqa: E402
 
-USB_VID_PID = (0x0483, 0x5740)  # as in plotter.py
+USB_VID_PID = (0x1209, 0x0001)  # as in plotter.py
 
 CALS = {  # Config tab letters and long names -> CAL which
     "c": P.CAL_CUR_OFF, "offsets": P.CAL_CUR_OFF, "e": P.CAL_ENC, "encoder": P.CAL_ENC, "H": P.CAL_HALL,
@@ -58,8 +58,7 @@ def err(text):
 
 
 def open_usb(port, baud, skip=()):
-    """-> UsbSerial that answers PING. 'auto' tries every port with the drive's VID:PID (CANable-style SLCAN
-    adapters have the same ids), except those in skip"""
+    """-> UsbSerial that answers PING. 'auto' tries every port with the drive's VID:PID, except those in skip"""
     import co_link as C
     import serial.tools.list_ports
     ports = [port]
@@ -67,7 +66,7 @@ def open_usb(port, baud, skip=()):
         ports = [p.device for p in serial.tools.list_ports.comports()
                  if (p.vid, p.pid) == USB_VID_PID and p.device not in skip]
         if not ports:
-            raise Fail("no drive on USB (VID:PID 0483:5740)")
+            raise Fail("no drive on USB (VID:PID 1209:0001)")
     why = []
     for dev in ports:
         try:

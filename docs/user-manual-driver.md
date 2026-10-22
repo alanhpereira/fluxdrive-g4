@@ -19,7 +19,7 @@ A field-oriented-control (FOC) driver for 3-phase permanent-magnet motors (BLDC/
 | Position sensor | MT6835 21-bit magnetic encoder (2 097 152 counts per turn) over SPI, or Hall sensors |
 | Control loops | current loop at 25 kHz; speed and position loops at 2.5 kHz |
 | Angle sources | encoder; encoder with a back-EMF flux observer blended in at speed; sensorless (high-frequency injection at low speed, observer at speed); Hall sensors; Hall sensors with high-frequency injection at low speed |
-| PC link | USB full-speed virtual COM port (ST VID/PID 0483:5740). UART at 2 Mbaud as a build-time alternative |
+| PC link | USB full-speed virtual COM port (VID:PID 1209:0001, product string "Driver TCC motor driver"). UART at 2 Mbaud as a build-time alternative |
 | Field bus | CANopen on FDCAN1: CiA 301 node, CiA 402 drive profile (PP, PV, HM, CSP, CSV, CST), 20 kbit/s – 1 Mbit/s |
 | Parameter storage | internal flash, two redundant copies with CRC |
 

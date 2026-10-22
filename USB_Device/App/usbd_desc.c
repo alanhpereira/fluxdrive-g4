@@ -71,6 +71,16 @@
 #define USBD_INTERFACE_STRING     "CDC Interface"
 
 /* USER CODE BEGIN PRIVATE_DEFINES */
+/* Own ids, so the PC tools can tell the driver from CubeMX-based SLCAN adapters (0483:5740).*/
+/* 1209:0001 is the pid.codes test PID (lab use); swap in an allocated PID here.*/
+#undef USBD_VID
+#define USBD_VID     0x1209
+#undef USBD_PID
+#define USBD_PID     0x0001
+#undef USBD_MANUFACTURER_STRING
+#define USBD_MANUFACTURER_STRING     "Driver TCC"
+#undef USBD_PRODUCT_STRING
+#define USBD_PRODUCT_STRING     "Driver TCC motor driver"
 
 /* USER CODE END PRIVATE_DEFINES */
 

@@ -270,7 +270,7 @@ python software/drivectl.py help                                              th
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--usb PORT` | — | The config link. `auto` tries each port with the driver's USB ids (0483:5740) and keeps the one that answers PING. CANable-style adapters have the same ids; the `--can` port is skipped. |
+| `--usb PORT` | — | The config link. `auto` tries each port with the driver's USB ids (1209:0001) and keeps the one that answers PING; the `--can` port is skipped. |
 | `--usb-baud` | 2000000 | UART builds only. |
 | `--can interface:channel` | — | e.g. `slcan:COM8`, `pcan:PCAN_USBBUS1`, `socketcan:can0`. The PC heartbeat (ID 0x7F) runs while the tool is connected. |
 | `--bitrate`, `--node` | 1000000, 1 | |

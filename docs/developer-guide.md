@@ -8,7 +8,7 @@ Firmware, PC software and hardware of a graduation-thesis BLDC/PMSM motor driver
 - A 3-phase bridge on TIM1, plus a gate driver on I2C3 at address `0x47`. The driver's nFAULT pin is PE15, which also feeds the TIM1 break input.
 - Three low-side shunts (2 mΩ) read through the internal OPAMPs (gain 16). ADC1 and ADC2 sample them as injected conversions, triggered by TIM1 CC4.
 - An MT6835 21-bit magnetic encoder on SPI1 (10.6 MHz), nCS on PA15. It stays in burst mode (CS held low); a TIM1-triggered DMA read of a few angle groups runs once per PWM period.
-- USB CDC (full-speed virtual COM port, ST VID/PID 0483:5740) carries the binary telemetry and the binary config protocol (no text console). USART1 at 2 Mbaud is the build-time fallback: `PROTO_LINK_USB 0` in `link.h`.
+- USB CDC (full-speed virtual COM port, VID:PID 1209:0001, the pid.codes test PID, set in `USER CODE PRIVATE_DEFINES` of `usbd_desc.c` over CubeMX's ST 0483:5740, which CANable-style SLCAN adapters also use) carries the binary telemetry and the binary config protocol (no text console). USART1 at 2 Mbaud is the build-time fallback: `PROTO_LINK_USB 0` in `link.h`.
 - CANopen (CiA 301/402) on FDCAN1 carries normal operation.
 
 `software/plotter.py` is the PC GUI (PyQt + pyqtgraph): telemetry, parameters, calibration, and a CANopen master tab.
