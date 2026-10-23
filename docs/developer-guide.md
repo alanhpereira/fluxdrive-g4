@@ -24,7 +24,7 @@ Keep the manuals in step when a change affects what a user sees (parameters, sta
 
 ## Build / flash / debug
 
-The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is generated from `STM32-for-VSCode.config.yaml` plus the CubeMX `Makefile`. Toolchain paths are in `.stm32env`: arm-none-eabi-gcc 13.2 and OpenOCD 0.12 under `C:/DEV/TOOLS/...`.
+The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is generated from `STM32-for-VSCode.config.yaml` plus the CubeMX `Makefile`. The tools are arm-none-eabi-gcc 13.2 and OpenOCD 0.12. Their paths are per machine and stay out of git: the build reads `ARM_GCC_PATH` and `OPENOCD` from `.stm32env` (git-ignored; the extension creates it, and without it `make` uses the tools on PATH), and cortex-debug reads `cortex-debug.armToolchainPath` and `cortex-debug.openocdPath` from the VS Code user settings.
 
 - Build: VS Code task "Build STM", or `make -f STM32Make.make -j` → `build/debug/fluxdrive-g4.elf`, always `-Og`. `OPTIMIZATION` is only used with `DEBUG=0` (`make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`) → `build/release/`; tasks "Build STM release" / "Flash STM release" (`-Os -g`) and the launch config "Attach STM32 (release)" go with it. `make` does not rebuild when only `OPTIMIZATION` changes: delete `build/release/` when you switch flags. Flash use per module: `python software/flash_report.py`.
 - Flash: task "Flash STM", or `make -f STM32Make.make flash` (ST-Link through OpenOCD, `openocd.cfg`). Erase: `make -f STM32Make.make erase`, which also wipes the stored motor parameters and CANopen record.

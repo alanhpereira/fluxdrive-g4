@@ -211,3 +211,6 @@ software/cotest_runs/
 
 # Part datasheets: kept locally, linked from hardware/README.md (manufacturer copyright)
 hardware/datasheets/
+
+# Toolchain paths of this machine (STM32 for VSCode creates it; see docs/developer-guide.md)
+.stm32env
