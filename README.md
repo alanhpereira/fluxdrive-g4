@@ -8,6 +8,23 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 - **Protections:** overcurrent, over/undervoltage, regen clamp, overspeed, encoder loss, gate-driver faults. Stops coast instead of short-braking a spinning motor.
 - **PC software:** a Python/Qt GUI with live plots, a parameter editor, a calibration wizard and a CANopen master, plus a CANopen test runner.
 
+## Ratings and status
+
+| | Designed for | Tested up to |
+|---|---|---|
+| Bus voltage | 70 V | 32 V |
+| Phase current (continuous) | 15 A | 10 A |
+
+This is a working prototype from a graduation thesis, not a finished product. Everything above the tested values is untested: the bridge MOSFETs are rated 100 V, but thermal performance, layout and protection behaviour at 70 V / 15 A have not been verified. The firmware defaults are conservative: overcurrent trip `imax` = 1.5 A and overvoltage trip `vbus_max` = 60 V; raise them deliberately for your motor and supply.
+
+> [!WARNING]
+> **This board switches high currents at voltages that can hurt you and destroy hardware.**
+> - Bring up a new board, motor or firmware build from a **current-limited bench supply**, starting at low voltage and with a low `imax`.
+> - A misconfigured or uncalibrated drive can **spin the motor suddenly and at full speed**. Clamp the motor and keep hands, cables and loose parts away from anything that rotates.
+> - A spinning motor is a generator: it can push the bus voltage up (regeneration) or keep the phases live after the supply is off. Use a supply that tolerates reverse current, or a braking resistor/clamp, and wait for the motor to stop before touching it.
+> - The MOSFETs, shunts and motor get hot. Watch the board temperature (Flux Studio shows it) and provide cooling above a few amps.
+> - Use it at your own risk; see the licenses below (no warranty).
+
 ## Documentation
 
 | Document | For |
