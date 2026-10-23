@@ -48,7 +48,7 @@ flowchart LR
     MOT(("Motor"))
 
     PL -- "USB CDC (COM7):<br/>config + telemetry" --> LINK
-    PL -- "SLCAN adapter (COM8)" --> CO
+    PL -- "SLCAN adapter" --> CO
     CT -- "SLCAN (+ USB)" --> CO
     CT -.-> LINK
     DC -- "USB" --> LINK

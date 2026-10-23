@@ -13,7 +13,7 @@ fields. A GUI reads them from its own timer. Every bus.send() goes through one l
 write is not safe from two threads: SLCAN gave write timeouts).
 
     import co_link as C
-    bus = C.CoBus(); bus.connect("slcan", "COM8", 1000000)
+    bus = C.CoBus(); bus.connect("slcan", "auto", 1000000)   # "auto": the one SLCAN adapter plugged in
     d = C.Drive402(bus.add_drive(1)); d.node.nmt("OPERATIONAL"); d.goto_enabled(C.MODE_CSV)
 """
 import bisect
@@ -37,6 +37,31 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 EDS = os.path.join(HERE, "fluxdrive-g4.eds")
 PC_HB_ID = 0x7F
 INC_REV = 1 << 16  # 0x608F default (Q16.16 turns); DriveNode reads the real one
+# USB ids of CANable-style SLCAN adapters: ST's CDC ids (CubeMX-based firmware) and the CANable 2.0's
+SLCAN_USB_IDS = {(0x0483, 0x5740), (0x16D0, 0x117E)}
+
+
+def find_slcan():
+    """-> the serial ports whose USB ids look like an SLCAN adapter, sorted"""
+    import serial.tools.list_ports
+    return sorted(p.device for p in serial.tools.list_ports.comports() if (p.vid, p.pid) in SLCAN_USB_IDS)
+
+
+def find_drive_usb():
+    """-> the serial ports with the drive's own USB ids (1209:0001, usbd_desc.c), sorted"""
+    import serial.tools.list_ports
+    return sorted(p.device for p in serial.tools.list_ports.comports() if (p.vid, p.pid) == (0x1209, 0x0001))
+
+
+def slcan_port(channel):
+    """the channel itself, or for '' / 'auto' the one SLCAN adapter found (error if none or several)"""
+    if channel not in ("", "auto", None):
+        return channel
+    ports = find_slcan()
+    if len(ports) != 1:
+        raise RuntimeError("no SLCAN adapter found (USB ids 0483:5740 or 16D0:117E): give its port, e.g. slcan:COM8"
+                           if not ports else f"several SLCAN adapters ({', '.join(ports)}): give one, e.g. slcan:{ports[0]}")
+    return ports[0]
 
 # ---------------------------------------------------------------------------------------------- texts
 ABORTS = {
@@ -304,7 +329,9 @@ class CoBus:
         self.connected_at = 0.0
 
     # ---- connection
-    def connect(self, interface="slcan", channel="COM8", bitrate=1000000, **kw):
+    def connect(self, interface="slcan", channel="auto", bitrate=1000000, **kw):
+        if interface == "slcan":
+            channel = slcan_port(channel)  # resolved once: a reconnect stays on the same adapter
         self._args = (interface, channel, kw)
         net = canopen.Network()
         net.connect(interface=interface, channel=channel, bitrate=bitrate, **kw)

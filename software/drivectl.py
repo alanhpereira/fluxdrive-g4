@@ -7,8 +7,8 @@ interactive shell when no command is given. 'help' lists the commands.
 Usage:
     python software/drivectl.py --usb COM7 status
     python software/drivectl.py --usb COM7 "set vlim 3000; vel 300; sleep 5; stop"
-    python software/drivectl.py --can slcan:COM8 co state
-    python software/drivectl.py --usb auto --can slcan:COM8 -f bench.txt
+    python software/drivectl.py --can slcan co state
+    python software/drivectl.py --usb auto --can slcan -f bench.txt
     python software/drivectl.py --usb COM7                 interactive shell
     options: --usb-baud 2000000  --bitrate 1000000  --node 1  -k (scripts: go on after a failed command)
 
@@ -685,7 +685,8 @@ def main():
     ap.add_argument("command", nargs=argparse.REMAINDER, help="one command, or several separated by ';'")
     ap.add_argument("--usb", help="config link port (USB CDC or USART1), e.g. COM7, or 'auto'")
     ap.add_argument("--usb-baud", type=int, default=2000000)
-    ap.add_argument("--can", help="interface:channel, e.g. slcan:COM8, pcan:PCAN_USBBUS1, socketcan:can0")
+    ap.add_argument("--can", help="interface:channel, e.g. slcan (finds the adapter), slcan:COM8, pcan:PCAN_USBBUS1, "
+                    "socketcan:can0")
     ap.add_argument("--bitrate", type=int, default=1000000)
     ap.add_argument("--node", type=int, default=1)
     ap.add_argument("-f", "--file", help="script: one command per line")

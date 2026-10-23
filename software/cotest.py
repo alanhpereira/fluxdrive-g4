@@ -4,7 +4,7 @@ CANopen test runner (docs/design-notes.md, CANopen PC tool). The tests are plain
 software/cotests/*.py, registered with @test; Flux Studio's CANopen tab runs the same Runner on a thread.
 
 Usage:
-    python software/cotest.py --can slcan:COM8 [--usb COM6] [names...]     run all, or the named tests
+    python software/cotest.py [--can slcan] [--usb auto] [names...]     run all, or the named tests
     python software/cotest.py --list
     options: --bitrate 1000000  --node 1  --usb-baud 2000000  --no-motion (skip the tests that spin the motor)
 
@@ -361,10 +361,11 @@ class Runner:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="*", help="tests to run (default: all)")
-    ap.add_argument("--can", default="slcan:COM8", help="interface:channel, e.g. slcan:COM8, pcan:PCAN_USBBUS1, socketcan:can0")
+    ap.add_argument("--can", default="slcan", help="interface:channel, e.g. slcan (finds the adapter), slcan:COM8, "
+                    "pcan:PCAN_USBBUS1, socketcan:can0")
     ap.add_argument("--bitrate", type=int, default=1000000)
     ap.add_argument("--node", type=int, default=1)
-    ap.add_argument("--usb", help="config link port (USB CDC or USART1), e.g. COM6")
+    ap.add_argument("--usb", help="config link port (USB CDC or USART1), e.g. COM6, or 'auto'")
     ap.add_argument("--usb-baud", type=int, default=2000000)
     ap.add_argument("--no-motion", action="store_true", help="skip the tests that spin the motor")
     ap.add_argument("--list", action="store_true")
@@ -384,7 +385,17 @@ def main():
         tests = [by[n] for n in a.names]
 
     iface, _, chan = a.can.partition(":")
-    bus = C.CoBus().connect(iface, chan, a.bitrate)
+    try:
+        bus = C.CoBus().connect(iface, chan, a.bitrate)
+    except Exception as e:  # noqa: BLE001 (no adapter, port busy)
+        print(f"cannot open the CAN adapter: {e}")
+        return 2
+    if a.usb == "auto":
+        ports = C.find_drive_usb()
+        if len(ports) != 1:
+            print("no drive on USB (1209:0001)" if not ports else f"several drives on USB ({', '.join(ports)}): give --usb")
+            return 2
+        a.usb = ports[0]
     usb = C.UsbSerial(a.usb, a.usb_baud) if a.usb else None
     if usb and usb.request(P.PING).status != P.ST_OK:
         print(f"no reply from the config link on {a.usb}")

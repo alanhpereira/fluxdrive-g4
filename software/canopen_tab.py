@@ -718,7 +718,7 @@ class CanopenTab(QtWidgets.QWidget):
         self.t_log.setMaximumBlockCount(20000)
         self.t_log.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont))
         v.addWidget(self.t_log, 3)
-        lb = QtWidgets.QLabel("The same tests run headless: python software/cotest.py --can slcan:COM8 --usb COM6. "
+        lb = QtWidgets.QLabel("The same tests run headless: python software/cotest.py --can slcan --usb auto. "
                               "With the USB link connected they also check the loop time and encoder 'late'.")
         lb.setWordWrap(True)
         v.addWidget(lb)
@@ -729,7 +729,7 @@ class CanopenTab(QtWidgets.QWidget):
     def _load_settings(self):
         s = self.settings
         self.iface.setCurrentText(str(s.value("co/iface", "slcan")))
-        self.scan_ports(prefer=s.value("co/chan", "COM8"))
+        self.scan_ports(prefer=s.value("co/chan", None))
         i = self.bitrate.findData(int(s.value("co/bitrate", 1000000)))
         self.bitrate.setCurrentIndex(max(0, i))
         self.node_sp.setValue(int(s.value("co/node", 1)))
@@ -764,7 +764,7 @@ class CanopenTab(QtWidgets.QWidget):
         s.setValue("co/plots", [cb.text() for cb in self.plot_checks if cb.isChecked()])
 
     def scan_ports(self, prefer=None):
-        cur = prefer or self.chan.currentText().split(" ")[0]
+        cur = prefer or self.chan.currentText().split(" ")[0] or next(iter(C.find_slcan()), "")
         self.chan.clear()
         for p in sorted(serial.tools.list_ports.comports(), key=lambda p: p.device):
             self.chan.addItem(p.device)

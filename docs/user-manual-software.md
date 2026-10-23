@@ -233,18 +233,19 @@ Changes with the selected mode:
 The same tests as the Tests tab, without the GUI:
 
 ```
-python software/cotest.py --can slcan:COM8 --usb COM7            all tests
-python software/cotest.py --can slcan:COM8 csv pp                 only these
-python software/cotest.py --list                                  list the tests
-python software/cotest.py --can slcan:COM8 --no-motion            skip the ones that spin the motor
+python software/cotest.py --usb auto                             all tests
+python software/cotest.py csv pp                                 only these
+python software/cotest.py --list                                 list the tests
+python software/cotest.py --no-motion                            skip the ones that spin the motor
+python software/cotest.py --can slcan:COM8 --usb COM10           with the ports given
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--can interface:channel` | `slcan:COM8` | e.g. `pcan:PCAN_USBBUS1`, `socketcan:can0` |
+| `--can interface:channel` | `slcan` | A bare `slcan` finds the adapter by its USB ids (0483:5740, CANable 2.0 16D0:117E); with several plugged in, give the port, e.g. `slcan:COM8`. Other adapters: e.g. `pcan:PCAN_USBBUS1`, `socketcan:can0`. |
 | `--bitrate` | 1000000 | |
 | `--node` | 1 | |
-| `--usb PORT` | — | The driver's config link. With it, tests also check the firmware side (loop time, encoder late counter, USB refusals) and send STOP over USB at the end of each test. Some tests need it. |
+| `--usb PORT` | — | The driver's config link; `auto` takes the one port with the driver's USB ids (1209:0001). With it, tests also check the firmware side (loop time, encoder late counter, USB refusals) and send STOP over USB at the end of each test. Some tests need it. |
 | `--usb-baud` | 2000000 | UART builds only. |
 | `--no-motion` | off | Skip motion tests. |
 
@@ -263,7 +264,7 @@ The USB commands of the Config tab and the basic CANopen master commands, withou
 ```
 python software/drivectl.py --usb COM7 status                                 one command
 python software/drivectl.py --usb COM7 "set vlim 3000; vel 300; sleep 5; stop" several, separated by ';'
-python software/drivectl.py --usb auto --can slcan:COM8 -f bench.txt          a script, one command per line
+python software/drivectl.py --usb auto --can slcan -f bench.txt               a script, one command per line
 python software/drivectl.py --usb COM7                                        interactive shell
 python software/drivectl.py help                                              the command list
 ```
@@ -272,7 +273,7 @@ python software/drivectl.py help                                              th
 |---|---|---|
 | `--usb PORT` | — | The config link. `auto` tries each port with the driver's USB ids (1209:0001) and keeps the one that answers PING; the `--can` port is skipped. |
 | `--usb-baud` | 2000000 | UART builds only. |
-| `--can interface:channel` | — | e.g. `slcan:COM8`, `pcan:PCAN_USBBUS1`, `socketcan:can0`. The PC heartbeat (ID 0x7F) runs while the tool is connected. |
+| `--can interface:channel` | — | e.g. `slcan` (finds the adapter, as in `cotest.py`), `slcan:COM8`, `pcan:PCAN_USBBUS1`, `socketcan:can0`. The PC heartbeat (ID 0x7F) runs while the tool is connected. |
 | `--bitrate`, `--node` | 1000000, 1 | |
 | `-f FILE` | — | Run a script. `#` starts a comment; each command is echoed with `>`. |
 | `-k` | off | Scripts: go on after a failed command (otherwise the script stops there). |
