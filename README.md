@@ -28,8 +28,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | `fluxdrive-g4.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
 | `fluxdrive-g4.xdd` | CANopenEditor project of the object dictionary |
 | `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `fluxdrive-g4.eds` (EDS for CANopen masters) |
-| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`fluxdrive-g4 schematic.pdf`) |
-| `hardware/datasheets/` | Datasheets of the main parts: STSPIN32G4 (controller + gate driver), STM32G431 (its MCU), DI100N10PQ (bridge MOSFETs), MT6835 (encoder), TJA1051 (CAN transceiver), USBLC6-2 (USB ESD protection), ANTC1608-103F3450FB (board NTC). The STM32G4 reference manual (RM0440, register descriptions) is not included: get it from [st.com](https://www.st.com/resource/en/reference_manual/rm0440-stm32g4-series-advanced-armbased-32bit-mcus-stmicroelectronics.pdf). |
+| `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`fluxdrive-g4 schematic.pdf`). [hardware/README.md](hardware/README.md) links the datasheets of the main parts |
 | `docs/` | Manuals and design notes |
 
 ## Quick start
@@ -57,4 +56,6 @@ Open `hardware/fluxdrive-g4.kicad_pro` in KiCad (made with KiCad 10).
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+- Firmware and PC software: MIT, see [LICENSE](LICENSE).
+- Hardware (`hardware/`): CERN Open Hardware Licence Version 2 - Permissive (CERN-OHL-P-2.0), see [hardware/LICENSE](hardware/LICENSE).
+- Third-party components keep their own licenses: CMSIS (Apache-2.0), the STM32G4 HAL (BSD-3-Clause), CANopenNode (Apache-2.0) and the ST USB device library (`Middlewares/ST/STM32_USB_Device_Library`, ST's SLA0044 license).

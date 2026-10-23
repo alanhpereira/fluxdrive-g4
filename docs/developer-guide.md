@@ -18,7 +18,7 @@ Firmware, PC software and hardware of a graduation-thesis BLDC/PMSM motor driver
 - `docs/user-manual-software.md`: using the PC tools.
 - `docs/design-notes.md`: design decisions, bench measurements and open items (config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget, Hall sources, temperatures, planned AS5048A support).
 - `docs/software-structure.md`: Mermaid flowcharts of the firmware and PC software structure (execution paths, data flow, priorities). Update it when a call path or module role changes.
-- Hardware: KiCad project in `hardware/`, schematic PDF `hardware/fluxdrive-g4 schematic.pdf`, datasheets in `hardware/datasheets/`.
+- Hardware: KiCad project in `hardware/`, schematic PDF `hardware/fluxdrive-g4 schematic.pdf`, datasheet links in `hardware/README.md` (local copies go in the git-ignored `hardware/datasheets/`).
 
 Keep the manuals in step when a change affects what a user sees (parameters, status codes, GUI controls, pin use).
 

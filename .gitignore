@@ -208,3 +208,6 @@ __pycache__/
 
 # CANopen test runs (software/cotest.py)
 software/cotest_runs/
+
+# Part datasheets: kept locally, linked from hardware/README.md (manufacturer copyright)
+hardware/datasheets/
