@@ -1,6 +1,6 @@
 # fluxdrive-g4: user manual (driver and firmware)
 
-This manual covers the motor driver board and its firmware: connecting it, flashing it, commissioning a motor, running it, the protections, and operation over CANopen. The PC program (plotter, Config tab, CANopen tab, test runner) has its own manual: [user-manual-software.md](user-manual-software.md).
+This manual covers the motor driver board and its firmware: connecting it, flashing it, commissioning a motor, running it, the protections, and operation over CANopen. The PC program (Flux Studio, Config tab, CANopen tab, test runner) has its own manual: [user-manual-software.md](user-manual-software.md).
 
 Developer documentation (internals, design decisions, measurements) is in [design-notes.md](design-notes.md) and [developer-guide.md](developer-guide.md).
 
@@ -200,7 +200,7 @@ Sensorless needs, in addition to r, l, t and k:
 3. **p** Lock + polarity test. Run it from many rotor positions; it must pick the right side every time.
 4. Set `angsrc` = 2, save. Each run then starts with ~185 ms of locking and polarity pulses. The motor whines audibly at the injection frequency (6.25 kHz by default).
 
-Starting while the motor is already spinning fast is not supported in sensorless mode. With the encoder fitted, the plotter's "HFI − encoder" and "Observer − encoder" plots show the estimation error.
+Starting while the motor is already spinning fast is not supported in sensorless mode. With the encoder fitted, Flux Studio's "HFI − encoder" and "Observer − encoder" plots show the estimation error.
 
 `hmode` = 1 runs HFI as an estimate only (logged, not used) in the encoder angle sources, for tuning.
 

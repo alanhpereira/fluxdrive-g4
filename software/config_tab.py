@@ -1,6 +1,6 @@
 """
-Config tab of the plotter: parameter grid, calibration wizard and log, plus the run panel and the
-status/statistics boxes that the plotter shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/design-notes.md has the design.
+Config tab of Flux Studio: parameter grid, calibration wizard and log, plus the run panel and the
+status/statistics boxes that Flux Studio shows in its sidebar, all over the binary protocol (protocol.py, objects.py). docs/design-notes.md has the design.
 """
 import decimal
 import html
@@ -139,7 +139,7 @@ class ConfigTab(QtWidgets.QWidget):
         rl.addWidget(self._build_cal())
         rl.addWidget(self._build_log())
         rl.addStretch(1)
-        self.status_box, self.stats_box = self._build_status()  # the plotter puts them in its sidebar
+        self.status_box, self.stats_box = self._build_status()  # Flux Studio puts them in its sidebar
         scroll = QtWidgets.QScrollArea(widgetResizable=True)
         scroll.setWidget(right)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
@@ -900,7 +900,7 @@ class ConfigTab(QtWidgets.QWidget):
 
 class RunPanel(QtWidgets.QGroupBox):
     """Current / speed / position setpoints, Home and STOP. Enter in a field sends that command.
-    Lives in the plotter's left sidebar, next to every tab; drives ConfigTab (run_panels allows more)."""
+    Lives in Flux Studio's left sidebar, next to every tab; drives ConfigTab (run_panels allows more)."""
 
     def __init__(self, tab):
         super().__init__("Run")

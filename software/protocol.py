@@ -232,7 +232,7 @@ def message_at(buf):
 
 TELEM_SYNC = b"\xA5\x5A"
 TELEM_LEN = 72
-# column names of v[0..15] in headless logs (drivectl.py): the same channels as PLOTS in plotter.py
+# column names of v[0..15] in headless logs (drivectl.py): the same channels as PLOTS in fluxstudio.py
 TELEM_NAMES = ["theta", "vin", "hfi_err", "hfi_rpm", "hf_step", "id", "iq", "rpm", "rpm_ref", "pos", "pos_ref",
                "obs_err", "flux_ratio", "obs_weight", "obs_rpm", "enc_rpm"]
 

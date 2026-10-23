@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 CANopen test runner (docs/design-notes.md, CANopen PC tool). The tests are plain functions in
-software/cotests/*.py, registered with @test; the plotter's CANopen tab runs the same Runner on a thread.
+software/cotests/*.py, registered with @test; Flux Studio's CANopen tab runs the same Runner on a thread.
 
 Usage:
     python software/cotest.py --can slcan:COM8 [--usb COM6] [names...]     run all, or the named tests

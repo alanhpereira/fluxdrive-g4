@@ -13,7 +13,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | Document | For |
 |---|---|
 | [docs/user-manual-driver.md](docs/user-manual-driver.md) | Using the driver: connections, flashing, commissioning a motor, run modes, protections, CANopen, parameter reference, troubleshooting |
-| [docs/user-manual-software.md](docs/user-manual-software.md) | Using the PC software: plotter (Scope, Config, CANopen tabs), test runner, helper scripts |
+| [docs/user-manual-software.md](docs/user-manual-software.md) | Using the PC software: Flux Studio (Scope, Config, CANopen tabs), test runner, helper scripts |
 | [docs/developer-guide.md](docs/developer-guide.md) | Developer guide: build system, CubeMX rules, architecture, execution model, conventions |
 | [docs/design-notes.md](docs/design-notes.md) | Design decisions, bench measurements and open items: config protocol, CANopen drive and PC tool, HFI, sensorless tuning, flash budget |
 | [docs/software-structure.md](docs/software-structure.md) | Flowcharts of the software: modules, boot, main loop, PWM period, `currentLoop()`, protocol, telemetry, CANopen, trips, flash, PC tools, interrupt priorities |
@@ -27,7 +27,7 @@ Firmware, PC software and hardware design of a field-oriented-control (FOC) driv
 | `Drivers/`, `Middlewares/`, `USB_Device/` | ST HAL, CMSIS and USB device stack (generated) |
 | `fluxdrive-g4.ioc` | STM32CubeMX project: the source of truth for the peripheral setup |
 | `fluxdrive-g4.xdd` | CANopenEditor project of the object dictionary |
-| `software/` | PC software: `plotter.py` (GUI), `cotest.py` (CANopen tests), `fluxdrive-g4.eds` (EDS for CANopen masters) |
+| `software/` | PC software: `fluxstudio.py` (GUI), `cotest.py` (CANopen tests), `fluxdrive-g4.eds` (EDS for CANopen masters) |
 | `hardware/` | KiCad project of the board: schematic (controller, connections, power sheets) and PCB, the schematic as PDF (`fluxdrive-g4 schematic.pdf`). [hardware/README.md](hardware/README.md) links the datasheets of the main parts |
 | `docs/` | Manuals and design notes |
 
@@ -47,7 +47,7 @@ A new board needs its option bytes set once before it boots from flash with CAN 
 ### PC software
 ```
 pip install -r software/requirements.txt
-python software/plotter.py
+python software/fluxstudio.py
 ```
 Connect to the port marked **[driver USB]**, then follow the calibration steps in the Config tab (driver manual, section 5).
 

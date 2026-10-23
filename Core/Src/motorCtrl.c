@@ -32,7 +32,7 @@ typedef struct {
 } Frame;		   // offsets: seq at 2, v at 4, sum at 68, so natural alignment, no padding
 _Static_assert(sizeof(Frame) == 72, "frame size");
 
-/* rotate-and-add over the first 17 little-endian words; must match software/plotter.py */
+/* rotate-and-add over the first 17 little-endian words; must match software/fluxstudio.py */
 static uint32_t frame_sum(const Frame* f) {
 	uint32_t s = 0x5A5AA5A5u;
 	for (int i = 0; i < 17; i++) {

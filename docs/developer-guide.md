@@ -11,7 +11,7 @@ Firmware, PC software and hardware of a graduation-thesis BLDC/PMSM motor driver
 - USB CDC (full-speed virtual COM port, VID:PID 1209:0001, the pid.codes test PID, set in `USER CODE PRIVATE_DEFINES` of `usbd_desc.c` over CubeMX's ST 0483:5740, which CANable-style SLCAN adapters also use) carries the binary telemetry and the binary config protocol (no text console). USART1 at 2 Mbaud is the build-time fallback: `PROTO_LINK_USB 0` in `link.h`.
 - CANopen (CiA 301/402) on FDCAN1 carries normal operation.
 
-`software/plotter.py` is the PC GUI (PyQt + pyqtgraph): telemetry, parameters, calibration, and a CANopen master tab.
+`software/fluxstudio.py` is the PC GUI (PyQt + pyqtgraph): telemetry, parameters, calibration, and a CANopen master tab.
 
 ## Documentation
 - `docs/user-manual-driver.md`: using the driver (pin-outs, commissioning, modes, protections, CANopen tables, parameter reference).
@@ -29,15 +29,15 @@ The project is driven by the **STM32 for VSCode** extension. `STM32Make.make` is
 - Build: VS Code task "Build STM", or `make -f STM32Make.make -j` → `build/debug/fluxdrive-g4.elf`, always `-Og`. `OPTIMIZATION` is only used with `DEBUG=0` (`make -f STM32Make.make -j DEBUG=0 OPTIMIZATION=-Os`) → `build/release/`; tasks "Build STM release" / "Flash STM release" (`-Os -g`) and the launch config "Attach STM32 (release)" go with it. `make` does not rebuild when only `OPTIMIZATION` changes: delete `build/release/` when you switch flags. Flash use per module: `python software/flash_report.py`.
 - Flash: task "Flash STM", or `make -f STM32Make.make flash` (ST-Link through OpenOCD, `openocd.cfg`). Erase: `make -f STM32Make.make erase`, which also wipes the stored motor parameters and CANopen record.
 - Debug: cortex-debug launch configs "Debug STM32" and "Attach STM32" in `.vscode/launch.json`, live watch enabled.
-- Plotter: `pip install -r software/requirements.txt`, then `python software/plotter.py [COMx]`. Numeric inputs use the C locale (`.` decimals) on purpose; keep it that way for new inputs.
-- `software/serial_fix.py` (imported by `plotter.py` and `co_link.py`, before any port opens) works around pyserial 3.5 on Windows: it reads `GetLastError()` as a separate ctypes call, so a GIL hand-over between threads turns a healthy read/write into "ReadFile failed (1460 / 0)". Without it the plotter dropped the port every ~20–40 s, and a failed write ended its sender thread, so every request timed out while telemetry still flowed. Keep the import in any new tool that opens a port.
+- Flux Studio: `pip install -r software/requirements.txt`, then `python software/fluxstudio.py [COMx]`. Numeric inputs use the C locale (`.` decimals) on purpose; keep it that way for new inputs.
+- `software/serial_fix.py` (imported by `fluxstudio.py` and `co_link.py`, before any port opens) works around pyserial 3.5 on Windows: it reads `GetLastError()` as a separate ctypes call, so a GIL hand-over between threads turns a healthy read/write into "ReadFile failed (1460 / 0)". Without it Flux Studio dropped the port every ~20–40 s, and a failed write ended its sender thread, so every request timed out while telemetry still flowed. Keep the import in any new tool that opens a port.
 - CANopen tests: `python software/cotest.py --can slcan:COM8 [--usb COM7] [names…]` (`--list`, `--no-motion`), the same runner as the CANopen tab's Tests; results in `software/cotest_runs/` (git-ignored). Core: `software/co_link.py` (no Qt). It patches python-can's SLCAN reader/writer and sets a 0.5 ms GIL switch interval in the GUI so the software SYNC stays on time (`docs/design-notes.md`, CANopen PC tool).
 - Headless commands: `python software/drivectl.py --usb COMx [--can slcan:COM8] [command | -f script]` (no Qt; USB config commands, telemetry to CSV, CANopen SDO/NMT/402). It is built on `co_link.UsbSerial`, `CoBus` and `Drive402`.
 - `python software/check_sync.py` checks the PC tables against the firmware sources and the EDS.
 - New hand-written `Core/Src/*.c` files must be in `C_SOURCES` in `STM32Make.make`. The extension adds them when it regenerates the file; for command-line builds, add them by hand. Sources and include paths under `CANopen/` are listed in `STM32-for-VSCode.config.yaml` (`sourceFiles`, `includeDirectories`), so a regenerate keeps them.
 - CANopen object dictionary: `fluxdrive-g4.xdd` (repo root) is the CANopenEditor project. `CANopen/od/OD.c`/`OD.h` and `software/fluxdrive-g4.eds` are **exported** from it by the user in CANopenEditor; never write or hand-edit them. After an XDD change, stop and let the user export, then build.
 
-There are no unit tests. Changes are verified on hardware through the plotter (Config tab and telemetry) and `cotest.py`.
+There are no unit tests. Changes are verified on hardware through Flux Studio (Config tab and telemetry) and `cotest.py`.
 
 ## CubeMX rules (important)
 
@@ -119,8 +119,8 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
 - `ki` is stored as continuous-time; `pi_apply()` turns it into `ki_ts`. Call `pi_apply()` after any gain change.
 
 ### Serial protocol (USB CDC, or USART1)
-There is no text console: everything goes through binary frames, and the plotter is the user interface.
-- **MCU → PC telemetry:** a 72-byte `Frame`: `A5 5A`, `seq u16`, 16 floats, then a `sum u32` computed with rotate-left-1-and-add from seed `0x5A5AA5A5`. `v[2..4]` carry HFI − encoder (deg elec), HFI rpm and the HF current step (NaN with HFI off); `v[11..15]` the observer − encoder error (deg elec), |flux|/λ, the blend weight, observer rpm and encoder rpm. The full list is in `PLOTS` in `software/plotter.py`.
+There is no text console: everything goes through binary frames, and Flux Studio is the user interface.
+- **MCU → PC telemetry:** a 72-byte `Frame`: `A5 5A`, `seq u16`, 16 floats, then a `sum u32` computed with rotate-left-1-and-add from seed `0x5A5AA5A5`. `v[2..4]` carry HFI − encoder (deg elec), HFI rpm and the HF current step (NaN with HFI off); `v[11..15]` the observer − encoder error (deg elec), |flux|/λ, the blend weight, observer rpm and encoder rpm. The full list is in `PLOTS` in `software/fluxstudio.py`.
 - **Config protocol (both directions):** `A5 5C | type | tok | len | payload | crc16` (CCITT-FALSE, LE), defined in `proto.h`; rationale in `docs/design-notes.md`. Bytes outside frames are ignored.
   - PING/READ/WRITE/LIST go to the object table (`objdict.c`, native objects 0x4000–0x4042; the same objects answer over SDO), types up to `T_I16` = 8, errors as CANopen SDO abort codes. A WRITE takes effect in RAM; SAVE writes flash.
   - SAVE, CAL, RUN_CUR/VEL/POS, STOP, HOME, ABORT and REBOOT reply with an `st_t` status. REBOOT (mode 0 reset, 1 DFU) is refused unless `g_mode` is `CTRL_OFF`; after the reply the device drops off the bus. CAL replies with an ACK first, then sends `EV_*` events (`EV(code, floats…)` in `calib.c`, tagged with the request's `s_tok`) and ends with `EV_DONE`. The watchdog sends `EV_STOPPED` with tok 0: status, id, iq, bus voltage and, for `ST_BRIDGE_FAULT`, `bridge_fault_info()` (driver status fault bits + `BFI_*`; `BRIDGE_FAULT_BITS` in `protocol.py`). The trip watchdog's `EV_STOPPED` carries only the first three.
@@ -129,7 +129,7 @@ There is no text console: everything goes through binary frames, and the plotter
   - Message types must stay below `MSG_EVENT` (0x7F): a reply is `type | 0x80` and must never equal the event type.
 - **PC side:** `software/config_tab.py` (Config tab, sidebar run panel and status boxes), `software/protocol.py` (framing, `Link`, status/event text), `software/objects.py` (labels, units, limits).
 - **Keep in sync** (`python software/check_sync.py` checks the tables and enums):
-  - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/plotter.py`, `TELEM_NAMES` and `telem_ok()`/`Splitter` in `software/protocol.py`.
+  - Frame layout, `frame_sum()`, or what `telemetry.v[i]` holds ↔ `PLOTS` in `software/fluxstudio.py`, `TELEM_NAMES` and `telem_ok()`/`Splitter` in `software/protocol.py`.
   - `k_tab` in `objdict.c` ↔ `OBJECTS` in `software/objects.py`: same order, index, sub, type and flags (both sides hash them; the GUI warns and disables mismatched rows).
   - Message types, `CAL_*`, `st_t`, `EV_*` and `SDO_*` in `proto.h` ↔ `software/protocol.py` (with the English text and event formatters).
   - Native objects 0x4000–0x40FF: `k_tab` ↔ `OBJECTS` ↔ `fluxdrive-g4.xdd` (then the user exports `OD.c`/`OD.h`/`fluxdrive-g4.eds`). `check_sync.py` compares the EDS with `objects.py` and notes when the XDD is newer than the exports.

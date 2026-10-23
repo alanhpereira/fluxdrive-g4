@@ -34,7 +34,7 @@ sys.path.insert(0, HERE)
 import objects as O  # noqa: E402
 import protocol as P  # noqa: E402
 
-USB_VID_PID = (0x1209, 0x0001)  # as in plotter.py
+USB_VID_PID = (0x1209, 0x0001)  # as in fluxstudio.py
 
 CALS = {  # Config tab letters and long names -> CAL which
     "c": P.CAL_CUR_OFF, "offsets": P.CAL_CUR_OFF, "e": P.CAL_ENC, "encoder": P.CAL_ENC, "H": P.CAL_HALL,

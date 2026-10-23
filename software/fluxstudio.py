@@ -11,9 +11,9 @@ The CANopen tab (canopen_tab.py, co_link.py) is the CAN master side, over its ow
 
 Usage:
     pip install pyserial numpy pyqtgraph PyQt6        (PyQt5 / PySide6 also work)
-    python plotter.py                 pick the port in the window
-    python plotter.py COM5            connect on start
-    pythonw plotter.py                same, without a console window (Windows)
+    python fluxstudio.py                 pick the port in the window
+    python fluxstudio.py COM5            connect on start
+    pythonw fluxstudio.py                same, without a console window (Windows)
 
 Load a recording later with:
     dt = np.dtype([("sync", "u1", 2), ("seq", "<u2"), ("v", "<f4", 16), ("sum", "<u4")])
@@ -173,7 +173,7 @@ class Sender(threading.Thread):
 class Main(QtWidgets.QMainWindow):
     def __init__(self, port=None):
         super().__init__()
-        self.setWindowTitle("fluxdrive-g4 telemetry")
+        self.setWindowTitle("Flux Studio")
         self.settings = QtCore.QSettings("driverTCC", "plotter")
         self.ser = self.rx = self.tx = self.link = None
         self.reconnect = None  # (port, baud, give-up time, next try) while a lost port is retried
@@ -577,7 +577,7 @@ def main():
     # useOpenGL: GPU drawing via Qt's own OpenGL widget (no PyOpenGL needed); painting is ~97% of the redraw cost
     pg.setConfigOptions(useOpenGL=True, antialias=False, background="#17181a", foreground="#c8c8c8")
     QtCore.QLocale.setDefault(QtCore.QLocale.c())  # '.' as decimal separator in every input, whatever the OS uses
-    app = pg.mkQApp("fluxdrive-g4 telemetry")
+    app = pg.mkQApp("Flux Studio")
     dark_theme(app)
     w = Main(args.port)
     w.show()

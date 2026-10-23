@@ -27,7 +27,7 @@ Contents:
 ```mermaid
 flowchart LR
     subgraph PC["PC"]
-        PL["plotter.py<br/>(PyQt GUI)"]
+        PL["fluxstudio.py<br/>(PyQt GUI)"]
         CT["cotest.py<br/>(CLI test runner)"]
         DC["drivectl.py<br/>(headless commands)"]
         CS["check_sync.py<br/>flash_report.py"]
@@ -376,10 +376,10 @@ flowchart LR
     LIRQ --> Q{"TX ring has room?<br/>DTR held?"}
     Q -- no --> DROP["g_tlm_drop++<br/>(0x4002:10)"]
     Q -- yes --> RING["TX ring → USB IN"]
-    RING --> PCR["plotter Receiver:<br/>Splitter → telem_ok()<br/>→ numpy ring buffer → plots"]
+    RING --> PCR["Flux Studio Receiver:<br/>Splitter → telem_ok()<br/>→ numpy ring buffer → plots"]
 ```
 
-The frame is `A5 5A`, `seq u16`, 16 floats, `sum u32` (72 bytes). The meaning of each `v[i]` is in `PLOTS` in `software/plotter.py`; `check_sync.py` checks it.
+The frame is `A5 5A`, `seq u16`, 16 floats, `sum u32` (72 bytes). The meaning of each `v[i]` is in `PLOTS` in `software/fluxstudio.py`; `check_sync.py` checks it.
 
 ---
 
@@ -487,7 +487,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph GUI["plotter.py (Qt main thread)"]
+    subgraph GUI["fluxstudio.py (Qt main thread)"]
         MAINW["Main window<br/>plots (pyqtgraph), sidebar"]
         CFG["config_tab.py<br/>ConfigTab, RunPanel"]
         COT["canopen_tab.py<br/>CanopenTab"]

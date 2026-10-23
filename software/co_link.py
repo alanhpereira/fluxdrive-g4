@@ -1,5 +1,5 @@
 """
-CANopen master side for the drive (docs/design-notes.md, CANopen PC tool), shared by the plotter's CANopen tab,
+CANopen master side for the drive (docs/design-notes.md, CANopen PC tool), shared by Flux Studio's CANopen tab,
 cotest.py and ad-hoc scripts. No Qt in here.
 
     CoBus      python-can bus + canopen.Network: raw frame tap, counters, PC heartbeat, software SYNC producer

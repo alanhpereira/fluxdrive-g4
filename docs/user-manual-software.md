@@ -1,10 +1,10 @@
 # fluxdrive-g4: user manual (PC software)
 
-This manual covers the PC tools in `software/`: the plotter GUI (a USB page with the Scope and Config tabs, and a CANopen page), the CANopen test runner, and the helper scripts. How the driver itself behaves (calibration, modes, protections, CANopen profile, parameters) is in [user-manual-driver.md](user-manual-driver.md).
+This manual covers the PC tools in `software/`: the Flux Studio GUI (a USB page with the Scope and Config tabs, and a CANopen page), the CANopen test runner, and the helper scripts. How the driver itself behaves (calibration, modes, protections, CANopen profile, parameters) is in [user-manual-driver.md](user-manual-driver.md).
 
 | Tool | What it is for |
 |---|---|
-| `plotter.py` | The GUI. Live telemetry, parameters, calibration, running the motor over USB, and a CANopen master over a CAN adapter. |
+| `fluxstudio.py` | The GUI. Live telemetry, parameters, calibration, running the motor over USB, and a CANopen master over a CAN adapter. |
 | `cotest.py` | The CANopen test sequences from the command line (the same tests as the GUI's Tests tab). |
 | `drivectl.py` | Headless command line: the Config tab's USB commands and CANopen master commands, one-shot, scripted or as a shell. |
 | `check_sync.py` | Checks the PC tables against the firmware sources (for developers). |
@@ -29,9 +29,9 @@ For the CANopen tab you also need a CAN adapter supported by python-can. The ben
 ## 2. Starting and connecting
 
 ```
-python software/plotter.py            pick the port in the window
-python software/plotter.py COM7       connect to COM7 on start
-pythonw software/plotter.py           Windows, without a console window
+python software/fluxstudio.py            pick the port in the window
+python software/fluxstudio.py COM7       connect to COM7 on start
+pythonw software/fluxstudio.py           Windows, without a console window
 ```
 
 1. Plug in the driver's USB. It appears as a virtual COM port; the port list marks it **[driver USB]**, and it is picked automatically when the last-used port is gone.
@@ -139,7 +139,7 @@ Editing works in two steps:
 | **Save to flash** | Stores what the device holds (not pending edits) in flash, plus the CANopen settings. Refused while the motor runs. The orange line "device RAM differs from flash" means there is something unsaved. |
 | **Export JSON…** | Reads everything and saves it with a timestamp. Use it as a backup of a calibrated motor. |
 | **Import JSON…** | Loads a file as pending edits (nothing is sent yet). Then **Write changed** and **Save to flash**. This is how a calibration is restored after a firmware update that reset the parameters. A value whose unit has changed since the export (e.g. `olo`/`ohi`, V before `PARAM_VERSION` 9, rpm now) is skipped and listed in the log: set it by hand. |
-| **Reboot** | Resets the driver (unsaved RAM edits are lost). The port closes and the plotter reopens it when the driver is back (it retries for 10 s). |
+| **Reboot** | Resets the driver (unsaved RAM edits are lost). The port closes and Flux Studio reopens it when the driver is back (it retries for 10 s). |
 | **Reboot to DFU** | Resets into the ST USB bootloader for flashing with STM32CubeProgrammer. |
 
 Reboot and DFU are refused while the motor runs.
@@ -330,7 +330,7 @@ Like `cotest.py`, it cannot share a port with the GUI.
 | "no reply to PING" | Wrong port (e.g. the CAN adapter or the ST-Link UART), or a firmware without the binary protocol. |
 | Orange "object table differs" | GUI and firmware come from different versions. Update one of them; mismatched rows are disabled. |
 | Dropped frames counting up | The PC is not reading fast enough: lower the plot refresh rate or close other heavy programs. A few drops when commands are sent are normal. |
-| "connection lost" | The cable was pulled, or the driver reset (Reboot, or a CANopen reset node, e.g. the `identity` test). The plotter retries the same port for 10 s (the button reads **Cancel** meanwhile); if it does not come back, reconnect by hand. |
+| "connection lost" | The cable was pulled, or the driver reset (Reboot, or a CANopen reset node, e.g. the `identity` test). Flux Studio retries the same port for 10 s (the button reads **Cancel** meanwhile); if it does not come back, reconnect by hand. |
 | A typed value becomes 10× larger | It should not: inputs use `.` decimals. Use `.` not `,`. |
 | CANopen tab: replies late or SYNC uneven | Use a 5–10 ms period over SLCAN on Windows; a gs_usb adapter on Linux times better. About one SDO reply in a few hundred is lost by SLCAN on the PC side; the tool retries. |
 | CANopen tab: no plots | Switch on the SYNC producer and NMT start (TPDO2/3 are sent on SYNC in operational). |
