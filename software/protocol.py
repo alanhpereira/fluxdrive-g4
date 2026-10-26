@@ -54,7 +54,7 @@ STATUS = [
     "run the PI autotune (t) first", "set kv first (k, or from the datasheet)",
     "position mode needs the encoder (angle source 0 or 1)",
     "bus voltage above vmax",
-    "tripped: press STOP to reset (once the motor has coasted down)",
+    "tripped: press STOP to reset",
     "current-sense offsets implausible (rotor turning? sense stage?)",
     "the CANopen master has the motor (STOP takes it back)",
     "CANopen master lost (heartbeat timeout or NMT left operational)",

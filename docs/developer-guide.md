@@ -101,7 +101,7 @@ Formatting is set by `.clang-format`: Google base style, **tabs**, width 4, no c
   - The ISR never writes `g_mode`. `trip_watchdog()` in `calib.c` sends `EV_STOPPED` (`ST_VBUS_HIGH`/`ST_OVERCURRENT`) and sets `CTRL_OFF` once |speed| < `COAST_END_TURNS` (30 rpm).
   - An overvoltage coast (CTRL_RUN, bridge still on) resumes by itself once the bus has been below `vbus_max − vbus_resume` for 10 ms: the ISR restores the saved id ref (and the iq ref in current mode), the outer loops pick up bumplessly, `EV_RESUMED` is sent and 0x4002:11 counts it. Overcurrent never resumes.
   - Regen clamp: in `CTRL_RUN`, braking current (iq against `s_vel`) is scaled from full at `vbus_max − vbus_clamp` down to zero at `vbus_max`; motoring current is never limited. While it acts, the speed ramp holds its deceleration and the speed integrator is capped at the allowed braking current.
-  - While a trip is latched every command except STOP/REBOOT gets `ST_TRIPPED`. STOP resets it once the coast has ended.
+  - While a trip is latched every command except STOP/REBOOT gets `ST_TRIPPED`. STOP resets it; during the coast it first ends it with `bridge_trip_off()` (no zero vector, no OV resume) and `CTRL_OFF`, so the bridge re-arms only once `rearm_safe()` allows. `trip_watchdog()` ends the coast as soon as MOE is off, whoever switched it off (a trip, or the break input/nFAULT).
   - With MOE off, the body diodes only conduct if something external drives the shaft above the bus voltage (there is no field weakening).
 - **Main → ISR handover rules:**
   - Write the reference first, then switch the mode/loop.

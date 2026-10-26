@@ -94,7 +94,7 @@ typedef enum {
 	ST_NEED_KV,		 /* set kv first ('k', or from the datasheet) */
 	ST_NEED_ENC_POS, /* position mode needs the encoder (ang_src 0 or 1) */
 	ST_VBUS_HIGH,	 /* bus voltage above vbus_max */
-	ST_TRIPPED,		 /* a trip is latched: STOP resets it once the motor has coasted down */
+	ST_TRIPPED,		 /* a trip is latched: STOP resets it */
 	ST_CUR_OFF_BAD,	 /* current-sense offsets implausible (rotor turning? sense stage?) */
 	ST_CAN_ACTIVE,	 /* the CANopen master has the motor (CiA 402 operation enabled): STOP takes it back */
 	ST_CAN_LOST,	 /* CANopen master lost (heartbeat timeout or NMT left operational) while it had the motor */

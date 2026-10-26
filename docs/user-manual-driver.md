@@ -232,8 +232,8 @@ Use 4 for speed or position control at low speed: it holds close to the encoder.
 
 | Protection | Condition | Reaction | How it ends |
 |---|---|---|---|
-| Overcurrent | \|id\| or \|iq\| > `imax` for 120 µs | Coasts at zero current. If the current keeps rising (> 1.5 × `imax`, or still above `imax` after 5 ms), the bridge is switched off. | STOP once the motor has coasted down. Never resumes by itself. |
-| Overvoltage | bus > `vmax` for 1 ms (`vmax` = 0 disables) | Coasts at zero current: no torque, no regen. | Resumes **by itself** after the bus has been below `vmax − vresume` for 10 ms (counted in "Overvoltage resumes"). Outside a run, STOP resets it. |
+| Overcurrent | \|id\| or \|iq\| > `imax` for 120 µs | Coasts at zero current. If the current keeps rising (> 1.5 × `imax`, or still above `imax` after 5 ms), the bridge is switched off. | STOP. Never resumes by itself. |
+| Overvoltage | bus > `vmax` for 1 ms (`vmax` = 0 disables) | Coasts at zero current: no torque, no regen. | Resumes **by itself** after the bus has been below `vmax − vresume` for 10 ms (counted in "Overvoltage resumes"). STOP resets it instead. |
 | Regen clamp | bus between `vmax − vclamp` and `vmax` | Braking current is reduced linearly to zero at `vmax`; decelerations stretch to what the bus can absorb. Motoring is never limited. `vclamp` = 0 disables. | Automatic. |
 | Undervoltage | bus < `vmin` | Stop. Calibrations and runs are refused below it. | Raise the supply. |
 | Overspeed | \|speed\| > 1.5 × `vlim` | Stop (coast). | — |
@@ -244,7 +244,7 @@ Use 4 for speed or position control at low speed: it holds close to the encoder.
 | Temperature sensor fault | a sensor with a limit set reads open or shorted (below about −50 °C or above 157 °C), for example the motor NTC unplugged | Stop (coast); runs are refused. | Reconnect, or set `mtmax` = 0 without a motor sensor. |
 | Gate driver fault | nFAULT / break input | Bridge off by hardware. The STOPPED message gives the bus voltage and the driver's reason: VCC UVLO (the supply sagged, often a bench supply's current limit), thermal shutdown, VDS protection (MOSFET overcurrent) or driver reset. | The driver re-arms the bridge once the motor is below 30 rpm (sensorless, or a lost encoder or Halls: after 3 s). |
 
-While a trip is latched, every command except STOP and REBOOT is refused with "a trip is latched". The Status box shows the trip and whether the bridge was switched off.
+While a trip is latched, every command except STOP and REBOOT is refused with "a trip is latched". The Status box shows the trip and whether the bridge was switched off. STOP resets the trip at any time: if the motor is still coasting, it switches the bridge off (no braking, no overvoltage resume) and the bridge re-arms once the motor is below 30 rpm. The coast also ends at once when the bridge is switched off by hardware (gate driver fault).
 
 ---
 
@@ -426,7 +426,7 @@ All parameters are in the Config tab grid, grouped as below. "Stopped" means it 
 | "rotor did not follow the field" / "pole pairs not an integer" | Encoder calibration lost steps: shaft loaded or `rated` too low; or the encoder is not reading (check the encoder counters). |
 | "test current must stay below 0.9 × imax" | Lower the L test current or raise `imax`. |
 | "current-sense offsets implausible" | The rotor turned during **c**, or a sense channel is faulty. |
-| "a trip is latched" | Press STOP after the motor has coasted down. |
+| "a trip is latched" | Press STOP. |
 | "encoder: no valid angle for 10 ms" | Check the encoder cable and supply; the Statistics box shows CRC errors, stalls and the sensor status (weak field = magnet too far). |
 | "Hall sensors lost" | Check J13 and the sensor supply: the Hall state must never read 0 or 7. |
 | "over temperature" / "motor over temperature" | Let it cool 10 °C below the limit; check the cooling, or the load against `rated`. |

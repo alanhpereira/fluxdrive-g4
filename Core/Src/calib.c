@@ -1074,7 +1074,8 @@ static int trip_watchdog(void) {
 		const float v[3] = {(float)g_stop_reason, g_id, g_iq};
 		proto_event(0, EV_STOPPED, 3, v); /* unsolicited: tok 0 */
 	}
-	if (g_mode == CTRL_RUN && !g_trip_moe && !(fabsf(g_vel) < COAST_END_TURNS)) return 1; /* still coasting */
+	/* the bridge off by the trip or by hardware (the break input, nFAULT): the coast is over */
+	if (g_mode == CTRL_RUN && (TIM1->BDTR & TIM_BDTR_MOE) && !(fabsf(g_vel) < COAST_END_TURNS)) return 1; /* still coasting */
 	g_coasting = 0;
 	if (g_mode != CTRL_OFF) {
 		g_mode = CTRL_OFF;
@@ -1342,7 +1343,16 @@ void cmd_message(uint8_t type, uint8_t tok, const uint8_t* p, uint8_t len) {
 			finish();
 			break;
 		case MSG_STOP:
-			if (g_trip) { /* reset the trip, once the coast has ended; the bridge re-arms if it was switched off */
+			if (g_trip) { /* reset the trip; the bridge re-arms once the motor is slow (rearm_safe()) */
+				if (g_mode == CTRL_RUN) { /* still coasting: end it with the bridge off (no zero vector), no OV resume */
+					bridge_trip_off();
+					g_coasting = 0;
+					g_hfi_cmd = HFI_OFF;
+					g_loop = LOOP_CURRENT;
+					g_id_ref = 0.0f;
+					g_iq_ref = 0.0f;
+					g_mode = CTRL_OFF;
+				}
 				if (!drive_trip_reset()) e = ST_TRIPPED;
 				break;
 			}
