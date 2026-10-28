@@ -4,7 +4,7 @@
 
 #include "calib.h"		/* g_mode, g_loop */
 #include "curSnsCtrl.h" /* g_vdda */
-#include "pi_ctrl.h"	/* g_iq_ref */
+#include "pi_ctrl.h"	/* g_id_ref, g_iq_ref */
 #include "params.h"
 #include "proto.h" /* st_t */
 
@@ -97,9 +97,18 @@ static void evaluate(void) {
 	const float it = k * g_params.max_current;
 	g_i_temp = it;
 	g_i_vel = it < g_params.rated_current ? it : g_params.rated_current; /* the speed loop (outer_loops()) */
-	/* current mode from USB (and an overvoltage resume) writes g_iq_ref once: cap it here. CST caps its own each tick
+	/* current mode from USB (and an overvoltage resume) writes the references once: cap them here, the whole (id, iq)
+	 * vector with its direction kept as run_cur() does (a field-weakening id counts too). CST caps its iq each tick
 	 * (co402.c), the speed loop through g_i_vel. A tick in between costs at most one stale value */
-	if (g_mode == CTRL_RUN && g_loop == LOOP_CURRENT && fabsf(g_iq_ref) > it) g_iq_ref = copysignf(it, g_iq_ref);
+	if (g_mode == CTRL_RUN && g_loop == LOOP_CURRENT) {
+		const float id = g_id_ref, iq = g_iq_ref;
+		const float mag = sqrtf(id * id + iq * iq);
+		if (mag > it) {
+			const float sc = it / mag;
+			g_id_ref = id * sc;
+			g_iq_ref = iq * sc;
+		}
+	}
 	g_temp_state = bad ? TEMP_SENSOR_BAD : (s_over_board || s_over_die || s_over_motor) ? TEMP_OVER : k < 1.0f ? TEMP_DERATING : TEMP_OK;
 }
 
