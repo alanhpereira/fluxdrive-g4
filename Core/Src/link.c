@@ -46,6 +46,7 @@ static uint8_t txq[TXQ];
 static volatile uint32_t txh, txt;
 static uint32_t inflight; /* bytes of the current transfer, USB IRQ only */
 static volatile uint8_t s_open;
+volatile uint32_t g_usb_tx_rearm; /* transfers sent again after the host reset the IN pipe (live watch) */
 
 void link_init(void) {} /* MX_USB_Device_Init() has done it all; RX starts in CDC_Init_FS */
 
@@ -74,7 +75,18 @@ int link_tx(const void* p, uint16_t n) {
 
 void link_usb_pump(void) {
 	USBD_CDC_HandleTypeDef* c = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-	if (c == NULL || c->TxState != 0U) return; /* busy: link_usb_tx_done() pumps again */
+	if (c == NULL) return;
+	if (c->TxState != 0U) {
+		/* busy: link_usb_tx_done() pumps again. Unless the host reset the IN pipe (CLEAR_FEATURE ENDPOINT_HALT, which
+		 * Windows' usbser sends on open/purge/errors): USB_EPClearStall() sets the endpoint to NAK under a transfer in
+		 * flight, which then never completes, and TxState stays set for good. Every firmware write leaves it VALID while
+		 * busy, and an ACK sets CTR_TX with the NAK, so NAK without CTR_TX is that case: send the chunk again */
+		const uint16_t ep = PCD_GET_ENDPOINT(USB, CDC_IN_EP & 0x0FU);
+		if ((ep & USB_EPTX_STAT) != USB_EP_TX_NAK || (ep & USB_EP_CTR_TX) != 0U) return;
+		c->TxState = 0U;
+		inflight = 0;
+		g_usb_tx_rearm++;
+	}
 	if (!s_open || hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
 		txt = txh; /* drop, so a host opening the port gets fresh data */
 		inflight = 0;
