@@ -15,6 +15,19 @@ int32_t g_max_duty_cycle;
 int32_t g_half_duty_cycle;
 uint32_t g_lastFaultCleared;
 volatile uint8_t g_trip_moe;
+static uint8_t s_vcc_set; /* the driver holds DRV_VCC_SET: cleared by a driver reset (STATUS RESET), which brings back 8 V */
+
+/* gate-drive supply (VCC buck, ramps with a soft start). Unlocking forces the gate outputs low: only with MOE off.
+ * Reads the register back, so a failed write is not taken as done */
+static HAL_StatusTypeDef drv_set_vcc(void) {
+	uint8_t lk = DRV_LOCK_OPEN, pm = DRV_VCC_SET, rd = 0xFF;
+	HAL_StatusTypeDef st = HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_LOCK, I2C_MEMADD_SIZE_8BIT, &lk, 1, 10);
+	if (st == HAL_OK) st = HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_POWMNG, I2C_MEMADD_SIZE_8BIT, &pm, 1, 10);
+	lk = DRV_LOCK_CLOSED; /* relock whatever happened */
+	if (HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_LOCK, I2C_MEMADD_SIZE_8BIT, &lk, 1, 10) != HAL_OK) st = HAL_ERROR;
+	if (st == HAL_OK) st = HAL_I2C_Mem_Read(&hi2c3, DRV_I2C_ADDR, DRV_REG_POWMNG, I2C_MEMADD_SIZE_8BIT, &rd, 1, 10);
+	return (st == HAL_OK && rd == pm) ? HAL_OK : HAL_ERROR;
+}
 
 void disableBridge() {
 	htim1.Instance->CCR1 = 0;
@@ -53,6 +66,10 @@ HAL_StatusTypeDef initBridge() {
 	}
 	uint8_t clr = 0xFF;
 	HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_CLEAR, I2C_MEMADD_SIZE_8BIT, &clr, 1, 10);
+
+	/* before the PWM starts (unlocking forces the gate outputs low). If it fails, checkAndClearBridgeFault()
+	 * retries before it arms MOE */
+	s_vcc_set = drv_set_vcc() == HAL_OK;
 
 	status = HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 	if (status != HAL_OK) {
@@ -165,9 +182,14 @@ int32_t checkAndClearBridgeFault() {
 	 * If the condition is still there the bit comes straight back and we retry next time */
 	if (fault_reg & DRV_ST_FAULTS) {
 		s_fault_seen |= fault_reg & DRV_ST_FAULTS; /* for bridge_fault_info(): this write clears them */
+		if (fault_reg & DRV_ST_RESET) s_vcc_set = 0; /* the driver is back at 8 V */
 		uint8_t v = 0xFF;
 		HAL_I2C_Mem_Write(&hi2c3, DRV_I2C_ADDR, DRV_REG_CLEAR, I2C_MEMADD_SIZE_8BIT, &v, 1, 10);
 		return -(int32_t)(fault_reg & DRV_ST_FAULTS);
+	}
+	if (!s_vcc_set) { /* MOE is off here: the forced-low outputs during the unlock do no harm */
+		if (drv_set_vcc() != HAL_OK) return BRIDGE_ERR_I2C;
+		s_vcc_set = 1;
 	}
 
 	if (!(GPIOE->IDR & GPIO_PIN_15)) return BRIDGE_ERR_NFAULT; /* nFAULT still low: break input active */

@@ -28,6 +28,18 @@ static inline void setSamplePoint(uint32_t p) {
 #define DRV_REG_CLEAR 0x09	/* write 0xFF: clear the latched status bits */
 #define DRV_REG_STATUS 0x80 /* bit0 VCC_UVLO, bit1 THSD, bit2 VDS_P, bit3 RESET, bit7 LOCK */
 #define DRV_ST_FAULTS 0x0F
+#define DRV_ST_RESET 0x08	/* STATUS bit3: the registers are back at their power-up defaults */
+#define DRV_REG_POWMNG 0x01 /* protected; bit6 REG3V3_DIS, bit5 VCC_DIS, bit4 STBY_REG_EN, bits 1:0 VCC_VAL */
+#define DRV_REG_LOCK 0x0B	/* protected registers are writable while LOCK (3:0) == ~NLOCK (7:4) */
+#define DRV_LOCK_OPEN 0xF0
+#define DRV_LOCK_CLOSED 0x00
+#define DRV_VCC_8V 0
+#define DRV_VCC_10V 1
+#define DRV_VCC_12V 2
+#define DRV_VCC_15V 3
+/* gate-drive supply (VCC buck), 8 V is the power-up default. VCC also feeds the 5 V LDO U5 (0.5 W): it can supply
+ * ~95 mA at 10 V, ~60 mA at 12 V */
+#define DRV_VCC_SET DRV_VCC_10V
 #define FAULT_RETRY_MS 20
 
 /* checkAndClearBridgeFault() results besides 0 / 1 / -(status fault bits) */
