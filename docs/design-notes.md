@@ -177,7 +177,7 @@ HFI gives a rotor angle at zero and low speed without the encoder, below the obs
 ### What HFI needs from the motor
 With Σ = (Ld + Lq)/2 and Δ = (Lq − Ld)/2, the response varies with 2θ and its amplitude is proportional to Δ. Surface-magnet outrunners usually have little geometric saliency but some saturation saliency (Ld drops when the d axis is pushed toward saturation), so a positive id bias (`hid`) can help. Rule of thumb: Δ/Σ ≥ 10 % comfortable, 5–10 % workable with averaging and a slow PLL, < 5 % unlikely to be robust. Feasibility is decided by the saliency map, not by calculation.
 
-Sizing: current resolution ≈ 12.6 mA/LSB. HF step per period ≈ `hv`·40 µs/L; make the "HFI signal" several LSB. Dead time is 20 ticks ≈ 118 ns (≈ 60 mV at 20.5 V, 0.09 V per phase at 31 V), which distorts near phase-current zero crossings.
+Sizing: current resolution ≈ 25.2 mA/LSB. HF step per period ≈ `hv`·40 µs/L; make the "HFI signal" several LSB. Dead time is 20 ticks ≈ 118 ns (≈ 60 mV at 20.5 V, 0.09 V per phase at 31 V), which distorts near phase-current zero crossings.
 
 ### Bench results (2026-10-12)
 - **Saliency:** +24.7 % at id = 0: feasible.

@@ -14,7 +14,7 @@ A field-oriented-control (FOC) driver for 3-phase permanent-magnet motors (BLDC/
 |---|---|
 | Controller | STSPIN32G4 (STM32G431 Cortex-M4F at 170 MHz with an integrated 3-phase gate driver) |
 | Bridge | 3-phase bridge of six 100 V MOSFETs (DI100N10PQ), 25 kHz center-aligned PWM |
-| Current sensing | 3 low-side shunts, 2 mΩ, internal op-amps with gain 16 (about 12.6 mA per ADC count) |
+| Current sensing | 3 low-side shunts, 2 mΩ, internal op-amps as difference amplifiers with external 2k/32k resistors, gain 16 (about 25.2 mA per ADC count) |
 | Bus voltage sensing | 270 kΩ / 10 kΩ divider |
 | Position sensor | MT6835 21-bit magnetic encoder (2 097 152 counts per turn) over SPI, or Hall sensors |
 | Control loops | current loop at 25 kHz; speed and position loops at 2.5 kHz |
@@ -196,7 +196,7 @@ Set with `angsrc` (only while stopped), then save.
 ### Sensorless commissioning
 Sensorless needs, in addition to r, l, t and k:
 1. **h** HFI saliency map. The rotor should stay still; the encoder is the reference. It injects at 24 angles with a d bias and reports the saliency (Lq−Ld)/(Lq+Ld): ≥ 10 % comfortable, 5–10 % workable, < 5 % too low for this method. With the argument at "default" it maps several biases and stores `hsal` at `hid`.
-2. Tune `hv` (injection voltage: the "HFI signal" plot should be several × 12.6 mA), `hid` (d bias), `hpi` (polarity pulse current: must be high enough to saturate the d axis, a few A on an 8 A motor).
+2. Tune `hv` (injection voltage: the "HFI signal" plot should be several × 25.2 mA), `hid` (d bias), `hpi` (polarity pulse current: must be high enough to saturate the d axis, a few A on an 8 A motor).
 3. **p** Lock + polarity test. Run it from many rotor positions; it must pick the right side every time.
 4. Set `angsrc` = 2, save. Each run then starts with ~185 ms of locking and polarity pulses. The motor whines audibly at the injection frequency (6.25 kHz by default).
 

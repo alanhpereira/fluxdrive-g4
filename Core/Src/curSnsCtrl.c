@@ -152,7 +152,7 @@ HAL_StatusTypeDef initCS() {
 		return status;
 	}
 	g_vdda = cs_vdda();
-	g_curMult = -g_vdda / (2.0f * 4095.0f * CS_GAIN * CS_SHUNT);
+	g_curMult = -g_vdda / (4095.0f * CS_GAIN * CS_SHUNT); /* 25.2 mA/count; the old extra /2 read half the real current (clamp meter, 2026-11-18) */
 	g_vinMult = g_vdda * (VIN_RL + VIN_RH) / (4095.0f * VIN_RL);
 	temp_init(); /* regular-channel sample times: only while JADSTART = 0 */
 
