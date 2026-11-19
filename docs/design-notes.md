@@ -6,6 +6,14 @@ These notes condense six per-feature handoff documents (config protocol, CANopen
 
 Bench reference: a 345 kv outrunner, Ld 67 µH / Lq 171 µH, rated 8 A, 31 V supply; WeAct USB2CANISO (SLCAN) at 1 Mbit/s.
 
+**Current scale before 2026-11-18.** Until commit db6159e the firmware scaled the shunt current with an extra factor 1/2 (12.6 mA/count instead of the 25.2 mA/count of the 2 mΩ shunt and the 2k/32k gain-16 difference amplifier). Every current read or limited by the firmware was half the real one. A clamp meter on one phase confirmed it: id = 2 A gave ±4 A. So, for every result below measured before that date:
+- currents (telemetry, `rated`, `imax`, `hpi`, the derating caps, iq ripple) are **×2** in real amperes;
+- inductances and resistances identified by the calibrations are **×½** (the bench motor's real Ld/Lq are ≈ 34/86 µH);
+- voltages, speeds, times, kv and the short-circuit DAC threshold (`SCREF_MV`, set in mV) are unaffected.
+The loops themselves were self-consistent (the gains were tuned on the same scale), which is why it went unnoticed. After the fix, recalibrate R, L and the autotune, and double the speed-loop gains `vkp`/`vki` (their output is a current), or the loops run at twice the bandwidth.
+
+**Eaglepower 8308 (orthosis motor), calibrated 2026-11-18 after the fix:** 20 pole pairs, kv 101.4 rpm/V (90 on the label), R 93.9 mΩ, Ld 39.0 µH, Lq 80.9 µH (λ 2.72 mWb, Kt = 8.27/kv = 0.082 N·m/A), `bw` 1250 Hz → kpd 0.306, kpq 0.635, ki 737; `rated` 15 A, `imax` 30 A, `vkp` 0.7, `vki` 30, encoder with observer (`angsrc` 1).
+
 ---
 
 ## 1. Binary config protocol
@@ -203,7 +211,7 @@ State 2026-10-12: sensorless (`angsrc` 2) runs on the bench with the encoder fit
 |---|---|---|---|
 | `hbw` | 120 Hz | 50 Hz | The change that fixed the reversals. Whether the default should change is open (a default change needs no `PARAM_VERSION` bump). |
 | `acc` | 40 000 rpm/s | 60 000 rpm/s | 60 000 overcurrents from standstill in sensorless. |
-| `rated` / `imax` | 8 A / 12 A | 1 / 1.5 A | One overshoot to ~12.5 A raw seen at `imax` 12. |
+| `rated` / `imax` | 8 A / 12 A | 1 / 1.5 A | One overshoot to ~12.5 A raw seen at `imax` 12. Firmware amperes of the old scale: 16 / 24 A and ~25 A real. |
 | `hpi` | 5–6 A | 1 A | Must be saved before a run. |
 
 ### Results
