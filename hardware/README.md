@@ -12,7 +12,7 @@ The datasheets are not in the repository (they are the manufacturers' documents)
 |---|---|---|---|
 | STSPIN32G4 | STMicroelectronics | Controller: STM32G431 + 3-phase gate driver | [st.com](https://www.st.com/resource/en/datasheet/stspin32g4.pdf) |
 | STM32G431VB | STMicroelectronics | The MCU inside the STSPIN32G4 | [st.com](https://www.st.com/resource/en/datasheet/stm32g431vb.pdf) |
-| DI100N10PQ | Diotec | Bridge MOSFETs (100 V) | [diotec.com](https://diotec.com/request/datasheet/di100n10pq.pdf) |
+| DI100N10PQ-HXY | HXY Electronics | Bridge MOSFETs (100 V, 3.6 mΩ typ.; LCSC C51949344) | [lcsc.com](https://www.lcsc.com/product-detail/C51949344.html) |
 | MT6835 | MagnTek (Novosense) | 21-bit magnetic encoder | [novosns.com](https://www.novosns.com/en/) (search for MT6835) |
 | TJA1051 | NXP | CAN transceiver | [nxp.com](https://www.nxp.com/docs/en/data-sheet/TJA1051.pdf) |
 | USBLC6-2 | STMicroelectronics | USB ESD protection | [st.com](https://www.st.com/resource/en/datasheet/usblc6-2.pdf) |
