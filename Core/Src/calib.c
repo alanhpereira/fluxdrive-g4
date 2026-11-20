@@ -207,16 +207,21 @@ static st_t ramp_d_to_current(float i_target, float* v_out) {
 	return ST_OK;
 }
 
-/* time between the 75% and 25% crossings of a decaying current is tau * ln(3);
- * measuring a difference makes the fixed one-period delay of the loop cancel out */
-static float decay_tau(const volatile float* x, int n, float i0, float fs) {
+/* time between the 75% and 25% crossings of a decaying current. At zero commanded volts the dead time still
+ * opposes the current: L di/dt = -(R i + v_off), so i decays towards -a = -v_off / R and the time is
+ * tau * ln((hi + a) / (lo + a)); with a = 0 that is tau * ln(3), which read L low by tens of % on a low-R motor.
+ * Measuring a difference makes the fixed one-period delay of the loop cancel out */
+static float decay_tau(const volatile float* x, int n, float i0, float a, float fs) {
 	const float hi = 0.75f * i0, lo = 0.25f * i0;
+	if (!(a > 0.0f)) a = 0.0f; /* NaN or a negative intercept: the plain exponential */
+	if (a > 2.0f * i0) a = 2.0f * i0;
+	const float ln_k = logf((hi + a) / (lo + a));
 	float ta = -1.0f;
 	for (int k = 1; k < n; k++) {
 		if (ta < 0.0f && x[k] <= hi && x[k - 1] > hi) ta = (float)(k - 1) + (x[k - 1] - hi) / (x[k - 1] - x[k]);
 		if (ta >= 0.0f && x[k] <= lo && x[k - 1] > lo) {
 			float tb = (float)(k - 1) + (x[k - 1] - lo) / (x[k - 1] - x[k]);
-			return (tb - ta) / fs / 1.0986123f;
+			return (tb - ta) / fs / ln_k;
 		}
 	}
 	return -1.0f;
@@ -325,8 +330,9 @@ static st_t cal_inductance(int use_q) {
 		if (HAL_GetTick() - t0 > 500) return ST_REC_TIMEOUT;
 
 	/* read g_rec in place: the ISR has stopped writing it (state 3) */
-	print_flux_curve(g_rec, REC_N, i0, g_params.rd, v - g_params.rd * i0); /* v_off: what R*i0 does not explain */
-	float tau = decay_tau(g_rec, REC_N, i0, CTRL_FS_HZ);
+	const float v_off = v - g_params.rd * i0; /* what R*i0 does not explain: dead time, MOSFET drop */
+	print_flux_curve(g_rec, REC_N, i0, g_params.rd, v_off);
+	float tau = decay_tau(g_rec, REC_N, i0, v_off / g_params.rd, CTRL_FS_HZ);
 	if (tau < 0.0f) return ST_LR_SLOW;
 	if (tau * CTRL_FS_HZ < 3.0f) return ST_LR_FAST;
 
@@ -573,9 +579,12 @@ static st_t cal_uvw(void) {
 			hall_table_apply();
 		}
 		if (e == ST_OK) {
-			MT6835_SaveEEPROM(&hMT6835);
-			EV(EV_EEPROM_WAIT, 6.0f);
-			HAL_Delay(6000);
+			if (MT6835_SaveEEPROM(&hMT6835) != HAL_OK)
+				e = ST_EEPROM_FAIL; /* set in the sensor's RAM only: lost at power-off */
+			else {
+				EV(EV_EEPROM_WAIT, 6.0f);
+				HAL_Delay(6000);
+			}
 		}
 	}
 	MT6835_StartBurst(&hMT6835);
@@ -623,12 +632,9 @@ static void spd_init(spd_t* s) {
 }
 
 static float spd_update(spd_t* s) {
-	if (g_params.ang_src == ANG_SENSORLESS) { /* HFI speed (mechanical rpm), electrical rad/s; 0 while not tracking */
-		const float r = g_hfi_rpm;
-		return (r == r) ? r * (2.0f * (float)M_PI / 60.0f) * (float)g_params.pole_pairs : 0.0f;
-	}
-	if (g_params.ang_src >= ANG_HALL) /* the Hall speed (mechanical turn/s) */
-		return g_vel * (2.0f * (float)M_PI) * (float)g_params.pole_pairs;
+	/* sensorless and Hall: the loop's own speed (mechanical turn/s; HFI or Halls blended with the observer).
+	   g_hfi_rpm alone is NaN once the observer has full weight and HFI pauses, which ended 'k' with ST_KV_FEW */
+	if (g_params.ang_src >= ANG_SENSORLESS) return g_vel * (2.0f * (float)M_PI) * (float)g_params.pole_pairs;
 	uint32_t a = hMT6835.angle, t = TIM2->CNT;
 	int32_t d = enc_delta(a, s->ang);
 	float dt = (float)(t - s->us) * 1e-6f;
@@ -890,7 +896,7 @@ static st_t run_cur(float id, float iq) {
 /* docs/design-notes.md (HFI), hfi.c. Both routines commutate on the encoder and use it as the reference */
 #define HMAP_N 24		  /* injection angles over 360 deg electrical: 2*phi steps by 30 deg */
 #define HMAP_ACC 1000	  /* cycles summed per angle (40 ms) */
-#define HFI_SIG_MIN 0.03f /* A per informative cycle, ~2 LSB */
+#define HFI_SIG_MIN 0.05f /* A per informative cycle, ~2 LSB (25.2 mA per count) */
 
 static st_t hfi_check(void) {
 	if (g_params.ang_src >= ANG_HALL) { /* the Hall angle is the reference: +-30 deg at standstill */
@@ -1156,22 +1162,32 @@ static HAL_StatusTypeDef save_params(void) {
 	return save_records(CO_RQ_SAVE_APP | CO_RQ_SAVE_COMM);
 }
 
-void reset_encoder(void) {
+/* the zero moves the encoder angle, so the electrical offset (and, with the encoder's UVW outputs on J13, the Hall
+ * table) no longer hold: 'e' (and 'H') again */
+static st_t cal_zero(void) {
+	st_t e = ST_OK;
+	uint8_t uvw = 0xFF;
 	g_mode = CTRL_OFF;
 	MT6835_StopBurst(&hMT6835);
 	HAL_Delay(10);
-	MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x07);
-	MT6835_ResetZero(&hMT6835);
-	MT6835_SaveEEPROM(&hMT6835);
-	EV(EV_EEPROM_WAIT, 6.0f);
-	HAL_Delay(6000);
-
+	const int uvw_read = MT6835_ReadRegister(&hMT6835, MT6835_ADDR_UVW, &uvw) == HAL_OK;
+	if (MT6835_WriteRegister(&hMT6835, MT6835_ADDR_ROT, 0x07) != HAL_OK || MT6835_ResetZero(&hMT6835) != HAL_OK)
+		e = ST_UVW_FAIL;
+	else {
+		g_params.flags &= ~PF_ELEC_OFFSET_VALID;
+		if (!uvw_read || (uvw & 0x30u) == 0u) { /* UVW_MUX = 0, UVW_OFF = 0: UVW on the pins (or unknown) */
+			g_params.flags &= ~PF_HALL_VALID;
+			hall_table_apply();
+		}
+		if (MT6835_SaveEEPROM(&hMT6835) != HAL_OK)
+			e = ST_EEPROM_FAIL;
+		else {
+			EV(EV_EEPROM_WAIT, 6.0f);
+			HAL_Delay(6000);
+		}
+	}
 	MT6835_StartBurst(&hMT6835);
-}
-
-static st_t cal_zero(void) {
-	reset_encoder();
-	return ST_OK;
+	return e;
 }
 
 /* zero offsets of the three current-sense channels, at zero volts with the rotor still; stored on success */

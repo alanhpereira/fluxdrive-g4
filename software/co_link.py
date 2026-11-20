@@ -1202,7 +1202,10 @@ class UsbSync:
     def link(self):
         return self._link() if callable(self._link) else self._link
 
-    def request(self, mtype, payload=b"", timeout=6.0):
+    def request(self, mtype, payload=b"", timeout=None):
+        if timeout is None:  # never shorter than the Link's own wait (STOP: 5 s, sent twice), or the request runs
+            t, retry = P.TIMING.get(mtype, (0.5, False))  # later, after the caller has given up on it
+            timeout = max(6.0, t * (2 if retry else 1) + 2.0)
         t_end = time.time() + timeout
         while time.time() < t_end:
             link = self.link
@@ -1313,10 +1316,17 @@ class UsbSerial(UsbSync):
                     self._reopen()
                 continue
             for kind, d in self.split.feed(chunk):
-                if kind == "msg":
-                    self.link.on_message(*d)
-                elif kind == "telem" and self.on_telem:
-                    self.on_telem(d)
+                # a callback that raises must not end this thread: nothing would be read any more, and every
+                # later request (a STOP too) would time out. on_telem is read once: telem's cleanup sets it None
+                try:
+                    if kind == "msg":
+                        self.link.on_message(*d)
+                    elif kind == "telem":
+                        cb = self.on_telem
+                        if cb:
+                            cb(d)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _drain_loop(self):
         while self.running:

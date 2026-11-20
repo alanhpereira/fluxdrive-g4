@@ -26,6 +26,7 @@ import os
 import shlex
 import struct
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -451,20 +452,26 @@ class Cli:
         f = open(path, "w", newline="", encoding="utf-8") if path else None
         w = csv.writer(f) if f else None
         cols = [P.TELEM_NAMES.index(n) for n in TELEM_SHOW]
-        state = {"n": 0, "gaps": 0, "seq": None, "last": None, "k": 0}
+        state = {"n": 0, "gaps": 0, "lost": 0, "seq": None, "last": None, "k": 0}
+        lock = threading.Lock()  # the reader thread writes rows; the cleanup below closes the file
 
         def on(fr):
             seq = struct.unpack_from("<H", fr, 2)[0]
             v = struct.unpack_from("<16f", fr, 4)
             if state["seq"] is not None:
                 d = (seq - state["seq"]) & 0xFFFF
-                state["gaps"] += d != 1
+                if d > 0x8000:  # counter went backwards: MCU reset (as fluxstudio.Receiver)
+                    d = 1
+                if d != 1:
+                    state["gaps"] += 1
+                    state["lost"] += max(d - 1, 0)
                 state["k"] += d  # t from seq: USB delivers the frames in bursts
             state["seq"] = seq
             state["n"] += 1
             state["last"] = v
-            if w:
-                w.writerow([f"{state['k'] * TELEM_DT:.4f}", seq] + [f"{x:.6g}" for x in v])
+            with lock:
+                if w and not f.closed:
+                    w.writerow([f"{state['k'] * TELEM_DT:.4f}", seq] + [f"{x:.6g}" for x in v])
         if w:
             w.writerow(["t", "seq"] + P.TELEM_NAMES)
         else:
@@ -484,8 +491,9 @@ class Cli:
         finally:
             usb.on_telem = None
             if f:
-                f.close()
-        print(f"{state['n']} frames, {state['gaps']} seq gaps" + (f" -> {path}" if path else ""))
+                with lock:
+                    f.close()
+        print(f"{state['n']} frames, {state['gaps']} seq gaps ({state['lost']} frames lost)" + (f" -> {path}" if path else ""))
         if not state["n"]:
             raise Fail("no telemetry")
 
@@ -554,6 +562,10 @@ class Cli:
             raise Fail("co write OBJ VALUE")
         i, s, o = self.co_obj(a[0])
         e = self.node.od_entry(i, s)
+        if o:  # a native object: display units, as 'co read' prints and 'set' takes (co write rd 50 = 50 mOhm)
+            self.node.write(i, s, parse_native(o, a[1]))
+            self.co_read([f"0x{i:04X}:{s}"])
+            return
         v = num(a[1])
         if e.data_type in (0x08, 0x11):  # REAL32, REAL64
             v = float(v)

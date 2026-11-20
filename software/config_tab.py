@@ -487,7 +487,7 @@ class ConfigTab(QtWidgets.QWidget):
             else:
                 d = float(int(text, 0)) if o.type != P.T_F32 and text.lower().startswith("0x") else float(text)
             v = o.from_display(d)
-        except ValueError:
+        except (ValueError, OverflowError):  # OverflowError: inf / 1e400 into an integer (an uncaught one ends the app)
             self.log(f"{key}: '{text}' is not a number", RED)
             self.refresh_row(key)
             return

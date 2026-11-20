@@ -40,8 +40,9 @@ HAL_StatusTypeDef MT6835_SaveEEPROM(MT6835_HandleTypeDef* hMT6835) {
 	if (hMT6835->bursting) return HAL_BUSY;
 	HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_RESET);
 
-	hMT6835->tx_data[0] = (uint8_t)(MT6835_OP_READ << 4);
+	hMT6835->tx_data[0] = (uint8_t)(MT6835_OP_PRG_EEPROM << 4); /* not OP_READ: that read register 0 and never programmed */
 	hMT6835->tx_data[1] = (uint8_t)(0);
+	hMT6835->tx_data[2] = (uint8_t)(0);
 	status = HAL_SPI_TransmitReceive(hMT6835->hspi, hMT6835->tx_data, hMT6835->rx_data, 3, 10);
 
 	HAL_GPIO_WritePin(hMT6835->nCS_port, hMT6835->nCS_pin, GPIO_PIN_SET);

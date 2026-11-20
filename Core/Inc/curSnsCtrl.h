@@ -16,7 +16,7 @@
 #define CS_OFF_N 64			  /* samples of the boot / CAL_CUR_OFF measurement, one per ms */
 #define CS_OFF_ABS_MAX 150	  /* a channel further than this from 2048 is broken, not offset */
 #define CS_OFF_SPREAD_MAX 40  /* max - min over the samples: more means current flowed (rotor turning) */
-#define CS_OFF_DEV_MAX 25	  /* boot: a measurement further than this from the fallback is not trusted (~0.3 A) */
+#define CS_OFF_DEV_MAX 25	  /* boot: a measurement further than this from the fallback is not trusted (~0.63 A) */
 enum { CS_OFF_SRC_DEFAULT = 0, CS_OFF_SRC_STORED, CS_OFF_SRC_BOOT };
 
 extern volatile int16_t cur_raw[3];

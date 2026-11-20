@@ -6,7 +6,7 @@
 #include "curSnsCtrl.h" /* CS_OFF_DEFAULT */
 
 /* Two 2 KB pages at the very end of the 128 KB flash (pages 62 and 63).
- * Reserve them in the linker script: set the FLASH length to 124K. */
+ * Reserve them in the linker script: set the FLASH length to 120K. */
 #define SLOT_ADDR(i) (FLASH_BASE + (uint32_t)(62 + (i)) * FLASH_PAGE_SIZE)
 #define SLOT_PAGE(i) (62u + (uint32_t)(i))
 

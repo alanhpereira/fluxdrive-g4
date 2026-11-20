@@ -143,7 +143,7 @@ Then:
 - **Export JSON** to keep a backup of the calibration.
 
 Optional steps:
-- **z** Reset encoder zero: rewrites the MT6835's zero position into its own EEPROM (takes ~6 s). Run **e** again afterwards.
+- **z** Reset encoder zero: rewrites the MT6835's zero position into its own EEPROM (takes ~6 s). It clears the electrical offset (and, with the encoder's U/V/W outputs on, the Hall table), so runs are refused until **e** (and **H**) are run again. If the sensor does not acknowledge the EEPROM write, it replies "encoder EEPROM not programmed": the setting then holds only until power-off.
 - **h** and **p**: HFI saliency map and polarity test, only needed for sensorless operation (section 7). Hall + HFI needs **h** only.
 - **u** Encoder UVW outputs: sets the MT6835's U/V/W outputs to the pole pairs (argument; "default" uses `pp`) and saves them in its EEPROM (~6 s). After **e**, and at `pp`, it also moves the encoder zero onto electrical zero, so the U/V/W edges sit where well-mounted Hall sensors would; `offset` is adjusted to the small rest (no need to rerun **e**), the Hall table is cleared, and the position must be homed again. **Save to flash** afterwards. For bench tests of the Hall angle sources without a Hall motor (section 7).
 

@@ -299,7 +299,7 @@ CANopen commands (`help co`), with raw OD values (increments, increments/s), exc
 
 | Command | What it does |
 |---|---|
-| `co read OBJ…`, `co write OBJ VALUE` | SDO. OBJ is `0x6041`, `0x608F:1`, a native key (`vlim`) or an EDS name (`Statusword`). |
+| `co read OBJ…`, `co write OBJ VALUE` | SDO. OBJ is `0x6041`, `0x608F:1`, a native key (`vlim`) or an EDS name (`Statusword`). Native objects (0x4000–0x40FF) are read and written in display units, as `get`/`set` (`co write rd 50` is 50 mΩ). |
 | `co nmt [op\|preop\|stop\|reset\|comm]` | NMT command; without one, the state from the heartbeat. |
 | `co state` | Statusword and FSA state, mode, position (turns), speed (rpm), fault and last refusal. |
 | `co enable [pp\|pv\|hm\|csp\|csv\|cst]`, `co disable`, `co shutdown`, `co qstop`, `co fault-reset`, `co halt on\|off` | The CiA 402 walk and controlword commands. `co disable` waits until CAN has let go of the motor. |

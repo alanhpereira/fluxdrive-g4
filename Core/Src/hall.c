@@ -124,8 +124,12 @@ static __attribute__((noinline)) void on_edge(uint8_t st) {
 	/* the sector just crossed, at its calibrated width (the table carries each sensor's placement error), over
 	 * the time it took: one sector behind the rotor, not a turn. The first edge from standstill, or a reversal,
 	 * has no whole sector behind it */
-	if (d == s_dir && s_t < HALL_STOP_N)
-		s_we = (float)d * s_wid[a] / s_t; /* s_t was spent in a, either way round */
+	/* s_t counts from EDGE_LAG (the filter lag of the last edge); this edge is just as late, so the time in a is
+	 * s_t - EDGE_LAG. Dividing by s_t read the speed low by N / (N + 1.5) for an N-cycle sector */
+	if (d == s_dir && s_t < HALL_STOP_N) {
+		const float t = s_t - EDGE_LAG; /* spent in a, either way round */
+		s_we = (float)d * s_wid[a] / (t > 1.0f ? t : 1.0f);
+	}
 	else
 		s_we = 0.0f;
 	s_dir = d;
