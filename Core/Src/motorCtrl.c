@@ -152,7 +152,7 @@ static uint16_t s_pos_ff_n; /* ...for this many more cycles */
 static float s_pos_ff;		/* turn/s, the matching speed feed-forward while it lasts */
 static pos_q32_t s_pos_tgt; /* where the segment in progress ends */
 static uint16_t s_pos_ff_hold; /* after a segment: cycles left to carry on at its rate, waiting for the next one */
-static uint8_t s_pos_snap;	   /* the segment ends exactly on s_pos_tgt (a hold) */
+static uint8_t s_pos_snap;	   /* the segment ends exactly on s_pos_tgt: 1 far off (then carries on at the rate), 2 a hold */
 /* Q32.32 -> float inline: a plain (float) of an int64 is a library call (__aeabi_l2f, in flash) */
 static inline float q32_to_f(int64_t x) {
 	return (float)(int32_t)(x >> 32) + (float)(uint32_t)x * (float)(1.0 / POS_Q32_ONE);
@@ -191,7 +191,7 @@ static __attribute__((noinline)) void motion_latch(pos_q32_t p) {
 				const int32_t q = (int32_t)qb - (qb ? (int32_t)e / (2 * n) : (int32_t)e / n);
 				s_pos_ff_q = q;
 				s_pos_ff = (float)q * ((float)CTRL_FS_HZ / 4294967296.0f); /* the rate it really moves at */
-				s_pos_snap = (qb == 0);
+				s_pos_snap = (qb == 0) ? 2 : 0;
 			}
 			else { /* half a turn or more off: start on the master's path */
 				s_pos_ref = s_pos_tgt - qb * n;
@@ -221,8 +221,13 @@ static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
 	if (s_pos_ff_n) {
 		if (--s_pos_ff_n || !s_pos_snap)
 			s_pos_ref += s_pos_ff_q;
-		else
-			s_pos_ref = s_pos_tgt; /* a hold ends exactly on the target */
+		else {
+			s_pos_ref = s_pos_tgt; /* ends exactly on the target */
+			if (s_pos_snap == 2) { /* a hold: nothing to carry on. Carrying -e/n on moved it e past the target */
+				s_pos_ff_hold = 0;
+				s_pos_ff = 0.0f;
+			}
+		}
 	}
 	else if (s_pos_ff_hold) {
 		/* the next segment is late (a CSP frame arriving after the period, or on the far side of the 1 ms tick):
@@ -250,9 +255,10 @@ static void motion_update(pos_q32_t p, uint32_t ph, int fresh, float age_s) {
 }
 
 /* ------------------------------------------------------------------ speed / position loops */
-/* The speed reference is slewed at g_params.acc_lim (rpm/s, 0 = off). Measured: ~22000 rpm/s per amp, so
- * 60000 rpm/s is ~3 A plus friction. That keeps the observer's load-dependent flux error small (it drops
- * to ~0.8 of lambda at 8 A) and stays clear of the ~8 A where the encoder mount slips */
+/* The speed reference is slewed at g_params.acc_lim (rpm/s, 0 = off). Measured: ~11000 rpm/s per amp, so
+ * 60000 rpm/s is ~5.5 A plus friction. That keeps the observer's load-dependent flux error small (it drops
+ * to ~0.8 of lambda at ~16 A) and stays clear of the ~16 A where the encoder mount slips. (Measured before the
+ * current-scale fix of 2026-11-18 as 22000 rpm/s per A and 8 A: the currents then read half) */
 
 /* regen clamp (calib.h): share of the braking current the bus can take now, 1 = all of it. From currentLoop() */
 static float s_regen_k = 1.0f;

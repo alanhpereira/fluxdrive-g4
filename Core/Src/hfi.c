@@ -31,7 +31,7 @@
 #define TS (1.0f / CTRL_FS_HZ)
 #define Q32 4294967296.0f
 #define TWO_PI 6.2831853f
-#define HFI_MIN_SIG 0.03f /* A: an HF step below ~2 LSB of current has nothing to track */
+#define HFI_MIN_SIG 0.05f /* A: an HF step below ~2 LSB of current (25.2 mA per count) has nothing to track */
 #define AMP_LP 0.02f	  /* per informative cycle: ~2 ms for the HF step amplitude */
 #define ERR_LP 0.01f	  /* g_hfi_err_f, per cycle: 4 ms */
 #define ERR_CLAMP 0.125f  /* turns electrical: one sample never pulls the PLL more than 45 deg */

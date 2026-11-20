@@ -68,6 +68,7 @@ STATUS = [
     "over temperature (board above tmax or MCU die above 110 °C): runs again 10 °C below the limit",
     "motor over temperature (above mtmax): runs again 10 °C below the limit",
     "temperature sensor open or shorted (motor NTC unplugged? set mtmax = 0 without one)",
+    "encoder EEPROM not programmed (no acknowledge): the setting holds only until power-off",
 ]
 ST_OK, ST_ABORTED, ST_BUSY = 0, 1, 30
 ST_NEED_VGAINS, ST_RUNNING, ST_CAN_ACTIVE, ST_CAN_LOST, ST_FOLLOWING_ERROR = 13, 34, 48, 49, 50

@@ -108,6 +108,7 @@ typedef enum {
 	ST_OVERTEMP,	 /* board (temp_max) or MCU die (TEMP_DIE_MAX) over its limit; runs again TEMP_HYST below it */
 	ST_MOTOR_OVERTEMP, /* motor NTC over mtemp_max; runs again TEMP_HYST below it */
 	ST_TEMP_SENSOR,	 /* a temperature sensor with a limit set reads open or shorted */
+	ST_EEPROM_FAIL,	 /* encoder EEPROM not programmed (no 0x55 acknowledge): the setting is lost at power-off */
 	ST_N
 } st_t;
 
